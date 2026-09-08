@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: hermes-pro-api
+    runtime: python
+    buildCommand: pip install .
+    startCommand: uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: AI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+
+  - type: worker
+    name: hermes-pro-worker
+    runtime: python
+    buildCommand: pip install .
+    startCommand: python -m worker.main
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+
+  - type: cron
+    name: hermes-pro-maintenance
+    runtime: python
+    schedule: "0 3 * * *"
+    buildCommand: pip install .
+    startCommand: python -c "print('maintenance placeholder: no production automation enabled')"
+    envVars:
+      - key: APP_ENV
+        value: production
