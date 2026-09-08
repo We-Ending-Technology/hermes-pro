@@ -43,6 +43,8 @@ pytest
 
 O arquivo `render.yaml` descreve o serviço web, o worker e as variáveis de ambiente sem valores secretos. Configure os segredos no painel do Render.
 
+O plano para transformar a fundação em uma aplicação funcional está em [`docs/ROADMAP-FUNCTIONAL.md`](docs/ROADMAP-FUNCTIONAL.md).
+
 ## Escopo desta etapa
 
 A fundação inclui health checks, configuração por ambiente, um endpoint de exemplo, abstração do gateway de IA, registro de agentes, fila em memória para desenvolvimento, worker executável, migration inicial, testes e documentação. Integrações de marketplaces e automação de produção ficam explicitamente fora do escopo.
