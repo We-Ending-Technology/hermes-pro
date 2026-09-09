@@ -1,1 +1,0 @@
-Worktree setup is managed locally by the execution environment. This marker documents the isolated implementation workspace for the Hermes Pro commercial engine.
