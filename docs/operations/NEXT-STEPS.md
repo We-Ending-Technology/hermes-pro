@@ -22,3 +22,9 @@ Depois de configurar os secrets somente no ambiente do Render/Supabase, implemen
 ## Documentação de configuração adicionada
 
 Foram adicionados `docs/INSTALLATION.md`, `docs/ARCHITECTURE.md` e `docs/ENVIRONMENT.md` com instruções seguras para GitHub, Render, Supabase e Gemini. O manual de produto não foi tratado como evidência de integrações existentes: Kiwify, Telegram, Pollinations.ai, Uptime Robot, autenticação completa e evolução autônoma continuam pendentes.
+
+## Infraestrutura real preparada nesta branch
+
+Foi adicionada uma camada Supabase REST para jobs, produtos e consultas do dashboard quando `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` estão configuradas. O worker separado agora possui processamento contínuo, claim de jobs, retry limitado e estados `running`, `completed`, `retrying` e `failed`. Sem Supabase configurado, os testes continuam usando o fallback local explicitamente marcado para desenvolvimento.
+
+Ainda bloqueado por configuração externa: aplicação do Blueprint no Render, migrations em um projeto Supabase real, credencial Gemini, autenticação/login, storage real para documentos e teste ponta a ponta público. DOCX/PDF e capa ainda não foram ativados porque dependem de uma estratégia de artefatos e conversor disponível no ambiente de deploy.
