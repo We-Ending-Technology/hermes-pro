@@ -1,29 +1,30 @@
 # Próximos passos
 
-## Concluído
+## Concluído nesta branch
 
-A fundação inicial contém frontend React/Vite, API FastAPI, gateway de IA stub, agentes, modelo de jobs, worker separado, Product Factory, Quality Gate, migration inicial do Supabase, Docker, Render, CI e documentação.
+Foi criada a branch `feat/functional-factory-slice` a partir da `main` em `7e4c8e6`. A API agora possui endpoints funcionais para iniciar produção, listar jobs, listar produtos e consultar o dashboard. O fluxo de fábrica usa o gateway stub local, executa escrita, revisão, quality gate, documento Markdown e salva o produto em store local de desenvolvimento. O frontend possui navegação funcional para Dashboard, Fábrica, Produtos, Jobs, Logs e Configurações. O Render e `.env.example` foram atualizados com variáveis explícitas para Supabase e Gemini.
 
-A branch remota `main` foi criada a partir do commit `d1381cb` e mantém a fundação como base de produção. A branch `feat/hermes-foundation` foi preservada.
+## Pendente antes de produção
 
-## Pendente
+Supabase ainda precisa de URL, service role key e migrations aplicadas em um projeto real. Gemini ainda precisa de `GEMINI_API_KEY` configurada no servidor. O worker persistente ainda precisa mover o processamento para uma fila compartilhada e sobreviver a reinícios. Autenticação, storage real, logs persistentes, monitoramento e deploy público ainda não foram ativados. O produto não é publicado automaticamente.
 
-Ainda faltam autenticação, persistência real de jobs, fila externa, adapters reais de IA, Telegram, marketplaces, geração de ebooks e automação de produção.
+## Validações esperadas
 
-## Arquivos principais criados
-
-Consulte `git diff --stat` e as pastas `backend`, `frontend`, `docs`, `supabase` e `.github`.
-
-## Validações
-
-A suíte backend passou com 8 testes. O build frontend passou com `npm run build`. A working tree foi verificada limpa antes das atualizações documentais. A verificação de padrões conhecidos de secrets não encontrou credenciais versionadas.
-
-## Bloqueio do Pull Request
-
-A primeira tentativa de criar o PR `feat/hermes-foundation` → `main` foi rejeitada pelo GitHub com `No commits between main and feat/hermes-foundation`, porque `main` foi criada exatamente no mesmo commit `d1381cb`. Não houve merge automático nem force push. Após este registro e a atualização da evolução semanal, será criado um commit documental mínimo na branch de feature para permitir o PR sem alterar código funcional.
+```bash
+source .venv/bin/activate && pytest
+cd frontend && npm run build
+```
 
 ## Próximo comando
 
-```bash
-source .venv/bin/activate && pytest && cd frontend && npm run build
-```
+Depois de configurar os secrets somente no ambiente do Render/Supabase, implementar o repositório persistente de jobs e executar o worker contra a mesma fonte de dados usada pela API. Não adicionar secrets ao Git.
+
+## Documentação de configuração adicionada
+
+Foram adicionados `docs/INSTALLATION.md`, `docs/ARCHITECTURE.md` e `docs/ENVIRONMENT.md` com instruções seguras para GitHub, Render, Supabase e Gemini. O manual de produto não foi tratado como evidência de integrações existentes: Kiwify, Telegram, Pollinations.ai, Uptime Robot, autenticação completa e evolução autônoma continuam pendentes.
+
+## Infraestrutura real preparada nesta branch
+
+Foi adicionada uma camada Supabase REST para jobs, produtos e consultas do dashboard quando `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` estão configuradas. O worker separado agora possui processamento contínuo, claim de jobs, retry limitado e estados `running`, `completed`, `retrying` e `failed`. Sem Supabase configurado, os testes continuam usando o fallback local explicitamente marcado para desenvolvimento.
+
+Ainda bloqueado por configuração externa: aplicação do Blueprint no Render, migrations em um projeto Supabase real, credencial Gemini, autenticação/login, storage real para documentos e teste ponta a ponta público. DOCX/PDF e capa ainda não foram ativados porque dependem de uma estratégia de artefatos e conversor disponível no ambiente de deploy.

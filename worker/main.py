@@ -1,16 +1,14 @@
-"""Separate worker entrypoint; queue integration is intentionally deferred."""
 import asyncio
 import logging
+from .processor import PersistentWorker
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("hermes.worker")
 
-async def run() -> None:
-    logger.info("Hermes Pro worker started in development mode")
-    await asyncio.Event().wait()
+async def main() -> None:
+    await PersistentWorker().run_forever()
 
 if __name__ == "__main__":
     try:
-        asyncio.run(run())
+        asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Hermes Pro worker stopped")
+        logging.info("Hermes Pro worker stopped")
