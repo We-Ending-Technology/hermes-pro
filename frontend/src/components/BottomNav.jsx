@@ -1,0 +1,2 @@
+const items = [["home","Início"],["products","Produtos"],["factory","Fábrica"],["radar","Radar"],["sales","Vendas"]];
+export default function BottomNav({ active, onChange }) { return <nav className="bottom-nav">{items.map(([id,label]) => <button key={id} className={active===id ? "active" : ""} onClick={() => onChange(id)}><span>{({home:"⌂",products:"▣",factory:"✦",radar:"◈",sales:"↗"})[id]}</span>{label}</button>)}</nav>; }
