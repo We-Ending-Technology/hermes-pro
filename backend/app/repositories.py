@@ -7,7 +7,7 @@ class SupabaseRepository:
         self.settings = settings
 
     def _headers(self) -> dict[str, str]:
-        key = self.settings.supabase_service_role_key
+        key = self.settings.supabase_key
         return {"apikey": key or "", "Authorization": f"Bearer {key or ''}", "Content-Type": "application/json", "Prefer": "return=representation"}
 
     async def request(self, method: str, table: str, *, params: dict[str, str] | None = None, payload: dict | None = None) -> list[dict[str, Any]]:

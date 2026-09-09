@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     database_url: str | None = None
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
+    supabase_secret_key: str | None = None
     ai_provider: str = "stub"
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-2.0-flash"
@@ -28,7 +29,11 @@ class Settings(BaseSettings):
 
     @property
     def supabase_configured(self) -> bool:
-        return bool(self.supabase_url and self.supabase_service_role_key)
+        return bool(self.supabase_url and (self.supabase_service_role_key or self.supabase_secret_key))
+
+    @property
+    def supabase_key(self) -> str | None:
+        return self.supabase_service_role_key or self.supabase_secret_key
 
     @property
     def gemini_configured(self) -> bool:

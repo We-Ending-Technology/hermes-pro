@@ -47,6 +47,8 @@ SUPABASE_URL=https://<projeto>.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<configurar-fora-do-git>
 ```
 
+O backend também aceita `SUPABASE_SECRET_KEY`, que é o nome usado pelo ambiente Render atual. Configure apenas uma das duas variáveis; ambas representam a chave privada do servidor.
+
 Antes de habilitar dados de usuários, adicione autenticação e Row Level Security (RLS). A migration atual é a fundação de dados e ainda não substitui uma política completa de isolamento por usuário.
 
 ## 4. Gemini
