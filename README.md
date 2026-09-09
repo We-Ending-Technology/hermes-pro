@@ -43,6 +43,10 @@ pytest
 
 O arquivo `render.yaml` descreve o serviço web, o worker e as variáveis de ambiente sem valores secretos. Configure os segredos no painel do Render.
 
+Consulte [`docs/INSTALLATION.md`](docs/INSTALLATION.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) e [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) para configurar conexões sem expor credenciais.
+
 ## Escopo desta etapa
 
 A fundação inclui health checks, configuração por ambiente, um endpoint de exemplo, abstração do gateway de IA, registro de agentes, fila em memória para desenvolvimento, worker executável, migration inicial, testes e documentação. Integrações de marketplaces e automação de produção ficam explicitamente fora do escopo.
+
+O primeiro slice funcional adiciona uma fábrica local executável, endpoints de jobs, produtos e dashboard e o provider Gemini preparado. Deploy público, Supabase real, worker persistente e secrets de produção ainda precisam ser configurados.

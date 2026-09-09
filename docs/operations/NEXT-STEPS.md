@@ -18,3 +18,7 @@ cd frontend && npm run build
 ## Próximo comando
 
 Depois de configurar os secrets somente no ambiente do Render/Supabase, implementar o repositório persistente de jobs e executar o worker contra a mesma fonte de dados usada pela API. Não adicionar secrets ao Git.
+
+## Documentação de configuração adicionada
+
+Foram adicionados `docs/INSTALLATION.md`, `docs/ARCHITECTURE.md` e `docs/ENVIRONMENT.md` com instruções seguras para GitHub, Render, Supabase e Gemini. O manual de produto não foi tratado como evidência de integrações existentes: Kiwify, Telegram, Pollinations.ai, Uptime Robot, autenticação completa e evolução autônoma continuam pendentes.
