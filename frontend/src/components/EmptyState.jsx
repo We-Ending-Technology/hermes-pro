@@ -1,0 +1,1 @@
+export default function EmptyState({ title, description, action, onAction }) { return <div className="empty"><strong>{title}</strong><p>{description}</p>{action && <button className="primary" onClick={onAction}>{action}</button>}</div>; }
