@@ -1,5 +1,14 @@
 services:
   - type: web
+    name: hermes-pro-frontend
+    runtime: static
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/dist
+    envVars:
+      - key: VITE_API_URL
+        sync: false
+
+  - type: web
     name: hermes-pro-api
     runtime: python
     buildCommand: pip install .
@@ -8,8 +17,14 @@ services:
     envVars:
       - key: APP_ENV
         value: production
-      - key: AI_API_KEY
+      - key: SUPABASE_URL
         sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.0-flash
       - key: DATABASE_URL
         sync: false
       - key: CORS_ORIGINS
@@ -24,6 +39,12 @@ services:
       - key: APP_ENV
         value: production
       - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GEMINI_API_KEY
         sync: false
       - key: REDIS_URL
         sync: false
