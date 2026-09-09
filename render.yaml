@@ -8,11 +8,31 @@ services:
     envVars:
       - key: APP_ENV
         value: production
-      - key: AI_API_KEY
+      - key: AI_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
         sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
       - key: DATABASE_URL
         sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: REDIS_URL
+        sync: false
       - key: CORS_ORIGINS
+        sync: false
+      - key: HOTMART_CLIENT_ID
+        sync: false
+      - key: HOTMART_CLIENT_SECRET
+        sync: false
+      - key: HOTMART_WEBHOOK_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
         sync: false
 
   - type: worker
@@ -23,7 +43,17 @@ services:
     envVars:
       - key: APP_ENV
         value: production
+      - key: AI_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
       - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
         sync: false
       - key: REDIS_URL
         sync: false
