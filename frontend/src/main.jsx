@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
 
-const API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-feature.onrender.com";
+const API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-commercial.onrender.com";
 const nav = [
   ["⌂", "Início"], ["✦", "Hermes"], ["◈", "Produtos"], ["⚗", "Fábrica"],
   ["⌁", "Radar"], ["↗", "Vendas"], ["◌", "Analytics"], ["◎", "Agentes"], ["?", "Guias"],
