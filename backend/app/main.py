@@ -20,13 +20,14 @@ from .services.integrations import integration_service
 from .services.persistence import PersistentStore
 from .services.quality import quality_service
 from .services.radar import radar_service
-from .services.sales import sales_service
+from .services.sales import SalesService
 
 settings = get_settings()
 ai_gateway = build_ai_gateway(settings)
 registry = AgentRegistry()
 db = SupabaseREST(settings)
 store = PersistentStore(db)
+sales_service = SalesService(db)
 queue = JobQueue(settings.redis_url)
 
 @asynccontextmanager
@@ -38,7 +39,6 @@ async def lifespan(app: FastAPI):
     await queue.close()
 
 app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
-# Production frontend uses a same-origin Vercel proxy; keep direct Render access safe too.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -163,7 +163,7 @@ async def quality(product_id: str, product: dict):
     return QualityResponse(score=result.score, decision=result.decision, dimensions=result.dimensions, findings=result.findings, safe_fixes=result.safe_fixes)
 
 @app.get("/api/v1/sales", response_model=SalesSummary)
-async def sales(range_start: date | None = None, range_end: date | None = None): return SalesSummary(**sales_service.summary(range_start, range_end))
+async def sales(range_start: date | None = None, range_end: date | None = None): return SalesSummary(**(await sales_service.summary(range_start, range_end)))
 
 @app.get("/api/v1/analytics", response_model=AnalyticsResponse)
 async def analytics(range_start: date | None = None, range_end: date | None = None): return AnalyticsResponse(**analytics_service.insights(range_start, range_end))
@@ -171,4 +171,5 @@ async def analytics(range_start: date | None = None, range_end: date | None = No
 @app.get("/api/v1/dashboard", response_model=DashboardResponse)
 async def dashboard():
     products_list = await store.list_products(); jobs_list = await store.list_jobs()
-    return DashboardResponse(products=len(products_list), active_jobs=sum(row["status"] in {"pending","running","retrying"} for row in jobs_list), completed_products=sum(row["status"] == "completed" for row in products_list), revenue=None, sales=None, integrations=integration_service.status())
+    sales_data = await sales_service.summary()
+    return DashboardResponse(products=len(products_list), active_jobs=sum(row["status"] in {"pending","running","retrying"} for row in jobs_list), completed_products=sum(row["status"] in {"completed"} for row in products_list), revenue=sales_data.get("revenue"), sales=sales_data.get("orders"), integrations=integration_service.status())
