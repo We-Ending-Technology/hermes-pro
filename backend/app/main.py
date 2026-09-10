@@ -36,8 +36,18 @@ async def lifespan(app: FastAPI):
     yield
     await queue.close()
 
-app = FastAPI(title=settings.app_name, version="0.4.0", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app = FastAPI(title=settings.app_name, version="0.4.1", lifespan=lifespan)
+# The frontend is a static Vercel app and does not use cookies. Keep CORS
+# resilient to changing *.vercel.app deployment hostnames while still allowing
+# explicitly configured production/custom origins.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list,
+    allow_origin_regex=r"https://[a-zA-Z0-9-]+\.vercel\.app$",
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def product_response(row: dict) -> ProductResponse:
     metadata = dict(row.get("metadata") or {})
@@ -49,7 +59,7 @@ def job_response(row: dict) -> JobResponse:
     return JobResponse(id=str(row["id"]), job_type=row["job_type"], status=row["status"], attempts=row["attempts"], max_attempts=row["max_attempts"], error_message=row.get("error_message"), payload=row.get("payload") or {}, created_at=row["created_at"])
 
 @app.get("/")
-async def root(): return {"status":"ok","service":"hermes-pro-api","version":"0.4.0"}
+async def root(): return {"status":"ok","service":"hermes-pro-api","version":"0.4.1"}
 
 @app.get("/health", response_model=HealthResponse)
 async def health(): return HealthResponse(status="ok", service="hermes-pro-api", environment=settings.app_env)
