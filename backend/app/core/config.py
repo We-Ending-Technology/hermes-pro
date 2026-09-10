@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     cover_provider: str = "none"
     cover_api_url: str | None = None
     storage_bucket: str = "ebooks"
+    supabase_jobs_table: str = "hermes_jobs"
+    supabase_products_table: str = "hermes_products"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

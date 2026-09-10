@@ -40,24 +40,24 @@ class PersistentJobStore:
         self.repository = repository
 
     async def create(self, job_type: str, payload: dict) -> dict:
-        return await self.repository.insert("jobs", {"job_type": job_type, "payload": payload, "status": "pending"})
+        return await self.repository.insert(self.repository.settings.supabase_jobs_table, {"job_type": job_type, "payload": payload, "status": "pending", "max_attempts": self.repository.settings.max_job_retries})
 
     async def update(self, job_id: str, **changes: Any) -> dict:
-        rows = await self.repository.update("jobs", {"id": job_id}, changes)
+        rows = await self.repository.update(self.repository.settings.supabase_jobs_table, {"id": job_id}, changes)
         return rows[0] if rows else {"id": job_id, **changes}
 
     async def pending(self) -> list[dict]:
-        return await self.repository.list("jobs", {"select": "*", "status": "in.(pending,retrying)", "order": "created_at.asc"})
+        return await self.repository.list(self.repository.settings.supabase_jobs_table, {"select": "*", "status": "in.(pending,retrying)", "order": "created_at.asc"})
 
 class PersistentProductStore:
     def __init__(self, repository: SupabaseRepository) -> None:
         self.repository = repository
 
     async def create(self, product: dict[str, Any]) -> dict:
-        return await self.repository.insert("products", {"topic": product["topic"], "quality_score": product["quality_score"], "status": "draft", "document_path": product.get("document_path")})
+        return await self.repository.insert(self.repository.settings.supabase_products_table, {"topic": product["topic"], "title": product["topic"], "status": "draft", "current_stage": "document", "metadata": {"quality_score": product["quality_score"], "document_path": product.get("document_path"), "document": product.get("document")}})
 
     async def list(self) -> list[dict]:
-        return await self.repository.list("products", {"select": "*", "order": "created_at.desc"})
+        return await self.repository.list(self.repository.settings.supabase_products_table, {"select": "*", "order": "created_at.desc"})
 
 class ProductStore:
     """Explicit development-only store used when Supabase is not configured."""

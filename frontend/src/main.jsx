@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-m7wd.onrender.com";
 
 function App() {
   const [view, setView] = useState("Dashboard");

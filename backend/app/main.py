@@ -100,7 +100,7 @@ async def auto_topic() -> AutoProductionResponse:
 @app.get("/api/v1/jobs", response_model=list[JobResponse], tags=["jobs"])
 async def list_jobs() -> list[JobResponse]:
     if settings.supabase_configured:
-        rows = await repository.list("jobs", {"select": "*", "order": "created_at.desc"})
+        rows = await repository.list(settings.supabase_jobs_table, {"select": "*", "order": "created_at.desc"})
         return [JobResponse(id=row["id"], job_type=row["job_type"], status=row["status"], attempts=row["attempts"], error_message=row.get("error_message")) for row in rows]
     return [JobResponse(id=j.id, job_type=j.job_type, status=j.status.value, attempts=j.attempts, error_message=j.error_message) for j in job_store.jobs.values()]
 
@@ -113,8 +113,8 @@ async def list_products() -> list[dict]:
 @app.get("/api/v1/dashboard", response_model=DashboardResponse, tags=["dashboard"])
 async def dashboard() -> DashboardResponse:
     if settings.supabase_configured:
-        jobs = await repository.list("jobs", {"select": "status"})
-        products_rows = await repository.list("products", {"select": "id"})
+        jobs = await repository.list(settings.supabase_jobs_table, {"select": "status"})
+        products_rows = await repository.list(settings.supabase_products_table, {"select": "id"})
         return DashboardResponse(jobs=len(jobs), products=len(products_rows), running=sum(j["status"] == "running" for j in jobs), failures=sum(j["status"] == "failed" for j in jobs), worker="configured")
     jobs = list(job_store.jobs.values())
     return DashboardResponse(jobs=len(jobs), products=len(products.products), running=sum(j.status == JobStatus.RUNNING for j in jobs), failures=sum(j.status == JobStatus.FAILED for j in jobs), worker="ready")
