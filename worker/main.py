@@ -6,7 +6,7 @@ import logging
 
 from backend.app.ai_gateway.factory import build_ai_gateway
 from backend.app.core.config import get_settings
-from backend.app.db.supabase import SupabaseREST, SupabaseError
+from backend.app.db.supabase import SupabaseREST
 from backend.app.queue import JobQueue
 from backend.app.services.persistence import PersistentStore
 
@@ -22,12 +22,11 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         return
     if job["status"] == "completed":
         return
-    if job["attempts"] >= MAX_ATTEMPTS:
+    if int(job["attempts"]) >= MAX_ATTEMPTS:
         await store.update_job(job_id, "failed", attempts=job["attempts"], error_message="maximum attempts reached")
         return
 
     attempts = int(job["attempts"]) + 1
-    await store.update_job(job_id, "running", attempts=attempts, error_message=None)
     product_id = (job.get("payload") or {}).get("product_id")
     topic = (job.get("payload") or {}).get("topic")
     if not product_id or not topic:
@@ -35,6 +34,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         return
 
     try:
+        await store.update_job(job_id, "running", attempts=attempts, error_message=None)
         gateway = build_ai_gateway(get_settings())
         await store.update_product(product_id, status="generating", current_stage="topic")
         strategist = await gateway.complete(
@@ -52,45 +52,61 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             system="You are the Hermes Pro reviewer. Return only valid JSON. Be conservative: approval requires score >= 80.",
         )
         await store.update_product(product_id, current_stage="validation")
+        try:
+            strategy_data = json.loads(strategist.content)
+            review_data = json.loads(reviewer.content)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            raise RuntimeError("Gemini returned invalid JSON for the product pipeline") from exc
+
+        score = int(review_data.get("score", 0))
+        approved = bool(review_data.get("approved")) and score >= 80
         metadata = {
-            "strategy": strategist.content,
+            "strategy": strategy_data,
             "content": writer.content,
-            "review": reviewer.content,
+            "review": review_data,
+            "quality_score": score,
             "ai_provider": strategist.provider,
             "ai_model": strategist.model,
         }
-        try:
-            review_data = json.loads(reviewer.content)
-            approved = bool(review_data.get("approved")) and int(review_data.get("score", 0)) >= 80
-        except (ValueError, TypeError, json.JSONDecodeError):
-            approved = False
+        title = strategy_data.get("title") if isinstance(strategy_data, dict) else None
         if not approved:
-            await store.update_product(product_id, status="review_required", current_stage="reviewer", metadata=metadata)
-            await store.update_job(job_id, "completed", attempts=attempts)
-            return
-        await store.update_product(product_id, status="completed", current_stage="validation", metadata=metadata)
+            await store.update_product(product_id, status="review_required", current_stage="reviewer", title=title, metadata=metadata)
+        else:
+            # This job completes the AI content phase only. Document, cover and publication must not be marked complete here.
+            await store.update_product(product_id, status="content_ready", current_stage="validation", title=title, metadata=metadata)
         await store.update_job(job_id, "completed", attempts=attempts)
-        logger.info("completed product_generation job=%s product=%s", job_id, product_id)
+        logger.info("completed product_generation job=%s product=%s approved=%s", job_id, product_id, approved)
     except Exception as exc:
+        message = str(exc)[:1000]
         if attempts < MAX_ATTEMPTS:
-            await store.update_job(job_id, "retrying", attempts=attempts, error_message=str(exc)[:1000])
+            await store.update_job(job_id, "retrying", attempts=attempts, error_message=message)
             await queue.enqueue(job_id)
         else:
-            await store.update_job(job_id, "failed", attempts=attempts, error_message=str(exc)[:1000])
+            await store.update_job(job_id, "failed", attempts=attempts, error_message=message)
             await store.update_product(product_id, status="failed")
         logger.exception("product_generation failed job=%s", job_id)
+
+
+async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
+    for job in await store.list_jobs():
+        if job["job_type"] == "product_generation" and job["status"] in {"pending", "retrying"}:
+            await queue.enqueue(str(job["id"]))
 
 
 async def run() -> None:
     settings = get_settings()
     store = PersistentStore(SupabaseREST(settings))
     queue = JobQueue(settings.redis_url)
-    logger.info("Hermes Pro worker started; queue=%s", "hermes:jobs:product_generation")
+    logger.info("Hermes Pro worker started; queue=hermes:jobs:product_generation")
     try:
+        await recover_pending(store, queue)
         while True:
             job_id = await queue.dequeue(timeout=10)
             if job_id:
                 await process_product(job_id, store, queue)
+            else:
+                # Recovery path: jobs survive worker/Redis restarts because their source of truth is Supabase.
+                await recover_pending(store, queue)
     finally:
         await queue.close()
 
