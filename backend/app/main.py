@@ -19,11 +19,12 @@ from .services.analytics import analytics_service
 from .models.jobs import JobStatus
 
 settings = get_settings()
+ai_gateway = build_ai_gateway(settings)
 registry = AgentRegistry()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    registry.register(DiagnosticAgent(build_ai_gateway(settings)))
+    registry.register(DiagnosticAgent(ai_gateway))
     for agent_name in AGENT_NAMES:
         registry.register(PassThroughAgent(agent_name))
     yield
@@ -55,6 +56,11 @@ async def run_agent(request: AgentRunRequest) -> AgentRunResponse:
     except KeyError as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
     output = await agent.run(request.input)
     return AgentRunResponse(run_id=str(uuid4()), agent=request.agent, status="completed", output=output)
+
+@app.post("/api/v1/chat", response_model=ChatResponse, tags=["hermes"])
+async def chat(request: ChatRequest) -> ChatResponse:
+    result = await ai_gateway.complete(request.message, system="You are Hermes Pro, an operations assistant for digital products. Be concise, truthful, and never invent sales, integrations, or completed jobs.")
+    return ChatResponse(response=result.content, provider=result.provider, model=result.model)
 
 @app.get("/api/v1/integrations", response_model=list[IntegrationStatus])
 async def integrations() -> list[IntegrationStatus]:

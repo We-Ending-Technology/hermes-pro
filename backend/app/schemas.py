@@ -17,6 +17,14 @@ class AgentRunResponse(BaseModel):
     status: str
     output: dict[str, Any]
 
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+class ChatResponse(BaseModel):
+    response: str
+    provider: str
+    model: str
+
 class ProductCreateRequest(BaseModel):
     topic: str = Field(min_length=3, max_length=240)
     metadata: dict[str, Any] = Field(default_factory=dict)
