@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
     worker_enabled: bool = True
     max_job_retries: int = 3
+    auto_production_enabled: bool = False
+    auto_production_daily_limit: int = 1
+    cover_provider: str = "none"
+    cover_api_url: str | None = None
+    storage_bucket: str = "ebooks"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

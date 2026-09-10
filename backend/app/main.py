@@ -3,7 +3,7 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from .core.config import get_settings
-from .schemas import HealthResponse, AgentRunRequest, AgentRunResponse, ProductionRequest, ProductionResponse, JobResponse, DashboardResponse
+from .schemas import HealthResponse, AgentRunRequest, AgentRunResponse, ProductionRequest, ProductionResponse, JobResponse, DashboardResponse, ChatRequest, ChatResponse, AutoProductionResponse
 from .ai_gateway.factory import build_ai_gateway
 from .agents.registry import AgentRegistry
 from .agents.diagnostic import DiagnosticAgent
@@ -11,6 +11,7 @@ from .agents.stubs import PassThroughAgent, AGENT_NAMES
 from .models.jobs import job_store, JobStatus
 from .repositories import ProductStore, SupabaseRepository, PersistentJobStore, PersistentProductStore
 from .factory_service import FactoryService
+from .planner import TopicPlanner
 
 settings = get_settings()
 registry = AgentRegistry()
@@ -19,14 +20,16 @@ job_store_persistent = PersistentJobStore(repository)
 products_persistent = PersistentProductStore(repository)
 products = ProductStore()
 factory: FactoryService | None = None
+gateway = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global factory
-    registry.register(DiagnosticAgent(build_ai_gateway(settings)))
+    global factory, gateway
+    gateway = build_ai_gateway(settings)
+    registry.register(DiagnosticAgent(gateway))
     for agent_name in AGENT_NAMES:
         registry.register(PassThroughAgent(agent_name))
-    factory = FactoryService(build_ai_gateway(settings), products_persistent if settings.supabase_configured else products)
+    factory = FactoryService(gateway, products_persistent if settings.supabase_configured else products, repository=repository if settings.supabase_configured else None, storage_bucket=settings.storage_bucket)
     yield
 
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
@@ -49,14 +52,20 @@ async def run_agent(request: AgentRunRequest) -> AgentRunResponse:
     output = await agent.run(request.input)
     return AgentRunResponse(run_id=str(uuid4()), agent=request.agent, status="completed", output=output)
 
+@app.post("/api/v1/chat", response_model=ChatResponse, tags=["hermes"])
+async def chat(request: ChatRequest) -> ChatResponse:
+    if gateway is None:
+        raise HTTPException(status_code=503, detail="Hermes is not ready")
+    response = await gateway.complete(request.message, system="You are Hermes, the operations assistant. Be concise, honest about capabilities, and never claim an action happened unless the API confirms it.")
+    return ChatResponse(response=response.content, provider=response.provider, model=response.model)
+
 @app.post("/api/v1/factory/produce", response_model=ProductionResponse, tags=["factory"])
 async def produce(request: ProductionRequest) -> ProductionResponse:
     if factory is None:
         raise HTTPException(status_code=503, detail="Factory is not ready")
     if settings.supabase_configured:
         job = await job_store_persistent.create("product_factory", {"topic": request.topic})
-        job_id, attempts = job["id"], 1
-        await job_store_persistent.update(job_id, status="running", attempts=attempts)
+        return ProductionResponse(job_id=job["id"], status="pending")
     else:
         job = job_store.create("product_factory", {"topic": request.topic})
         job_store.mark_running(job)
@@ -74,6 +83,19 @@ async def produce(request: ProductionRequest) -> ProductionResponse:
             job_store.mark_failed(job, str(exc), retry=False)
         raise HTTPException(status_code=502, detail="Production failed") from exc
     return ProductionResponse(job_id=job_id, status="completed")
+
+@app.post("/api/v1/factory/auto-topic", response_model=AutoProductionResponse, tags=["factory"])
+async def auto_topic() -> AutoProductionResponse:
+    if not settings.auto_production_enabled:
+        raise HTTPException(status_code=409, detail="Automatic production is disabled; set AUTO_PRODUCTION_ENABLED=true on the server")
+    if not settings.supabase_configured:
+        raise HTTPException(status_code=503, detail="Automatic production requires Supabase")
+    if gateway is None:
+        raise HTTPException(status_code=503, detail="Hermes is not ready")
+    topic = await TopicPlanner(gateway).next_topic()
+    job = await job_store_persistent.create("product_factory", {"topic": topic}) if settings.supabase_configured else job_store.create("product_factory", {"topic": topic})
+    job_id = job["id"] if isinstance(job, dict) else job.id
+    return AutoProductionResponse(topic=topic, job_id=job_id, status="pending")
 
 @app.get("/api/v1/jobs", response_model=list[JobResponse], tags=["jobs"])
 async def list_jobs() -> list[JobResponse]:

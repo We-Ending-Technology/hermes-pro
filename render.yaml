@@ -29,6 +29,12 @@ services:
         sync: false
       - key: CORS_ORIGINS
         sync: false
+      - key: AUTO_PRODUCTION_ENABLED
+        value: "false"
+      - key: AUTO_PRODUCTION_DAILY_LIMIT
+        value: "1"
+      - key: STORAGE_BUCKET
+        value: ebooks
 
   - type: worker
     name: hermes-pro-worker
@@ -48,6 +54,12 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+      - key: AUTO_PRODUCTION_ENABLED
+        value: "false"
+      - key: AUTO_PRODUCTION_DAILY_LIMIT
+        value: "1"
+      - key: STORAGE_BUCKET
+        value: ebooks
 
   - type: cron
     name: hermes-pro-maintenance

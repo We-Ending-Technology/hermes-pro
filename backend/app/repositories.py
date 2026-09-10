@@ -27,6 +27,14 @@ class SupabaseRepository:
     async def list(self, table: str, params: dict[str, str] | None = None) -> list[dict[str, Any]]:
         return await self.request("GET", table, params=params or {"select": "*"})
 
+    async def upload(self, bucket: str, path: str, content: bytes, content_type: str) -> str:
+        if not self.settings.supabase_configured:
+            raise RuntimeError("Supabase is not configured")
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(f"{self.settings.supabase_url}/storage/v1/object/{bucket}/{path}", headers={**self._headers(), "Content-Type": content_type, "x-upsert": "true"}, content=content)
+            response.raise_for_status()
+        return path
+
 class PersistentJobStore:
     def __init__(self, repository: SupabaseRepository) -> None:
         self.repository = repository

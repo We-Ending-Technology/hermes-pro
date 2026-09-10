@@ -35,3 +35,16 @@ class DashboardResponse(BaseModel):
     running: int
     failures: int
     worker: str
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+class ChatResponse(BaseModel):
+    response: str
+    provider: str
+    model: str
+
+class AutoProductionResponse(BaseModel):
+    topic: str
+    job_id: str
+    status: str
