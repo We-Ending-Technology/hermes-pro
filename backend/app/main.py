@@ -9,6 +9,7 @@ from .ai_gateway.factory import build_ai_gateway
 from .agents.diagnostic import DiagnosticAgent
 from .agents.registry import AgentRegistry
 from .agents.stubs import AGENT_NAMES, PassThroughAgent
+from .api_commercial import router as commercial_router
 from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
 from .queue import JobQueue
@@ -36,10 +37,8 @@ async def lifespan(app: FastAPI):
     yield
     await queue.close()
 
-app = FastAPI(title=settings.app_name, version="0.4.1", lifespan=lifespan)
-# The frontend is a static Vercel app and does not use cookies. Keep CORS
-# resilient to changing *.vercel.app deployment hostnames while still allowing
-# explicitly configured production/custom origins.
+app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
+# Production frontend uses a same-origin Vercel proxy; keep direct Render access safe too.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -48,6 +47,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(commercial_router)
 
 def product_response(row: dict) -> ProductResponse:
     metadata = dict(row.get("metadata") or {})
@@ -59,7 +59,7 @@ def job_response(row: dict) -> JobResponse:
     return JobResponse(id=str(row["id"]), job_type=row["job_type"], status=row["status"], attempts=row["attempts"], max_attempts=row["max_attempts"], error_message=row.get("error_message"), payload=row.get("payload") or {}, created_at=row["created_at"])
 
 @app.get("/")
-async def root(): return {"status":"ok","service":"hermes-pro-api","version":"0.4.1"}
+async def root(): return {"status":"ok","service":"hermes-pro-api","version":"0.5.0"}
 
 @app.get("/health", response_model=HealthResponse)
 async def health(): return HealthResponse(status="ok", service="hermes-pro-api", environment=settings.app_env)
