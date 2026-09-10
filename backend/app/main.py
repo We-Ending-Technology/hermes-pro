@@ -9,6 +9,7 @@ from .ai_gateway.factory import build_ai_gateway
 from .agents.diagnostic import DiagnosticAgent
 from .agents.registry import AgentRegistry
 from .agents.stubs import AGENT_NAMES, PassThroughAgent
+from .api_commercial import router as commercial_router
 from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
 from .queue import JobQueue
@@ -19,13 +20,14 @@ from .services.integrations import integration_service
 from .services.persistence import PersistentStore
 from .services.quality import quality_service
 from .services.radar import radar_service
-from .services.sales import sales_service
+from .services.sales import SalesService
 
 settings = get_settings()
 ai_gateway = build_ai_gateway(settings)
 registry = AgentRegistry()
 db = SupabaseREST(settings)
 store = PersistentStore(db)
+sales_service = SalesService(db)
 queue = JobQueue(settings.redis_url)
 
 @asynccontextmanager
@@ -36,10 +38,7 @@ async def lifespan(app: FastAPI):
     yield
     await queue.close()
 
-app = FastAPI(title=settings.app_name, version="0.4.1", lifespan=lifespan)
-# The frontend is a static Vercel app and does not use cookies. Keep CORS
-# resilient to changing *.vercel.app deployment hostnames while still allowing
-# explicitly configured production/custom origins.
+app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -48,6 +47,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(commercial_router)
 
 def product_response(row: dict) -> ProductResponse:
     metadata = dict(row.get("metadata") or {})
@@ -59,7 +59,7 @@ def job_response(row: dict) -> JobResponse:
     return JobResponse(id=str(row["id"]), job_type=row["job_type"], status=row["status"], attempts=row["attempts"], max_attempts=row["max_attempts"], error_message=row.get("error_message"), payload=row.get("payload") or {}, created_at=row["created_at"])
 
 @app.get("/")
-async def root(): return {"status":"ok","service":"hermes-pro-api","version":"0.4.1"}
+async def root(): return {"status":"ok","service":"hermes-pro-api","version":"0.5.0"}
 
 @app.get("/health", response_model=HealthResponse)
 async def health(): return HealthResponse(status="ok", service="hermes-pro-api", environment=settings.app_env)
@@ -163,7 +163,7 @@ async def quality(product_id: str, product: dict):
     return QualityResponse(score=result.score, decision=result.decision, dimensions=result.dimensions, findings=result.findings, safe_fixes=result.safe_fixes)
 
 @app.get("/api/v1/sales", response_model=SalesSummary)
-async def sales(range_start: date | None = None, range_end: date | None = None): return SalesSummary(**sales_service.summary(range_start, range_end))
+async def sales(range_start: date | None = None, range_end: date | None = None): return SalesSummary(**(await sales_service.summary(range_start, range_end)))
 
 @app.get("/api/v1/analytics", response_model=AnalyticsResponse)
 async def analytics(range_start: date | None = None, range_end: date | None = None): return AnalyticsResponse(**analytics_service.insights(range_start, range_end))
@@ -171,4 +171,5 @@ async def analytics(range_start: date | None = None, range_end: date | None = No
 @app.get("/api/v1/dashboard", response_model=DashboardResponse)
 async def dashboard():
     products_list = await store.list_products(); jobs_list = await store.list_jobs()
-    return DashboardResponse(products=len(products_list), active_jobs=sum(row["status"] in {"pending","running","retrying"} for row in jobs_list), completed_products=sum(row["status"] == "completed" for row in products_list), revenue=None, sales=None, integrations=integration_service.status())
+    sales_data = await sales_service.summary()
+    return DashboardResponse(products=len(products_list), active_jobs=sum(row["status"] in {"pending","running","retrying"} for row in jobs_list), completed_products=sum(row["status"] in {"completed"} for row in products_list), revenue=sales_data.get("revenue"), sales=sales_data.get("orders"), integrations=integration_service.status())

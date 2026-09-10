@@ -2,5 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build",
   "outputDirectory": "frontend/dist",
-  "framework": "vite"
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/health", "destination": "https://hermes-pro-api-m7wd.onrender.com/health" },
+    { "source": "/api/:path*", "destination": "https://hermes-pro-api-m7wd.onrender.com/api/:path*" }
+  ]
 }
