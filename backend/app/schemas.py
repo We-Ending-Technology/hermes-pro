@@ -14,3 +14,37 @@ class AgentRunResponse(BaseModel):
     agent: str
     status: str
     output: dict
+
+class ProductionRequest(BaseModel):
+    topic: str = Field(min_length=3, max_length=500)
+
+class ProductionResponse(BaseModel):
+    job_id: str
+    status: str
+
+class JobResponse(BaseModel):
+    id: str
+    job_type: str
+    status: str
+    attempts: int
+    error_message: str | None = None
+
+class DashboardResponse(BaseModel):
+    jobs: int
+    products: int
+    running: int
+    failures: int
+    worker: str
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+class ChatResponse(BaseModel):
+    response: str
+    provider: str
+    model: str
+
+class AutoProductionResponse(BaseModel):
+    topic: str
+    job_id: str
+    status: str
