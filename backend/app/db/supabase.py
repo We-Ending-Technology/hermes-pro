@@ -15,14 +15,17 @@ class SupabaseError(RuntimeError):
 
 class SupabaseREST:
     def __init__(self, settings: Settings) -> None:
-        if not settings.supabase_url or not settings.supabase_secret_key:
-            raise SupabaseError("SUPABASE_URL and SUPABASE_SECRET_KEY are required")
-        self.base_url = settings.supabase_url.rstrip("/") + "/rest/v1"
+        self.base_url = (settings.supabase_url or "").rstrip("/") + "/rest/v1"
+        self.secret_key = settings.supabase_secret_key
         self.headers = {
-            "apikey": settings.supabase_secret_key,
-            "Authorization": f"Bearer {settings.supabase_secret_key}",
+            "apikey": settings.supabase_secret_key or "",
+            "Authorization": f"Bearer {settings.supabase_secret_key or ''}",
             "Content-Type": "application/json",
         }
+
+    def _ensure_configured(self) -> None:
+        if not self.secret_key or not self.base_url.startswith("http"):
+            raise SupabaseError("SUPABASE_URL and SUPABASE_SECRET_KEY are required")
 
     @staticmethod
     def _json_value(value: Any) -> Any:
@@ -30,15 +33,13 @@ class SupabaseREST:
             return str(value)
         return value
 
-    async def request(self, method: str, table: str, *, params: dict[str, str] | None = None,
-                     json: Any = None, prefer: str | None = None) -> Any:
+    async def request(self, method: str, table: str, *, params: dict[str, str] | None = None, json: Any = None, prefer: str | None = None) -> Any:
+        self._ensure_configured()
         headers = dict(self.headers)
         if prefer:
             headers["Prefer"] = prefer
         async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.request(
-                method, f"{self.base_url}/{table}", headers=headers, params=params, json=json
-            )
+            response = await client.request(method, f"{self.base_url}/{table}", headers=headers, params=params, json=json)
         if response.is_error:
             raise SupabaseError(f"Supabase {method} {table} failed: {response.status_code} {response.text[:500]}")
         if not response.content:
