@@ -1,0 +1,2 @@
+import StatusBadge from "../components/StatusBadge";
+export default function Sales({ data }) { return <section className="panel"><span className="kicker">SALES</span><h2>Vendas reais</h2><div className="sales-empty"><StatusBadge status={data?.status || "unavailable"}/><strong>{data?.revenue == null ? "Sem receita carregada" : `R$ ${data.revenue.toFixed(2)}`}</strong><p>{data?.message || "Conecte o Hotmart para preencher esta área com dados reais."}</p></div></section>; }
