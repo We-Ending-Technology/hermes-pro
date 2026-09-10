@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import io
 import re
 from pathlib import Path
@@ -83,18 +84,16 @@ def build_docx(title: str, subtitle: str, content: str) -> bytes:
     doc.add_heading(title, 0)
     if subtitle:
         doc.add_paragraph(subtitle)
-    intro = data.get("introduction")
-    if intro:
+    if data.get("introduction"):
         doc.add_heading("Introdução", level=1)
-        doc.add_paragraph(str(intro))
+        doc.add_paragraph(str(data["introduction"]))
     for chapter in data.get("chapters", []):
         if isinstance(chapter, dict):
             doc.add_heading(str(chapter.get("title", "Capítulo")), level=1)
             doc.add_paragraph(str(chapter.get("content", "")))
-    conclusion = data.get("conclusion")
-    if conclusion:
+    if data.get("conclusion"):
         doc.add_heading("Conclusão", level=1)
-        doc.add_paragraph(str(conclusion))
+        doc.add_paragraph(str(data["conclusion"]))
     output = io.BytesIO()
     doc.save(output)
     return output.getvalue()
@@ -105,16 +104,16 @@ def build_pdf(title: str, subtitle: str, content: str) -> bytes:
     output = io.BytesIO()
     doc = SimpleDocTemplate(output, pagesize=A4, rightMargin=48, leftMargin=48, topMargin=48, bottomMargin=48)
     styles = getSampleStyleSheet()
-    story = [Paragraph(title, styles["Title"])]
+    story = [Paragraph(html.escape(title), styles["Title"])]
     if subtitle:
-        story += [Paragraph(subtitle, styles["Normal"]), Spacer(1, 18)]
+        story += [Paragraph(html.escape(subtitle), styles["Normal"]), Spacer(1, 18)]
     if data.get("introduction"):
-        story += [Paragraph("Introdução", styles["Heading1"]), Paragraph(str(data["introduction"]), styles["BodyText"])]
+        story += [Paragraph("Introdução", styles["Heading1"]), Paragraph(html.escape(str(data["introduction"])), styles["BodyText"])]
     for chapter in data.get("chapters", []):
         if isinstance(chapter, dict):
-            story += [Spacer(1, 12), Paragraph(str(chapter.get("title", "Capítulo")), styles["Heading1"]), Paragraph(str(chapter.get("content", "")), styles["BodyText"])]
+            story += [Spacer(1, 12), Paragraph(html.escape(str(chapter.get("title", "Capítulo"))), styles["Heading1"]), Paragraph(html.escape(str(chapter.get("content", ""))), styles["BodyText"])]
     if data.get("conclusion"):
-        story += [Spacer(1, 12), Paragraph("Conclusão", styles["Heading1"]), Paragraph(str(data["conclusion"]), styles["BodyText"])]
+        story += [Spacer(1, 12), Paragraph("Conclusão", styles["Heading1"]), Paragraph(html.escape(str(data["conclusion"])), styles["BodyText"])]
     doc.build(story)
     return output.getvalue()
 
