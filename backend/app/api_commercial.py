@@ -7,6 +7,7 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
 from .services.hotmart import HotmartClient, HotmartError
+from .services.integrations import integration_service
 from .services.persistence import PersistentStore
 from .services.telegram import TelegramNotifier
 
@@ -16,6 +17,23 @@ db = SupabaseREST(settings)
 store = PersistentStore(db)
 hotmart = HotmartClient(settings)
 telegram = TelegramNotifier(settings)
+
+
+@router.get("/ready")
+async def ready() -> dict[str, Any]:
+    """Readiness/configuration diagnostics without exposing secret values."""
+    statuses = {x["name"].lower(): x for x in integration_service.status()}
+    checks: list[dict[str, Any]] = []
+    for name in ("Gemini", "Supabase", "Redis", "Hotmart", "Telegram"):
+        item = statuses[name.lower()]
+        is_ready = item["status"] not in {"not_configured", "error", "offline"}
+        checks.append({
+            "name": name,
+            "status": "ready" if is_ready else "not_configured",
+            "configured": is_ready,
+            "message": item["message"],
+        })
+    return {"status": "ready" if all(x["configured"] for x in checks) else "degraded", "service": "hermes-pro-api", "checks": checks}
 
 
 @router.get("/api/v1/hotmart/products")
@@ -50,7 +68,6 @@ async def hotmart_webhook(request: Request, x_hotmart_hottok: str | None = Heade
     try:
         await store.append_event("hotmart", event_type, payload, external_id=str(event_id) if event_id else None, amount=float(amount) if amount is not None else None, currency=currency)
     except SupabaseError as exc:
-        # Duplicate external IDs are safe: Hotmart can retry webhook delivery.
         if "duplicate" not in str(exc).lower() and "unique" not in str(exc).lower():
             raise HTTPException(status_code=503, detail=str(exc)) from exc
     await telegram.send(f"Hermes Pro / Hotmart\nEvento: {event_type}\nValor: {amount} {currency or ''}".strip())
