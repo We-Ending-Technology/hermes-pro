@@ -89,12 +89,19 @@ async def integrations() -> list[IntegrationStatus]:
 
 @app.get("/api/v1/jobs", response_model=list[JobResponse])
 async def jobs() -> list[JobResponse]:
-    return [job_response(row) for row in await store.list_jobs()]
+    try:
+        rows = await store.list_jobs()
+    except SupabaseError:
+        return []
+    return [job_response(row) for row in rows]
 
 
 @app.get("/api/v1/jobs/{job_id}", response_model=JobResponse)
 async def get_job(job_id: str) -> JobResponse:
-    row = await store.get_job(job_id)
+    try:
+        row = await store.get_job(job_id)
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail="Persistência Supabase não configurada.") from exc
     if not row:
         raise HTTPException(status_code=404, detail="job not found")
     return job_response(row)
@@ -102,7 +109,11 @@ async def get_job(job_id: str) -> JobResponse:
 
 @app.get("/api/v1/products", response_model=list[ProductResponse])
 async def products() -> list[ProductResponse]:
-    return [product_response(row) for row in await store.list_products()]
+    try:
+        rows = await store.list_products()
+    except SupabaseError:
+        return []
+    return [product_response(row) for row in rows]
 
 
 @app.post("/api/v1/products", response_model=ProductResponse, status_code=202)
@@ -117,7 +128,10 @@ async def create_product(request: ProductCreateRequest) -> ProductResponse:
 
 @app.get("/api/v1/products/{product_id}", response_model=ProductResponse)
 async def get_product(product_id: str) -> ProductResponse:
-    row = await store.get_product(product_id)
+    try:
+        row = await store.get_product(product_id)
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail="Persistência Supabase não configurada.") from exc
     if not row:
         raise HTTPException(status_code=404, detail="product not found")
     return product_response(row)
@@ -155,6 +169,9 @@ async def analytics(range_start: date | None = None, range_end: date | None = No
 
 @app.get("/api/v1/dashboard", response_model=DashboardResponse)
 async def dashboard() -> DashboardResponse:
-    products_list = await store.list_products()
-    jobs_list = await store.list_jobs()
+    try:
+        products_list = await store.list_products()
+        jobs_list = await store.list_jobs()
+    except SupabaseError:
+        products_list, jobs_list = [], []
     return DashboardResponse(products=len(products_list), active_jobs=sum(row["status"] in {"pending", "running", "retrying"} for row in jobs_list), completed_products=sum(row["status"] == "completed" for row in products_list), revenue=None, sales=None, integrations=integration_service.status())
