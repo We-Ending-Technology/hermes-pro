@@ -13,10 +13,15 @@ class SalesService:
 
     async def summary(self, range_start: date | None = None, range_end: date | None = None) -> dict:
         params = {"select": "amount,currency,event_type,occurred_at", "order": "occurred_at.asc"}
+        filters = []
         if range_start:
-            params["occurred_at"] = f"gte.{datetime.combine(range_start, time.min, tzinfo=timezone.utc).isoformat()}"
+            filters.append(f"occurred_at.gte.{datetime.combine(range_start, time.min, tzinfo=timezone.utc).isoformat()}")
         if range_end:
-            params["occurred_at"] = f"lte.{datetime.combine(range_end, time.max, tzinfo=timezone.utc).isoformat()}"
+            filters.append(f"occurred_at.lte.{datetime.combine(range_end, time.max, tzinfo=timezone.utc).isoformat()}")
+        if len(filters) == 1:
+            params["occurred_at"] = filters[0].split("occurred_at.", 1)[1]
+        elif filters:
+            params["and"] = f"({','.join(filters)})"
 
         rows = await self.db.select("hermes_sales_events", params=params)
         purchases = [
