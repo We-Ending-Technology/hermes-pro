@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 from uuid import uuid4
@@ -19,6 +20,8 @@ from .services.persistence import PersistentStore
 from .services.quality import quality_service
 from .services.radar import radar_service
 from .services.sales import SalesService
+from .worker_runtime import run_worker_cycle
+from worker.main import process_product, recover_pending
 
 settings = get_settings()
 ai_gateway = build_ai_gateway(settings)
@@ -30,13 +33,27 @@ sales_service = SalesService(db)
 analytics_service = AnalyticsService(db)
 
 
+async def embedded_worker() -> None:
+    await recover_pending(store, queue)
+    while True:
+        await run_worker_cycle(store, queue, process_product)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     registry.register(DiagnosticAgent(ai_gateway))
     for agent_name in AGENT_NAMES:
         registry.register(PassThroughAgent(agent_name))
-    yield
-    await queue.close()
+    worker_task = asyncio.create_task(embedded_worker(), name="hermes-embedded-worker")
+    try:
+        yield
+    finally:
+        worker_task.cancel()
+        try:
+            await worker_task
+        except asyncio.CancelledError:
+            pass
+        await queue.close()
 
 
 app = FastAPI(title=settings.app_name, version="0.4.0", lifespan=lifespan)
