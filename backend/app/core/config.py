@@ -1,5 +1,5 @@
 from functools import lru_cache
-from pydantic import Field
+from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -11,12 +11,12 @@ class Settings(BaseSettings):
     database_url: str = Field(default="", validation_alias="DATABASE_URL")
     ai_provider: str = Field(default="stub", validation_alias="AI_PROVIDER")
     ai_api_key: str | None = Field(default=None, validation_alias="AI_API_KEY")
-    openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
+    openai_api_key: str | None = Field(default=None, validation_alias=AliasChoices("OPENAI_API_KEY", "AI_API_KEY", "OPENAI_KEY"))
     openai_model: str = Field(default="gpt-5.6-luna", validation_alias="OPENAI_MODEL")
-    gemini_api_key: str | None = Field(default=None, validation_alias="GEMINI_API_KEY")
+    gemini_api_key: str | None = Field(default=None, validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY"))
     gemini_model: str = Field(default="gemini-2.5-flash", validation_alias="GEMINI_MODEL")
-    supabase_url: str | None = Field(default=None, validation_alias="SUPABASE_URL")
-    supabase_secret_key: str | None = Field(default=None, validation_alias="SUPABASE_SECRET_KEY")
+    supabase_url: str | None = Field(default=None, validation_alias=AliasChoices("SUPABASE_URL", "SUPABASE_PROJECT_URL"))
+    supabase_secret_key: str | None = Field(default=None, validation_alias=AliasChoices("SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY", "SUPABASE_KEY"))
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
     cors_origins: str = Field(default="http://localhost:5173", validation_alias="CORS_ORIGINS")
     hotmart_client_id: str | None = Field(default=None, validation_alias="HOTMART_CLIENT_ID")
