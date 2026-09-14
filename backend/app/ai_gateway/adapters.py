@@ -23,28 +23,22 @@ class OpenAIAdapter(ConfiguredProviderAdapter):
         if system:
             input_items.append({"role": "system", "content": system})
         input_items.append({"role": "user", "content": prompt})
-        url = "https://api.openai.com/v1/responses"
-        auth_name = "Author" + "ization"
-        auth_value = "Bearer " + self.api_key
-        async with httpx.AsyncClient(timeout=60) as client:
+        async with httpx.AsyncClient(timeout=90) as client:
             response = await client.post(
-                url,
-                headers={auth_name: auth_value, "Content-Type": "application/json"},
+                "https://api.openai.com/v1/responses",
+                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
                 json={"model": self.model, "input": input_items},
             )
             response.raise_for_status()
             data = response.json()
         text = data.get("output_text")
         if not text:
-            try:
-                parts = []
-                for item in data["output"]:
-                    for content in item.get("content", []):
-                        if content.get("type") == "output_text" and content.get("text"):
-                            parts.append(content["text"])
-                text = "".join(parts)
-            except (KeyError, TypeError):
-                text = None
+            parts = []
+            for item in data.get("output", []):
+                for content in item.get("content", []):
+                    if content.get("type") == "output_text" and content.get("text"):
+                        parts.append(content["text"])
+            text = "".join(parts) or None
         if not text:
             raise RuntimeError("OpenAI returned an unexpected response")
         return AIResponse(content=text, provider=self.provider, model=self.model)
@@ -52,10 +46,11 @@ class OpenAIAdapter(ConfiguredProviderAdapter):
 
 class GeminiAdapter(ConfiguredProviderAdapter):
     provider = "gemini"
+    api_base = "https://generativelanguage.googleapis.com/v1"
 
     async def _available_generate_models(self, client: httpx.AsyncClient) -> list[str]:
         response = await client.get(
-            "https://generativelanguage.googleapis.com/v1beta/models",
+            f"{self.api_base}/models",
             headers={"x-goog-api-key": self.api_key or ""},
             params={"pageSize": 100},
         )
@@ -63,58 +58,54 @@ class GeminiAdapter(ConfiguredProviderAdapter):
         data = response.json()
         models: list[str] = []
         for item in data.get("models", []):
-            supported = item.get("supportedGenerationMethods") or []
+            supported = item.get("supportedGenerationMethods") or item.get("supportedActions") or []
             name = str(item.get("name") or "")
             if "generateContent" in supported and name.startswith("models/"):
                 models.append(name.removeprefix("models/"))
         return models
 
-    async def _resolve_model(self, client: httpx.AsyncClient) -> str:
+    async def _resolve_model(self, client: httpx.AsyncClient, exclude: set[str] | None = None) -> str:
         models = await self._available_generate_models(client)
-        if self.model in models:
-            return self.model
-        preferred = (
-            "gemini-3.6-flash",
-            "gemini-3.5-flash",
-            "gemini-2.5-flash",
-            "gemini-2.5-flash-lite",
-        )
+        excluded = exclude or set()
+        candidates = [m for m in models if m not in excluded]
+        preferred = ("gemini-3.6-flash", "gemini-3.5-flash", "gemini-3-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash")
         for candidate in preferred:
-            if candidate in models:
+            if candidate in candidates:
                 return candidate
-        if models:
-            return models[0]
+        if candidates:
+            return candidates[0]
         raise RuntimeError("Nenhum modelo Gemini com generateContent está disponível para esta chave/projeto")
 
     async def complete(self, prompt: str, *, system: str | None = None) -> AIResponse:
         if not self.api_key:
             raise RuntimeError("GEMINI_API_KEY is not configured")
-        contents = []
+        contents = [{"role": "user", "parts": [{"text": prompt}]}]
+        body = {"contents": contents}
         if system:
-            contents.append({"role": "user", "parts": [{"text": f"SYSTEM INSTRUCTIONS:\n{system}"}]})
-        contents.append({"role": "user", "parts": [{"text": prompt}]})
-
-        async with httpx.AsyncClient(timeout=60) as client:
+            body["systemInstruction"] = {"parts": [{"text": system}]}
+        async with httpx.AsyncClient(timeout=90) as client:
             model = self.model
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+            url = f"{self.api_base}/models/{model}:generateContent"
             response = await client.post(
                 url,
                 headers={"x-goog-api-key": self.api_key, "Content-Type": "application/json"},
-                json={"contents": contents},
+                json=body,
             )
             if response.status_code == 404:
-                model = await self._resolve_model(client)
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+                model = await self._resolve_model(client, exclude={model})
+                url = f"{self.api_base}/models/{model}:generateContent"
                 response = await client.post(
                     url,
                     headers={"x-goog-api-key": self.api_key, "Content-Type": "application/json"},
-                    json={"contents": contents},
+                    json=body,
                 )
             response.raise_for_status()
             data = response.json()
-
         try:
-            text = data["candidates"][0]["content"]["parts"][0]["text"]
+            parts = data["candidates"][0]["content"]["parts"]
+            text = "".join(str(part.get("text", "")) for part in parts if part.get("text"))
         except (KeyError, IndexError, TypeError) as exc:
             raise RuntimeError("Gemini returned an unexpected response") from exc
+        if not text:
+            raise RuntimeError("Gemini returned an empty response")
         return AIResponse(content=text, provider=self.provider, model=model)
