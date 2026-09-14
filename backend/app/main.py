@@ -13,12 +13,12 @@ from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
 from .queue import JobQueue
 from .schemas import *
-from .services.analytics import analytics_service
+from .services.analytics import AnalyticsService
 from .services.integrations import integration_service
 from .services.persistence import PersistentStore
 from .services.quality import quality_service
 from .services.radar import radar_service
-from .services.sales import sales_service
+from .services.sales import SalesService
 
 settings = get_settings()
 ai_gateway = build_ai_gateway(settings)
@@ -26,6 +26,8 @@ registry = AgentRegistry()
 db = SupabaseREST(settings)
 store = PersistentStore(db)
 queue = JobQueue(settings.redis_url)
+sales_service = SalesService(db)
+analytics_service = AnalyticsService(db)
 
 
 @asynccontextmanager
@@ -37,14 +39,15 @@ async def lifespan(app: FastAPI):
     await queue.close()
 
 
-app = FastAPI(title=settings.app_name, version="0.3.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.4.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 
 def product_response(row: dict) -> ProductResponse:
+    from .product_factory import PIPELINE_STAGES
     metadata = dict(row.get("metadata") or {})
     metadata["job_id"] = row.get("job_id")
-    return ProductResponse(id=str(row["id"]), topic=row["topic"], title=row.get("title"), status=row["status"], current_stage=row["current_stage"], stages=list(__import__("backend.app.product_factory", fromlist=["PIPELINE_STAGES"]).PIPELINE_STAGES), metadata=metadata, created_at=row["created_at"])
+    return ProductResponse(id=str(row["id"]), topic=row["topic"], title=row.get("title"), status=row["status"], current_stage=row["current_stage"], stages=list(PIPELINE_STAGES), metadata=metadata, created_at=row["created_at"])
 
 
 def job_response(row: dict) -> JobResponse:
@@ -53,7 +56,7 @@ def job_response(row: dict) -> JobResponse:
 
 @app.get("/")
 async def root() -> dict[str, str]:
-    return {"status": "ok", "service": "hermes-pro-api"}
+    return {"status": "ok", "service": "hermes-pro-api", "version": app.version}
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -80,15 +83,12 @@ async def run_agent(request: AgentRunRequest) -> AgentRunResponse:
 async def chat(request: ChatRequest) -> ChatResponse:
     now = datetime.now().astimezone()
     temporal_context = now.strftime("%Y-%m-%d %H:%M:%S %Z (weekday=%A)")
-    result = await ai_gateway.complete(
-        request.message,
-        system=(
-            "You are Hermes Pro, an operations assistant for digital products. "
-            "Be concise, truthful, and never invent sales, integrations, or completed jobs. "
-            f"The current server date and time is {temporal_context}. "
-            "When asked for the current date or time, use this value and state that it is server time."
-        ),
-    )
+    result = await ai_gateway.complete(request.message, system=(
+        "You are Hermes Pro, an operations assistant for digital products. "
+        "Be concise, truthful, and never invent sales, integrations, or completed jobs. "
+        f"The current server date and time is {temporal_context}. "
+        "When asked for the current date or time, use this value and state that it is server time."
+    ))
     return ChatResponse(response=result.content, provider=result.provider, model=result.model)
 
 
@@ -169,12 +169,18 @@ async def quality(product_id: str, product: dict) -> QualityResponse:
 
 @app.get("/api/v1/sales", response_model=SalesSummary)
 async def sales(range_start: date | None = None, range_end: date | None = None) -> SalesSummary:
-    return SalesSummary(**sales_service.summary(range_start, range_end))
+    try:
+        return SalesSummary(**await sales_service.summary(range_start, range_end))
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail="Persistência de vendas indisponível.") from exc
 
 
 @app.get("/api/v1/analytics", response_model=AnalyticsResponse)
 async def analytics(range_start: date | None = None, range_end: date | None = None) -> AnalyticsResponse:
-    return AnalyticsResponse(**analytics_service.insights(range_start, range_end))
+    try:
+        return AnalyticsResponse(**await analytics_service.insights(range_start, range_end))
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail="Persistência de analytics indisponível.") from exc
 
 
 @app.get("/api/v1/dashboard", response_model=DashboardResponse)
@@ -182,6 +188,15 @@ async def dashboard() -> DashboardResponse:
     try:
         products_list = await store.list_products()
         jobs_list = await store.list_jobs()
+        sales_data = await sales_service.summary()
     except SupabaseError:
         products_list, jobs_list = [], []
-    return DashboardResponse(products=len(products_list), active_jobs=sum(row["status"] in {"pending", "running", "retrying"} for row in jobs_list), completed_products=sum(row["status"] == "completed" for row in products_list), revenue=None, sales=None, integrations=integration_service.status())
+        sales_data = {"revenue": None, "orders": None}
+    return DashboardResponse(
+        products=len(products_list),
+        active_jobs=sum(row["status"] in {"pending", "running", "retrying"} for row in jobs_list),
+        completed_products=sum(row["status"] in {"completed", "content_ready"} for row in products_list),
+        revenue=sales_data.get("revenue"),
+        sales=sales_data.get("orders"),
+        integrations=integration_service.status(),
+    )
