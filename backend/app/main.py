@@ -34,9 +34,15 @@ analytics_service = AnalyticsService(db)
 
 
 async def embedded_worker() -> None:
-    await recover_pending(store, queue)
     while True:
-        await run_worker_cycle(store, queue, process_product)
+        try:
+            await recover_pending(store, queue)
+            while True:
+                await run_worker_cycle(store, queue, process_product)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            await asyncio.sleep(15)
 
 
 @asynccontextmanager
@@ -72,6 +78,7 @@ def job_response(row: dict) -> JobResponse:
 
 
 @app.get("/")
+@app.head("/")
 async def root() -> dict[str, str]:
     return {"status": "ok", "service": "hermes-pro-api", "version": app.version}
 
@@ -100,12 +107,15 @@ async def run_agent(request: AgentRunRequest) -> AgentRunResponse:
 async def chat(request: ChatRequest) -> ChatResponse:
     now = datetime.now().astimezone()
     temporal_context = now.strftime("%Y-%m-%d %H:%M:%S %Z (weekday=%A)")
-    result = await ai_gateway.complete(request.message, system=(
-        "You are Hermes Pro, an operations assistant for digital products. "
-        "Be concise, truthful, and never invent sales, integrations, or completed jobs. "
-        f"The current server date and time is {temporal_context}. "
-        "When asked for the current date or time, use this value and state that it is server time."
-    ))
+    try:
+        result = await ai_gateway.complete(request.message, system=(
+            "You are Hermes Pro, an operations assistant for digital products. "
+            "Be concise, truthful, and never invent sales, integrations, or completed jobs. "
+            f"The current server date and time is {temporal_context}. "
+            "When asked for the current date or time, use this value and state that it is server time."
+        ))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"AI Gateway indisponível: {exc}") from exc
     return ChatResponse(response=result.content, provider=result.provider, model=result.model)
 
 
@@ -178,7 +188,11 @@ async def radar_default() -> RadarResponse:
 
 @app.post("/api/v1/products/{product_id}/quality", response_model=QualityResponse)
 async def quality(product_id: str, product: dict) -> QualityResponse:
-    if not await store.get_product(product_id):
+    try:
+        row = await store.get_product(product_id)
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail="Persistência Supabase não configurada.") from exc
+    if not row:
         raise HTTPException(status_code=404, detail="product not found")
     result = quality_service.evaluate(product)
     return QualityResponse(score=result.score, decision=result.decision, dimensions=result.dimensions, findings=result.findings, safe_fixes=result.safe_fixes)
