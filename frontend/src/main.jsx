@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
+import "./workspace.css";
 
 const API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-m7wd.onrender.com";
 const nav = ["Início", "Hermes", "Fábrica", "Produtos", "Jobs", "Agentes"];
@@ -18,126 +19,45 @@ function App() {
 
   async function refresh() {
     try {
-      const [h, p, j] = await Promise.all([
-        fetch(`${API}/health`),
-        fetch(`${API}/api/v1/products`),
-        fetch(`${API}/api/v1/jobs`),
-      ]);
+      const [h, p, j] = await Promise.all([fetch(`${API}/health`), fetch(`${API}/api/v1/products`), fetch(`${API}/api/v1/jobs`)]);
       setOnline(h.ok);
       if (p.ok) setProducts(await p.json());
       if (j.ok) setJobs(await j.json());
     } catch { setOnline(false); }
   }
-
-  useEffect(() => {
-    refresh();
-    const id = setInterval(refresh, 8000);
-    return () => clearInterval(id);
-  }, []);
+  useEffect(() => { refresh(); const id = setInterval(refresh, 8000); return () => clearInterval(id); }, []);
 
   async function createProduct(e) {
-    e.preventDefault();
-    const value = topic.trim();
-    if (!value) return;
+    e.preventDefault(); const value = topic.trim(); if (!value) return;
     setNotice("Hermes recebeu o produto. A fábrica começou a trabalhar.");
     try {
-      const r = await fetch(`${API}/api/v1/products`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: value }),
-      });
-      const body = await r.json();
-      if (!r.ok) throw new Error(body.detail || "Falha ao criar produto");
-      setTopic("");
-      setView("Produtos");
-      await refresh();
+      const r = await fetch(`${API}/api/v1/products`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ topic: value }) });
+      const body = await r.json(); if (!r.ok) throw new Error(body.detail || "Falha ao criar produto");
+      setTopic(""); setView("Produtos"); await refresh();
     } catch (e) { setNotice(e.message); }
   }
 
   async function sendChat(e) {
-    e.preventDefault();
-    const text = chatInput.trim();
-    if (!text) return;
-    setChat(x => [...x, { role: "user", text }]);
-    setChatInput("");
+    e.preventDefault(); const text = chatInput.trim(); if (!text) return;
+    setChat(x => [...x, { role: "user", text }]); setChatInput("");
     try {
-      const r = await fetch(`${API}/api/v1/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
-      });
-      const b = await r.json();
-      setChat(x => [...x, { role: "assistant", text: r.ok ? b.response : `Erro do Hermes: ${b.detail || "sem resposta"}` }]);
-    } catch {
-      setChat(x => [...x, { role: "assistant", text: "API inacessível neste momento." }]);
-    }
+      const r = await fetch(`${API}/api/v1/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text }) });
+      const b = await r.json(); setChat(x => [...x, { role: "assistant", text: r.ok ? b.response : `Erro do Hermes: ${b.detail || "sem resposta"}` }]);
+    } catch { setChat(x => [...x, { role: "assistant", text: "API inacessível neste momento." }]); }
   }
 
-  function openProduct(product) {
-    setSelected(product);
-    setView("Produto");
-  }
+  function openProduct(product) { setSelected(product); setView("Produto"); }
 
-  return <div className="shell">
-    <aside className="sidebar">
-      <div className="brand"><div className="brand-mark">H</div><div><strong>HERMES</strong><span>PRO / COMMAND CENTER</span></div></div>
-      <div className="live-pill"><i className={online ? "online" : "offline"}></i>{online ? "SISTEMA ONLINE" : "API INDISPONÍVEL"}</div>
-      <nav>{nav.map(x => <button key={x} className={view === x ? "selected" : ""} onClick={() => setView(x)}>{x}</button>)}</nav>
-      <button onClick={refresh}>↻ Atualizar</button>
-    </aside>
-    <main className="main">
-      <header className="topbar"><div><span className="kicker">HERMES PRO</span><h1>{view === "Produto" ? "Produto" : view}</h1></div><span className="api-label"><i className={online ? "online" : "offline"}></i>{online ? "API conectada" : "Aguardando API"}</span></header>
-      {notice && <div className="notice">{notice}<button onClick={() => setNotice("")}>×</button></div>}
-      {view === "Início" && <Home products={products} jobs={jobs} go={setView} />}
-      {view === "Hermes" && <Chat chat={chat} input={chatInput} setInput={setChatInput} send={sendChat} />}
-      {view === "Fábrica" && <Factory topic={topic} setTopic={setTopic} submit={createProduct} />}
-      {view === "Produtos" && <Products items={products} openProduct={openProduct} />}
-      {view === "Produto" && selected && <ProductWorkspace product={selected} back={() => setView("Produtos")} />}
-      {view === "Jobs" && <Jobs items={jobs} />}
-      {view === "Agentes" && <Agents />}
-    </main>
-  </div>;
+  return <div className="shell"><aside className="sidebar"><div className="brand"><div className="brand-mark">H</div><div><strong>HERMES</strong><span>PRO / COMMAND CENTER</span></div></div><div className="live-pill"><i className={online ? "online" : "offline"}></i>{online ? "SISTEMA ONLINE" : "API INDISPONÍVEL"}</div><nav>{nav.map(x => <button key={x} className={view === x ? "selected" : ""} onClick={() => setView(x)}>{x}</button>)}</nav><button onClick={refresh}>↻ Atualizar</button></aside><main className="main"><header className="topbar"><div><span className="kicker">HERMES PRO</span><h1>{view === "Produto" ? "Produto" : view}</h1></div><span className="api-label"><i className={online ? "online" : "offline"}></i>{online ? "API conectada" : "Aguardando API"}</span></header>{notice && <div className="notice">{notice}<button onClick={() => setNotice("")}>×</button></div>}{view === "Início" && <Home products={products} jobs={jobs} go={setView} />}{view === "Hermes" && <Chat chat={chat} input={chatInput} setInput={setChatInput} send={sendChat} />}{view === "Fábrica" && <Factory topic={topic} setTopic={setTopic} submit={createProduct} />}{view === "Produtos" && <Products items={products} openProduct={openProduct} />}{view === "Produto" && selected && <ProductWorkspace product={selected} back={() => setView("Produtos")} />}{view === "Jobs" && <Jobs items={jobs} />}{view === "Agentes" && <Agents />}</main></div>;
 }
 
 function Home({ products, jobs, go }) { return <section className="page"><div className="hero"><div><span className="kicker violet">LIVE OPS</span><h2>Da ideia ao <em>produto.</em></h2><p>Hermes usa IA, worker e armazenamento para transformar um tema em produto digital verificável.</p><button className="primary" onClick={() => go("Fábrica")}>＋ Criar ebook</button></div></div><div className="metric-grid"><Metric label="Produtos" value={products.length} /><Metric label="Jobs" value={jobs.length} /><Metric label="Concluídos" value={products.filter(x => x.status === "completed").length} /></div><h3>Pipeline</h3><div className="pipeline"><span>IA</span><i>→</i><span>CONTEÚDO</span><i>→</i><span>QA</span><i>→</i><span>PDF + DOCX</span><i>→</i><span>CAPA</span></div></section>; }
 function Metric({ label, value }) { return <article className="metric"><span>{label}</span><strong>{value}</strong></article>; }
 function Chat({ chat, input, setInput, send }) { return <section className="page"><span className="kicker violet">HERMES / IA</span><h2>Converse com Hermes</h2><p>Esta conversa usa o gateway de IA do backend.</p><div className="chat-window">{chat.length === 0 && <div className="chat-empty"><h3>Hermes está aguardando.</h3><p>Pergunte sobre produção, produtos ou operação.</p></div>}{chat.map((m, i) => <div className={`bubble ${m.role}`} key={i}><b>{m.role === "user" ? "Você" : "Hermes"}</b><p>{m.text}</p></div>)}<form className="chat-form" onSubmit={send}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Fale com Hermes…" maxLength={4000} /><button className="primary">Enviar</button></form></div></section>; }
 function Factory({ topic, setTopic, submit }) { return <section className="page"><span className="kicker violet">PRODUCT FACTORY</span><h2>Criar ebook</h2><p>O backend gera estratégia, conteúdo, revisão, PDF, DOCX e capa.</p><form className="factory-form" onSubmit={submit}><textarea value={topic} onChange={e => setTopic(e.target.value)} placeholder="Ex.: Como ganhar dinheiro com IA para pequenos negócios" required minLength={3} /><button className="primary">Iniciar produção</button></form></section>; }
-
-function Products({ items, openProduct }) {
-  return <section className="page"><span className="kicker violet">CATÁLOGO</span><h2>Seus produtos</h2>
-    {items.length === 0 && <p>Nenhum produto.</p>}
-    <div className="product-grid">{items.map(p => <ProductCard key={p.id} product={p} openProduct={openProduct} />)}</div>
-  </section>;
-}
-
-function ProductCard({ product, openProduct }) {
-  const m = product.metadata || {};
-  const title = product.title || product.topic;
-  const completed = product.status === "completed";
-  return <article className={`product-card detailed ${completed ? "is-complete" : ""}`} onClick={() => openProduct(product)} tabIndex="0" onKeyDown={e => e.key === "Enter" && openProduct(product)}>
-    <div className="cover-box">{m.cover_url ? <img src={m.cover_url} alt={`Capa de ${title}`} /> : <div><b>H</b><small>{product.current_stage || product.status}</small></div>}</div>
-    <div className="product-info"><span className="tag">EBOOK</span><h4>{title}</h4><p>{product.topic}</p><p>Etapa: <strong>{product.current_stage}</strong> · Status: <strong>{product.status}</strong></p>{m.quality_score != null && <p>Qualidade: {m.quality_score}/100</p>}
-      <div className="asset-actions"><button type="button" onClick={e => { e.stopPropagation(); openProduct(product); }}>Abrir produto</button>{m.pdf_url && <a onClick={e => e.stopPropagation()} href={m.pdf_url} target="_blank" rel="noreferrer">PDF</a>}{m.document_url && <a onClick={e => e.stopPropagation()} href={m.document_url} target="_blank" rel="noreferrer">DOCX</a>}</div>
-    </div>
-  </article>;
-}
-
-function ProductWorkspace({ product, back }) {
-  const m = product.metadata || {};
-  const title = product.title || product.topic;
-  return <section className="page product-workspace">
-    <button className="back-button" onClick={back}>← Voltar para produtos</button>
-    <div className="workspace-head"><div><span className="kicker violet">PRODUCT WORKSPACE</span><h2>{title}</h2><p>{product.topic}</p></div><div className="status-stack"><strong>{product.status}</strong><span>{product.current_stage || "sem etapa"}</span>{m.quality_score != null && <span>QA {m.quality_score}/100</span>}</div></div>
-    <div className="workspace-grid">
-      <article className="asset-panel cover-panel"><div className="panel-title"><h3>Capa</h3><span>{m.cover_url ? "Gerada" : "Pendente"}</span></div>{m.cover_url ? <><img className="full-cover" src={m.cover_url} alt={`Capa de ${title}`} /><a className="primary link-button" href={m.cover_url} target="_blank" rel="noreferrer">Abrir capa</a></> : <div className="asset-empty"><strong>Capa ainda não disponível</strong><span>Ela aparece automaticamente quando a fábrica concluir a etapa de design.</span></div>}</article>
-      <article className="asset-panel reader-panel"><div className="panel-title"><h3>Leitor do ebook</h3><span>{m.pdf_url ? "PDF pronto" : "Aguardando PDF"}</span></div>{m.pdf_url ? <iframe className="pdf-reader" src={`${m.pdf_url}#toolbar=1&navpanes=0`} title={`Leitor de ${title}`} /> : <div className="asset-empty"><strong>PDF ainda não disponível</strong><span>Volte quando o job estiver concluído.</span></div>}<div className="reader-actions">{m.pdf_url && <a className="primary link-button" href={m.pdf_url} target="_blank" rel="noreferrer">Ler em tela cheia</a>}{m.document_url && <a className="secondary link-button" href={m.document_url} target="_blank" rel="noreferrer">Abrir DOCX</a>}</div></article>
-    </div>
-    <article className="details-panel"><h3>Arquivos e produção</h3><div className="file-row"><span>PDF</span><strong>{m.pdf_url ? "Disponível" : "Pendente"}</strong>{m.pdf_url && <a href={m.pdf_url} target="_blank" rel="noreferrer">Abrir</a>}</div><div className="file-row"><span>DOCX</span><strong>{m.document_url ? "Disponível" : "Pendente"}</strong>{m.document_url && <a href={m.document_url} target="_blank" rel="noreferrer">Abrir</a>}</div><div className="file-row"><span>Capa</span><strong>{m.cover_url ? "Disponível" : "Pendente"}</strong>{m.cover_url && <a href={m.cover_url} target="_blank" rel="noreferrer">Abrir</a>}</div><div className="file-row"><span>IA</span><strong>{m.ai_provider || "—"} {m.ai_model ? `· ${m.ai_model}` : ""}</strong></div></article>
-  </section>;
-}
-
+function Products({ items, openProduct }) { return <section className="page"><span className="kicker violet">CATÁLOGO</span><h2>Seus produtos</h2>{items.length === 0 && <p>Nenhum produto.</p>}<div className="product-grid">{items.map(p => <ProductCard key={p.id} product={p} openProduct={openProduct} />)}</div></section>; }
+function ProductCard({ product, openProduct }) { const m = product.metadata || {}; const title = product.title || product.topic; const completed = product.status === "completed"; return <article className={`product-card detailed ${completed ? "is-complete" : ""}`} onClick={() => openProduct(product)} tabIndex="0" onKeyDown={e => e.key === "Enter" && openProduct(product)}><div className="cover-box">{m.cover_url ? <img src={m.cover_url} alt={`Capa de ${title}`} /> : <div><b>H</b><small>{product.current_stage || product.status}</small></div>}</div><div className="product-info"><span className="tag">EBOOK</span><h4>{title}</h4><p>{product.topic}</p><p>Etapa: <strong>{product.current_stage}</strong> · Status: <strong>{product.status}</strong></p>{m.quality_score != null && <p>Qualidade: {m.quality_score}/100</p>}<div className="asset-actions"><button type="button" onClick={e => { e.stopPropagation(); openProduct(product); }}>Abrir produto</button>{m.pdf_url && <a onClick={e => e.stopPropagation()} href={m.pdf_url} target="_blank" rel="noreferrer">PDF</a>}{m.document_url && <a onClick={e => e.stopPropagation()} href={m.document_url} target="_blank" rel="noreferrer">DOCX</a>}</div></div></article>; }
+function ProductWorkspace({ product, back }) { const m = product.metadata || {}; const title = product.title || product.topic; return <section className="page product-workspace"><button className="back-button" onClick={back}>← Voltar para produtos</button><div className="workspace-head"><div><span className="kicker violet">PRODUCT WORKSPACE</span><h2>{title}</h2><p>{product.topic}</p></div><div className="status-stack"><strong>{product.status}</strong><span>{product.current_stage || "sem etapa"}</span>{m.quality_score != null && <span>QA {m.quality_score}/100</span>}</div></div><div className="workspace-grid"><article className="asset-panel cover-panel"><div className="panel-title"><h3>Capa</h3><span>{m.cover_url ? "Gerada" : "Pendente"}</span></div>{m.cover_url ? <><img className="full-cover" src={m.cover_url} alt={`Capa de ${title}`} /><a className="primary link-button" href={m.cover_url} target="_blank" rel="noreferrer">Abrir capa</a></> : <div className="asset-empty"><strong>Capa ainda não disponível</strong><span>Ela aparece automaticamente quando a fábrica concluir a etapa de design.</span></div>}</article><article className="asset-panel reader-panel"><div className="panel-title"><h3>Leitor do ebook</h3><span>{m.pdf_url ? "PDF pronto" : "Aguardando PDF"}</span></div>{m.pdf_url ? <iframe className="pdf-reader" src={`${m.pdf_url}#toolbar=1&navpanes=0`} title={`Leitor de ${title}`} /> : <div className="asset-empty"><strong>PDF ainda não disponível</strong><span>Volte quando o job estiver concluído.</span></div>}<div className="reader-actions">{m.pdf_url && <a className="primary link-button" href={m.pdf_url} target="_blank" rel="noreferrer">Ler em tela cheia</a>}{m.document_url && <a className="secondary link-button" href={m.document_url} target="_blank" rel="noreferrer">Abrir DOCX</a>}</div></article></div><article className="details-panel"><h3>Arquivos e produção</h3><div className="file-row"><span>PDF</span><strong>{m.pdf_url ? "Disponível" : "Pendente"}</strong>{m.pdf_url && <a href={m.pdf_url} target="_blank" rel="noreferrer">Abrir</a>}</div><div className="file-row"><span>DOCX</span><strong>{m.document_url ? "Disponível" : "Pendente"}</strong>{m.document_url && <a href={m.document_url} target="_blank" rel="noreferrer">Abrir</a>}</div><div className="file-row"><span>Capa</span><strong>{m.cover_url ? "Disponível" : "Pendente"}</strong>{m.cover_url && <a href={m.cover_url} target="_blank" rel="noreferrer">Abrir</a>}</div><div className="file-row"><span>IA</span><strong>{m.ai_provider || "—"} {m.ai_model ? `· ${m.ai_model}` : ""}</strong></div></article></section>; }
 function Jobs({ items }) { return <section className="page"><span className="kicker violet">ORCHESTRATION</span><h2>Jobs</h2>{items.map(j => <article className="job" key={j.id}><strong>{j.job_type}</strong><span>{j.status}</span><small>{j.attempts}/{j.max_attempts}</small>{j.error_message && <p>{j.error_message}</p>}</article>)}</section>; }
 function Agents() { return <section className="page"><span className="kicker violet">AGENT SYSTEM</span><h2>Agentes</h2><div className="agent-grid">{["RADAR","STRATEGIST","WRITER","EDITOR","DESIGNER","PUBLISHER","GUARDIAN"].map(x => <article className="agent" key={x}><strong>{x}</strong><span>standby até existir execução real</span></article>)}</div></section>; }
-
-createRoot(document.getElementById("root")).render(<App />);
+createRoot(document.getElementById("root")).render(<App/>);
