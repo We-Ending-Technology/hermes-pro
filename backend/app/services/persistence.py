@@ -32,9 +32,8 @@ class PersistentStore:
                 "idempotency_key": idempotency_key, "created_at": now, "updated_at": now,
             })
         except Exception:
-            # Avoid leaving an apparently queued product without a job. The API will surface the error.
             raise
-        product = await self.db.update("hermes_products", {"job_id": job["id"], "updated_at": now}, {"id": f"eq.{product['id']}"})
+        product = await self.db.update("hermes_products", {"job_id": job["id"], "updated_at": now}, where={"id": f"eq.{product['id']}"})
         return product, job
 
     async def get_product(self, product_id: str) -> dict[str, Any] | None:
