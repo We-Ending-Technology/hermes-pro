@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     database_url: str = Field(default="", validation_alias="DATABASE_URL")
     ai_provider: str = Field(default="stub", validation_alias="AI_PROVIDER")
     ai_api_key: str | None = Field(default=None, validation_alias="AI_API_KEY")
+    openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
+    openai_model: str = Field(default="gpt-5.6-luna", validation_alias="OPENAI_MODEL")
     gemini_api_key: str | None = Field(default=None, validation_alias="GEMINI_API_KEY")
     gemini_model: str = Field(default="gemini-2.5-flash", validation_alias="GEMINI_MODEL")
     supabase_url: str | None = Field(default=None, validation_alias="SUPABASE_URL")
