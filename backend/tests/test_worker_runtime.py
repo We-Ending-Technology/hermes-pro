@@ -1,3 +1,5 @@
+import asyncio
+
 from backend.app.worker_runtime import run_worker_cycle
 
 
@@ -18,13 +20,13 @@ async def fake_process_product(job_id, store, queue):
     return job_id
 
 
-async def test_worker_cycle_processes_a_dequeued_job():
-    result = await run_worker_cycle(FakeStore(), FakeQueue(), fake_process_product)
+def test_worker_cycle_processes_a_dequeued_job():
+    result = asyncio.run(run_worker_cycle(FakeStore(), FakeQueue(), fake_process_product))
     assert result == "job-1"
 
 
-async def test_worker_cycle_returns_none_when_queue_is_empty():
+def test_worker_cycle_returns_none_when_queue_is_empty():
     queue = FakeQueue()
-    await run_worker_cycle(FakeStore(), queue, fake_process_product)
-    result = await run_worker_cycle(FakeStore(), queue, fake_process_product)
+    asyncio.run(run_worker_cycle(FakeStore(), queue, fake_process_product))
+    result = asyncio.run(run_worker_cycle(FakeStore(), queue, fake_process_product))
     assert result is None
