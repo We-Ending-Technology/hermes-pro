@@ -15,7 +15,9 @@ class SupabaseError(RuntimeError):
 
 class SupabaseREST:
     def __init__(self, settings: Settings) -> None:
-        self.base_url = (settings.supabase_url or "").rstrip("/") + "/rest/v1"
+        self.project_url = (settings.supabase_url or "").rstrip("/")
+        self.base_url = self.project_url + "/rest/v1"
+        self.storage_url = self.project_url + "/storage/v1"
         self.secret_key = settings.supabase_secret_key
         self.headers = {
             "apikey": settings.supabase_secret_key or "",
@@ -24,7 +26,7 @@ class SupabaseREST:
         }
 
     def _ensure_configured(self) -> None:
-        if not self.secret_key or not self.base_url.startswith("http"):
+        if not self.secret_key or not self.project_url.startswith("http"):
             raise SupabaseError("SUPABASE_URL and SUPABASE_SECRET_KEY are required")
 
     @staticmethod
@@ -61,6 +63,20 @@ class SupabaseREST:
         if not result:
             raise SupabaseError(f"Supabase update {table} matched no rows")
         return result[0]
+
+    async def upload(self, bucket: str, path: str, content: bytes, content_type: str) -> str:
+        self._ensure_configured()
+        headers = {
+            "apikey": self.secret_key or "",
+            "Authorization": f"Bearer {self.secret_key or ''}",
+            "Content-Type": content_type,
+            "x-upsert": "true",
+        }
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(f"{self.storage_url}/object/{bucket}/{path}", headers=headers, content=content)
+        if response.is_error:
+            raise SupabaseError(f"Supabase storage upload failed: {response.status_code} {response.text[:500]}")
+        return f"{self.project_url}/storage/v1/object/public/{bucket}/{path}"
 
     async def health(self) -> bool:
         try:
