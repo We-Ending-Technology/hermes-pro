@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
@@ -76,7 +76,17 @@ async def run_agent(request: AgentRunRequest):
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    result = await ai_gateway.complete(request.message, system="You are Hermes Pro, an operations assistant for digital products. Be concise, truthful, and never invent sales, integrations, or completed jobs.")
+    now = datetime.now().astimezone()
+    temporal_context = now.strftime("%Y-%m-%d %H:%M:%S %Z (weekday=%A)")
+    result = await ai_gateway.complete(
+        request.message,
+        system=(
+            "You are Hermes Pro, an operations assistant for digital products. "
+            "Be concise, truthful, and never invent sales, integrations, or completed jobs. "
+            f"The current server date and time is {temporal_context}. "
+            "When asked for the current date or time, use this value and state that it is server time."
+        ),
+    )
     return ChatResponse(response=result.content, provider=result.provider, model=result.model)
 
 @app.get("/api/v1/integrations", response_model=list[IntegrationStatus])
