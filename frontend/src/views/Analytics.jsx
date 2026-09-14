@@ -1,0 +1,1 @@
+export default function Analytics({ data }) { return <section className="panel"><span className="kicker">ANALYTICS</span><h2>Aprendizado operacional</h2>{(data?.insights||[]).map(x=><div className="insight" key={x}>{x}</div>)}<h3>Próximos experimentos</h3>{(data?.experiments||[]).map(x=><div className="insight" key={x}>{x}</div>)}</section>; }
