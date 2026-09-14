@@ -1,8 +1,16 @@
 from __future__ import annotations
 
-import asyncio
+import io
 import json
 import logging
+from urllib.parse import quote
+
+import httpx
+from docx import Document
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import cm
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 from backend.app.ai_gateway.factory import build_ai_gateway
 from backend.app.core.config import get_settings
@@ -16,66 +24,132 @@ logger = logging.getLogger("hermes.worker")
 MAX_ATTEMPTS = 3
 
 
+def _parse_json(text: str) -> dict:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned.startswith("json"):
+            cleaned = cleaned[4:]
+    try:
+        value = json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("A IA retornou JSON inválido para o pipeline") from exc
+    if not isinstance(value, dict):
+        raise RuntimeError("A IA retornou uma estrutura inválida para o pipeline")
+    return value
+
+
+def _ebook_text(title: str, writer_data: dict) -> list[tuple[str, str]]:
+    sections: list[tuple[str, str]] = [(title, writer_data.get("introduction", ""))]
+    for chapter in writer_data.get("chapters", []):
+        if isinstance(chapter, dict):
+            sections.append((str(chapter.get("title", "Capítulo")), str(chapter.get("content", ""))))
+    sections.append(("Conclusão", str(writer_data.get("conclusion", ""))))
+    return [(heading, body) for heading, body in sections if body.strip()]
+
+
+def _make_pdf(title: str, writer_data: dict) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2 * cm, leftMargin=2 * cm, topMargin=2 * cm, bottomMargin=2 * cm)
+    styles = getSampleStyleSheet()
+    story = []
+    for heading, body in _ebook_text(title, writer_data):
+        story.append(Paragraph(heading, styles["Title"] if heading == title else styles["Heading1"]))
+        story.append(Spacer(1, 0.35 * cm))
+        for paragraph in body.split("\n"):
+            if paragraph.strip():
+                story.append(Paragraph(paragraph.strip(), styles["BodyText"]))
+                story.append(Spacer(1, 0.18 * cm))
+    doc.build(story)
+    return buffer.getvalue()
+
+
+def _make_docx(title: str, writer_data: dict) -> bytes:
+    document = Document()
+    document.add_heading(title, level=0)
+    for heading, body in _ebook_text(title, writer_data)[1:]:
+        document.add_heading(heading, level=1)
+        for paragraph in body.split("\n"):
+            if paragraph.strip():
+                document.add_paragraph(paragraph.strip())
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+async def _make_cover(title: str, topic: str) -> bytes:
+    prompt = quote(f"professional ebook cover, modern editorial design, title: {title}, topic: {topic}, no logos, no watermark, clean typography, portrait 2:3")
+    url = f"https://image.pollinations.ai/prompt/{prompt}?width=1200&height=1800&nologo=true"
+    async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        if not response.content:
+            raise RuntimeError("O provedor de capa retornou um arquivo vazio")
+        return response.content
+
+
 async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) -> None:
     job = await store.get_job(job_id)
-    if not job or job["job_type"] != "product_generation":
+    if not job or job["job_type"] != "product_generation" or job["status"] == "completed":
         return
-    if job["status"] == "completed":
-        return
-    if int(job["attempts"]) >= MAX_ATTEMPTS:
-        await store.update_job(job_id, "failed", attempts=job["attempts"], error_message="maximum attempts reached")
-        return
-
     attempts = int(job["attempts"]) + 1
     product_id = (job.get("payload") or {}).get("product_id")
     topic = (job.get("payload") or {}).get("topic")
     if not product_id or not topic:
         await store.update_job(job_id, "failed", attempts=attempts, error_message="invalid product_generation payload")
         return
+    if attempts > MAX_ATTEMPTS:
+        await store.update_job(job_id, "failed", attempts=attempts, error_message="maximum attempts reached")
+        return
 
     try:
         await store.update_job(job_id, "running", attempts=attempts, error_message=None)
-        gateway = build_ai_gateway(get_settings())
+        settings = get_settings()
+        gateway = build_ai_gateway(settings)
         await store.update_product(product_id, status="generating", current_stage="topic")
+
         strategist = await gateway.complete(
             f"Create a concise product strategy for the digital ebook topic: {topic}. Return valid JSON with keys: positioning, audience, title, subtitle, outline (array of chapter titles).",
             system="You are the Hermes Pro strategist. Return only valid JSON. Do not claim market data you do not have.",
         )
-        await store.update_product(product_id, current_stage="writer")
-        writer = await gateway.complete(
-            f"Using this strategy, write the ebook for topic '{topic}'. Strategy: {strategist.content}\nReturn valid JSON with keys: introduction, chapters (array of objects with title and content), conclusion.",
-            system="You are the Hermes Pro writer. Return only valid JSON. Produce original, useful educational content and do not fabricate citations.",
-        )
-        await store.update_product(product_id, current_stage="reviewer")
-        reviewer = await gateway.complete(
-            f"Review this proposed ebook for topic '{topic}'. Identify factual, structural and readability problems and provide a quality score from 0-100. Return valid JSON with keys: score, findings (array), approved (boolean).\nSTRATEGY: {strategist.content}\nEBOOK: {writer.content}",
-            system="You are the Hermes Pro reviewer. Return only valid JSON. Be conservative: approval requires score >= 80.",
-        )
-        await store.update_product(product_id, current_stage="validation")
-        try:
-            strategy_data = json.loads(strategist.content)
-            review_data = json.loads(reviewer.content)
-        except (ValueError, TypeError, json.JSONDecodeError) as exc:
-            raise RuntimeError("Gemini returned invalid JSON for the product pipeline") from exc
+        strategy_data = _parse_json(strategist.content)
+        title = str(strategy_data.get("title") or topic).strip()
+        await store.update_product(product_id, current_stage="writer", title=title, metadata={"strategy": strategy_data, "ai_provider": strategist.provider, "ai_model": strategist.model})
 
+        writer = await gateway.complete(
+            f"Using this strategy, write a complete practical ebook for topic '{topic}'. Strategy: {json.dumps(strategy_data, ensure_ascii=False)}. Return valid JSON with keys: introduction, chapters (array of objects with title and content), conclusion. Write original useful content; do not fabricate citations or statistics.",
+            system="You are the Hermes Pro writer. Return only valid JSON. Make the ebook substantial enough to be useful, with clear sections and practical examples.",
+        )
+        writer_data = _parse_json(writer.content)
+        await store.update_product(product_id, current_stage="reviewer")
+
+        reviewer = await gateway.complete(
+            f"Review this ebook for topic '{topic}'. Return valid JSON with keys score (0-100), findings (array), approved (boolean). Approval requires score >= 80. EBOOK: {json.dumps(writer_data, ensure_ascii=False)}",
+            system="You are the Hermes Pro reviewer. Be conservative and identify factual, structural and readability problems. Do not invent external facts.",
+        )
+        review_data = _parse_json(reviewer.content)
         score = int(review_data.get("score", 0))
         approved = bool(review_data.get("approved")) and score >= 80
-        metadata = {
-            "strategy": strategy_data,
-            "content": writer.content,
-            "review": review_data,
-            "quality_score": score,
-            "ai_provider": strategist.provider,
-            "ai_model": strategist.model,
-        }
-        title = strategy_data.get("title") if isinstance(strategy_data, dict) else None
+        metadata = {"strategy": strategy_data, "content": writer_data, "review": review_data, "quality_score": score, "ai_provider": strategist.provider, "ai_model": strategist.model}
+        await store.update_product(product_id, current_stage="validation", metadata=metadata)
         if not approved:
-            await store.update_product(product_id, status="review_required", current_stage="reviewer", title=title, metadata=metadata)
-        else:
-            # This job completes the AI content phase only. Document, cover and publication must not be marked complete here.
-            await store.update_product(product_id, status="content_ready", current_stage="validation", title=title, metadata=metadata)
+            await store.update_product(product_id, status="review_required", current_stage="reviewer", metadata=metadata)
+            await store.update_job(job_id, "completed", attempts=attempts)
+            return
+
+        pdf_bytes = _make_pdf(title, writer_data)
+        docx_bytes = _make_docx(title, writer_data)
+        cover_bytes = await _make_cover(title, topic)
+        await store.update_product(product_id, current_stage="document")
+        pdf_url = await store.db.upload("ebooks", f"{product_id}/ebook.pdf", pdf_bytes, "application/pdf")
+        docx_url = await store.db.upload("exports", f"{product_id}/ebook.docx", docx_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        await store.update_product(product_id, current_stage="cover")
+        cover_url = await store.db.upload("covers", f"{product_id}/cover.jpg", cover_bytes, "image/jpeg")
+
+        metadata.update({"pdf_url": pdf_url, "document_url": docx_url, "cover_url": cover_url, "document_path": f"ebooks/{product_id}/ebook.pdf", "docx_path": f"exports/{product_id}/ebook.docx", "cover_path": f"covers/{product_id}/cover.jpg"})
+        await store.update_product(product_id, status="completed", current_stage="publication", title=title, metadata=metadata)
         await store.update_job(job_id, "completed", attempts=attempts)
-        logger.info("completed product_generation job=%s product=%s approved=%s", job_id, product_id, approved)
+        logger.info("completed full product job=%s product=%s", job_id, product_id)
     except Exception as exc:
         message = str(exc)[:1000]
         if attempts < MAX_ATTEMPTS:
@@ -105,13 +179,13 @@ async def run() -> None:
             if job_id:
                 await process_product(job_id, store, queue)
             else:
-                # Recovery path: jobs survive worker/Redis restarts because their source of truth is Supabase.
                 await recover_pending(store, queue)
     finally:
         await queue.close()
 
 
 if __name__ == "__main__":
+    import asyncio
     try:
         asyncio.run(run())
     except KeyboardInterrupt:
