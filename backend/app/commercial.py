@@ -49,13 +49,11 @@ def mark_publication_ready(metadata: dict[str, Any]) -> dict[str, Any]:
 def parse_chat_command(message: str) -> dict[str, Any] | None:
     text = " ".join(message.strip().split())
     lower = text.lower()
-    if lower.startswith("crie um ebook sobre "):
-        topic = text[len("crie um ebook sobre "):].strip()
-        return {"action": "create_product", "topic": topic} if topic else None
-    if lower.startswith("criar ebook sobre "):
-        topic = text[len("criar ebook sobre "):].strip()
-        return {"action": "create_product", "topic": topic} if topic else None
-    match = re.search(r"(?:mude|alter[e|a]) o preço.*?r\$\s*([0-9]+(?:[.,][0-9]{1,2})?)", lower)
+    for prefix in ("crie um ebook sobre ", "criar ebook sobre "):
+        if lower.startswith(prefix):
+            topic = text[len(prefix):].strip()
+            return {"action": "create_product", "topic": topic} if topic else None
+    match = re.search(r"(?:mude|mudar|altere|alterar) o preço.*?r\$\s*([0-9]+(?:[.,][0-9]{1,2})?)", lower)
     if match:
         return {"action": "set_price", "price": float(match.group(1).replace(",", "."))}
     return None
