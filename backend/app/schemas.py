@@ -64,6 +64,38 @@ class RadarResponse(BaseModel):
     dimensions: dict[str, int]
     findings: list[str]
 
+class OpportunityCreateRequest(BaseModel):
+    type: str = Field(default="product", pattern="^(product|service)$")
+    title: str = Field(min_length=3, max_length=240)
+    description: str | None = None
+    source: str | None = None
+    source_url: str | None = None
+    signals: dict[str, Any] = Field(default_factory=dict)
+    score: float | None = Field(default=None, ge=0, le=100)
+    confidence: float | None = Field(default=None, ge=0, le=100)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    idempotency_key: str | None = Field(default=None, max_length=200)
+
+class OpportunityResponse(BaseModel):
+    id: str
+    type: str
+    title: str
+    description: str | None = None
+    source: str | None = None
+    source_url: str | None = None
+    signals: dict[str, Any] = Field(default_factory=dict)
+    score: float | None = None
+    confidence: float | None = None
+    status: str
+    idempotency_key: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+class ControlRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    enabled: bool
+
 class QualityResponse(BaseModel):
     score: int
     decision: str
