@@ -14,6 +14,7 @@ from .db.supabase import SupabaseREST, SupabaseError
 from .queue import JobQueue
 from .schemas import *
 from .services.analytics import AnalyticsService
+from .services.commands import parse_command
 from .services.controls import ControlService
 from .services.integrations import integration_service
 from .services.opportunities import OpportunityService
@@ -99,6 +100,37 @@ async def chat(request: ChatRequest) -> ChatResponse:
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"AI Gateway indisponível: {exc}") from exc
     return ChatResponse(response=result.content, provider=result.provider, model=result.model)
+
+
+@app.post("/api/v1/command")
+async def command(request: CommandRequest) -> dict:
+    action = parse_command(request.message)
+    if not action:
+        return {"status": "unrecognized", "message": "Comando não reconhecido. Use o chat para linguagem livre ou um comando operacional conhecido."}
+
+    if action["action"] == "create_product":
+        allowed, reason = await control_service.allows("produce")
+        if not allowed:
+            raise HTTPException(status_code=409, detail=f"produção bloqueada: {reason}")
+        product, job = await store.create_product_and_job(action["topic"], {"origin": "command"}, None)
+        await queue.enqueue(str(job["id"]))
+        return {"status": "accepted", "action": "create_product", "product_id": str(product["id"]), "job_id": str(job["id"])}
+
+    if action["action"] == "find_opportunities":
+        rows = await opportunity_service.list(20)
+        return {"status": "available", "action": action["action"], "opportunities": rows}
+
+    if action["action"] == "find_services":
+        rows = await service_opportunity_service.list(20)
+        return {"status": "available", "action": action["action"], "services": rows}
+
+    if action["action"] == "pause_all":
+        return {"status": "updated", "action": action["action"], "controls": await control_service.update({"kill_switch": True})}
+
+    if action["action"] == "resume_all":
+        return {"status": "updated", "action": action["action"], "controls": await control_service.update({"kill_switch": False})}
+
+    return {"status": "recognized", **action}
 
 
 @app.get("/api/v1/integrations", response_model=list[IntegrationStatus])
@@ -187,7 +219,7 @@ async def create_opportunity(request: OpportunityCreateRequest) -> OpportunityRe
 
 
 @app.post("/api/v1/opportunities/{opportunity_id}/score")
-async def score_opportunity(opportunity_id: str) -> dict:
+async def score_opportunity_endpoint(opportunity_id: str) -> dict:
     try:
         return await opportunity_service.score(opportunity_id)
     except KeyError as exc:
