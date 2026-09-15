@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 from typing import Any
 
 from .commerce_store import CommerceStore
-from .opportunities import score_opportunity
+from .opportunities import OpportunityEngine, OpportunityInput
 
 
 TOPICS = (
@@ -22,6 +22,9 @@ TOPICS = (
 )
 
 
+_opportunity_engine = OpportunityEngine()
+
+
 def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
 
@@ -29,9 +32,13 @@ def _clean(text: str) -> str:
 async def discover_public_signals(store: CommerceStore, limit: int = 8) -> list[dict[str, Any]]:
     """Collect public Google News RSS headlines as market signals.
 
-    This is a signal source, not proof of demand. Missing metrics remain missing.
+    News headlines are discovery signals only. They are not treated as proof of
+    demand, revenue, conversion, pricing, or sales. Missing dimensions remain
+    missing so the opportunity confidence score is not artificially inflated.
     """
     created: list[dict[str, Any]] = []
+    per_topic = max(1, limit // len(TOPICS))
+
     for topic in TOPICS:
         query = urllib.parse.quote(topic)
         url = f"https://news.google.com/rss/search?q={query}&hl=pt-BR&gl=BR&ceid=BR:pt-419"
@@ -41,14 +48,21 @@ async def discover_public_signals(store: CommerceStore, limit: int = 8) -> list[
             root = ET.fromstring(raw)
         except Exception:
             continue
-        for item in root.findall("./channel/item")[: max(1, limit // len(TOPICS))]:
+
+        for item in root.findall("./channel/item")[:per_topic]:
             title = _clean(item.findtext("title") or "")
             link = item.findtext("link") or ""
             if not title:
                 continue
+
             key = hashlib.sha256(f"news:{title}:{link}".encode()).hexdigest()[:32]
             signals = {"public_news_signal": 1.0, "topic": topic}
-            scored = score_opportunity(demand=1.0)
+
+            # No demand metric is available from the RSS headline itself.
+            # Keep demand unknown instead of converting a news mention into
+            # fabricated demand evidence.
+            scored = _opportunity_engine.score(OpportunityInput())
+
             try:
                 row = await store.create_opportunity(
                     {
@@ -68,4 +82,5 @@ async def discover_public_signals(store: CommerceStore, limit: int = 8) -> list[
                 created.append(row)
             except Exception:
                 continue
+
     return created
