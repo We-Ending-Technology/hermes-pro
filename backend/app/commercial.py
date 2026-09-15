@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
@@ -34,18 +35,27 @@ def build_commercial_metadata(
 def mark_publication_ready(metadata: dict[str, Any]) -> dict[str, Any]:
     result = dict(metadata)
     required = (
-        result.get("title"),
-        result.get("description"),
-        result.get("audience"),
-        result.get("category"),
-        result.get("keywords"),
-        result.get("suggested_price"),
-        result.get("pdf_url"),
-        result.get("document_url"),
-        result.get("cover_url"),
+        result.get("title"), result.get("description"), result.get("audience"),
+        result.get("category"), result.get("keywords"), result.get("suggested_price"),
+        result.get("pdf_url"), result.get("document_url"), result.get("cover_url"),
         result.get("quality_score", 0) >= 80,
     )
     ready = all(required)
     result["publication_ready"] = ready
     result["publication_status"] = "ready_to_sell" if ready else "not_ready"
     return result
+
+
+def parse_chat_command(message: str) -> dict[str, Any] | None:
+    text = " ".join(message.strip().split())
+    lower = text.lower()
+    if lower.startswith("crie um ebook sobre "):
+        topic = text[len("crie um ebook sobre "):].strip()
+        return {"action": "create_product", "topic": topic} if topic else None
+    if lower.startswith("criar ebook sobre "):
+        topic = text[len("criar ebook sobre "):].strip()
+        return {"action": "create_product", "topic": topic} if topic else None
+    match = re.search(r"(?:mude|alter[e|a]) o preço.*?r\$\s*([0-9]+(?:[.,][0-9]{1,2})?)", lower)
+    if match:
+        return {"action": "set_price", "price": float(match.group(1).replace(",", "."))}
+    return None
