@@ -25,6 +25,9 @@ class ChatResponse(BaseModel):
     provider: str
     model: str
 
+class CommandRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
 class ProductCreateRequest(BaseModel):
     topic: str = Field(min_length=3, max_length=240)
     metadata: dict[str, Any] = Field(default_factory=dict)
