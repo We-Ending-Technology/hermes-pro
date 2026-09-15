@@ -3,10 +3,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 from uuid import UUID
+import logging
 
 import httpx
 
 from ..core.config import Settings
+
+
+logger = logging.getLogger("hermes.supabase")
 
 
 class SupabaseError(RuntimeError):
@@ -25,7 +29,7 @@ class SupabaseREST:
 
     def _ensure_configured(self) -> None:
         if not self.secret_key or not self.base_url.startswith("http"):
-            raise SupabaseError("SUPABASE_URL and SUPABASE_SECRET_KEY are required")
+            raise SupabaseError("SUPABASE_URL and a Supabase service key are required")
 
     @staticmethod
     def _json_value(value: Any) -> Any:
@@ -41,7 +45,9 @@ class SupabaseREST:
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.request(method, f"{self.base_url}/{table}", headers=headers, params=params, json=json)
         if response.is_error:
-            raise SupabaseError(f"Supabase {method} {table} failed: {response.status_code} {response.text[:500]}")
+            detail = response.text[:500]
+            logger.error("Supabase request failed: method=%s table=%s status=%s detail=%s", method, table, response.status_code, detail)
+            raise SupabaseError(f"Supabase {method} {table} failed: {response.status_code} {detail}")
         if not response.content:
             return None
         return response.json()
