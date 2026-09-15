@@ -15,6 +15,8 @@ from .db.supabase import SupabaseREST, SupabaseError
 from .queue import JobQueue
 from .schemas import *
 from .services.analytics import AnalyticsService
+from .services.commerce_store import CommerceStore
+from .services.controls import ControlService
 from .services.integrations import integration_service
 from .services.persistence import PersistentStore
 from .services.quality import quality_service
@@ -28,6 +30,8 @@ ai_gateway = build_ai_gateway(settings)
 registry = AgentRegistry()
 db = SupabaseREST(settings)
 store = PersistentStore(db)
+commerce = CommerceStore(db)
+controls = ControlService()
 queue = JobQueue(settings.redis_url)
 sales_service = SalesService(db)
 analytics_service = AnalyticsService(db)
@@ -62,7 +66,7 @@ async def lifespan(app: FastAPI):
         await queue.close()
 
 
-app = FastAPI(title=settings.app_name, version="0.4.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 
@@ -109,10 +113,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
     temporal_context = now.strftime("%Y-%m-%d %H:%M:%S %Z (weekday=%A)")
     try:
         result = await ai_gateway.complete(request.message, system=(
-            "You are Hermes Pro, an operations assistant for digital products. "
-            "Be concise, truthful, and never invent sales, integrations, or completed jobs. "
+            "You are Hermes Pro, an autonomous commerce operations assistant. "
+            "Be concise, truthful, and never invent sales, integrations, publication, or completed jobs. "
             f"The current server date and time is {temporal_context}. "
-            "When asked for the current date or time, use this value and state that it is server time."
+            "Use server time when asked for current time."
         ))
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"AI Gateway indisponível: {exc}") from exc
@@ -186,6 +190,51 @@ async def radar_default() -> RadarResponse:
     return RadarResponse(score=result.score, confidence=result.confidence, dimensions=result.dimensions, findings=result.findings)
 
 
+@app.post("/api/v1/opportunities", response_model=OpportunityResponse, status_code=201)
+async def create_opportunity(request: OpportunityCreateRequest) -> OpportunityResponse:
+    try:
+        row = await commerce.create_opportunity(request.model_dump(exclude_none=True), request.idempotency_key)
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail="Persistência de oportunidades indisponível.") from exc
+    return OpportunityResponse(**row)
+
+
+@app.get("/api/v1/opportunities", response_model=list[OpportunityResponse])
+async def opportunities() -> list[OpportunityResponse]:
+    try:
+        rows = await commerce.list_opportunities()
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail="Persistência de oportunidades indisponível.") from exc
+    return [OpportunityResponse(**row) for row in rows]
+
+
+@app.get("/api/v1/events")
+async def events() -> list[dict]:
+    try:
+        return await commerce.list_events()
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail="Persistência de eventos indisponível.") from exc
+
+
+@app.get("/api/v1/expenses")
+async def expenses() -> list[dict]:
+    try:
+        return await commerce.list_expenses()
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail="Persistência de custos indisponível.") from exc
+
+
+@app.get("/api/v1/controls")
+async def get_controls() -> dict[str, object]:
+    return controls.get_status()
+
+
+@app.post("/api/v1/controls/kill-switch", status_code=200)
+async def set_control(request: ControlRequest) -> dict[str, object]:
+    controls.set_kill_switch(request.name, request.enabled)
+    return controls.get_status()
+
+
 @app.post("/api/v1/products/{product_id}/quality", response_model=QualityResponse)
 async def quality(product_id: str, product: dict) -> QualityResponse:
     try:
@@ -226,7 +275,7 @@ async def dashboard() -> DashboardResponse:
     return DashboardResponse(
         products=len(products_list),
         active_jobs=sum(row["status"] in {"pending", "running", "retrying"} for row in jobs_list),
-        completed_products=sum(row["status"] in {"completed", "content_ready"} for row in products_list),
+        completed_products=sum(row["status"] in {"completed", "content_ready", "ready_to_sell"} for row in products_list),
         revenue=sales_data.get("revenue"),
         sales=sales_data.get("orders"),
         integrations=integration_service.status(),
