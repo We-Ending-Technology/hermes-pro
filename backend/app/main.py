@@ -10,6 +10,7 @@ from .ai_gateway.factory import build_ai_gateway
 from .agents.diagnostic import DiagnosticAgent
 from .agents.registry import AgentRegistry
 from .agents.stubs import AGENT_NAMES, PassThroughAgent
+from .commercial import parse_chat_command
 from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
 from .queue import JobQueue
@@ -105,6 +106,34 @@ async def run_agent(request: AgentRunRequest) -> AgentRunResponse:
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
+    action = parse_chat_command(request.message)
+    if action and action["action"] == "create_product":
+        try:
+            product, job = await store.create_product_and_job(action["topic"], {}, None)
+            await queue.enqueue(str(job["id"]))
+        except SupabaseError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return ChatResponse(
+            response=f"Produto criado: {product.get('title') or product['topic']}. Job {job['id']} entrou na fábrica.",
+            provider="hermes-action",
+            model="product_factory",
+        )
+
+    if action and action["action"] == "set_price":
+        try:
+            rows = await store.list_products()
+            if not rows:
+                raise HTTPException(status_code=404, detail="Nenhum produto encontrado para alterar o preço.")
+            product = rows[0]
+            metadata = dict(product.get("metadata") or {})
+            metadata["suggested_price"] = action["price"]
+            metadata["price_basis"] = "user_override"
+            metadata["price_rationale"] = "Preço definido pelo usuário no Hermes."
+            await store.update_product(str(product["id"]), metadata=metadata)
+        except SupabaseError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return ChatResponse(response=f"Preço do produto mais recente atualizado para R$ {action['price']:.2f}.", provider="hermes-action", model="product_factory")
+
     now = datetime.now().astimezone()
     temporal_context = now.strftime("%Y-%m-%d %H:%M:%S %Z (weekday=%A)")
     try:
@@ -112,7 +141,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
             "You are Hermes Pro, an operations assistant for digital products. "
             "Be concise, truthful, and never invent sales, integrations, or completed jobs. "
             f"The current server date and time is {temporal_context}. "
-            "When asked for the current date or time, use this value and state that it is server time."
+            "When asked for the current date or time, use this value and state that it is server time. "
+            "You can explain how to operate products, but only claim an action happened when the backend actually executed it."
         ))
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"AI Gateway indisponível: {exc}") from exc
@@ -157,7 +187,8 @@ async def products() -> list[ProductResponse]:
 async def create_product(request: ProductCreateRequest) -> ProductResponse:
     try:
         product, job = await store.create_product_and_job(request.topic, request.metadata, request.idempotency_key)
-        await queue.enqueue(str(job["id"]))
+        await queue.enqueue(str(job["id"])
+        )
     except SupabaseError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return product_response(product)
@@ -226,7 +257,7 @@ async def dashboard() -> DashboardResponse:
     return DashboardResponse(
         products=len(products_list),
         active_jobs=sum(row["status"] in {"pending", "running", "retrying"} for row in jobs_list),
-        completed_products=sum(row["status"] in {"completed", "content_ready"} for row in products_list),
+        completed_products=sum(row["status"] in {"completed", "content_ready", "ready_to_sell"} for row in products_list),
         revenue=sales_data.get("revenue"),
         sales=sales_data.get("orders"),
         integrations=integration_service.status(),
