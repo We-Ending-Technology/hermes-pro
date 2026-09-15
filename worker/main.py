@@ -13,6 +13,7 @@ from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 from backend.app.ai_gateway.factory import build_ai_gateway
+from backend.app.commercial import build_commercial_metadata, mark_publication_ready
 from backend.app.core.config import get_settings
 from backend.app.db.supabase import SupabaseREST
 from backend.app.queue import JobQueue
@@ -109,7 +110,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         await store.update_product(product_id, status="generating", current_stage="topic")
 
         strategist = await gateway.complete(
-            f"Create a concise product strategy for the digital ebook topic: {topic}. Return valid JSON with keys: positioning, audience, title, subtitle, outline (array of chapter titles).",
+            f"Create a concise product strategy for the digital ebook topic: {topic}. Return valid JSON with keys: positioning, audience, title, subtitle, category, outline (array of chapter titles).",
             system="You are the Hermes Pro strategist. Return only valid JSON. Do not claim market data you do not have.",
         )
         strategy_data = _parse_json(strategist.content)
@@ -117,8 +118,8 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         await store.update_product(product_id, current_stage="writer", title=title, metadata={"strategy": strategy_data, "ai_provider": strategist.provider, "ai_model": strategist.model})
 
         writer = await gateway.complete(
-            f"Using this strategy, write a complete practical ebook for topic '{topic}'. Strategy: {json.dumps(strategy_data, ensure_ascii=False)}. Return valid JSON with keys: introduction, chapters (array of objects with title and content), conclusion. Write original useful content; do not fabricate citations or statistics.",
-            system="You are the Hermes Pro writer. Return only valid JSON. Make the ebook substantial enough to be useful, with clear sections and practical examples.",
+            f"Using this strategy, write a complete practical ebook for topic '{topic}'. Strategy: {json.dumps(strategy_data, ensure_ascii=False)}. Return valid JSON with keys: introduction, chapters (array of objects with title and content), conclusion. Write original useful content; do not fabricate citations or statistics. Make every chapter substantial and actionable.",
+            system="You are the Hermes Pro writer. Return only valid JSON. Make the ebook useful enough to sell honestly, with clear sections, practical examples, checklists where useful, and no invented facts.",
         )
         writer_data = _parse_json(writer.content)
         await store.update_product(product_id, current_stage="reviewer")
@@ -137,19 +138,49 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             await store.update_job(job_id, "completed", attempts=attempts)
             return
 
+        await store.update_product(product_id, current_stage="commercial")
+        commercial = await gateway.complete(
+            f"Create commercial metadata for this ebook. Topic: '{topic}'. Strategy: {json.dumps(strategy_data, ensure_ascii=False)}. Return valid JSON with keys: description, short_description, keywords (array of 5-10 strings), suggested_price (number in BRL), price_rationale. The price is a recommendation only. If you do not have verified current market comparables, say so explicitly in price_rationale and do not invent competitors, prices, sales or market statistics.",
+            system="You are the Hermes Pro commercial strategist. Return only valid JSON. Create persuasive but truthful copy. Never invent market evidence. Suggested price must be positive and reasonable for a Brazilian digital ebook.",
+        )
+        commercial_data = _parse_json(commercial.content)
+        commercial_metadata = build_commercial_metadata(
+            strategy=strategy_data,
+            description=str(commercial_data.get("description") or "").strip(),
+            short_description=str(commercial_data.get("short_description") or "").strip(),
+            keywords=list(commercial_data.get("keywords") or []),
+            suggested_price=float(commercial_data.get("suggested_price") or 0),
+            price_rationale=str(commercial_data.get("price_rationale") or "").strip(),
+        )
+        metadata.update(commercial_metadata)
+        await store.update_product(product_id, title=title, metadata=metadata)
+
         pdf_bytes = _make_pdf(title, writer_data)
         docx_bytes = _make_docx(title, writer_data)
-        cover_bytes = await _make_cover(title, topic)
         await store.update_product(product_id, current_stage="document")
-        pdf_url = await store.db.upload("ebooks", f"{product_id}/ebook.pdf", pdf_bytes, "application/pdf")
-        docx_url = await store.db.upload("exports", f"{product_id}/ebook.docx", docx_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-        await store.update_product(product_id, current_stage="cover")
-        cover_url = await store.db.upload("covers", f"{product_id}/cover.jpg", cover_bytes, "image/jpeg")
+        pdf_path = f"{product_id}/ebook.pdf"
+        docx_path = f"{product_id}/ebook.docx"
+        pdf_url = await store.db.upload("ebooks", pdf_path, pdf_bytes, "application/pdf")
+        docx_url = await store.db.upload("exports", docx_path, docx_bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
-        metadata.update({"pdf_url": pdf_url, "document_url": docx_url, "cover_url": cover_url, "document_path": f"ebooks/{product_id}/ebook.pdf", "docx_path": f"exports/{product_id}/ebook.docx", "cover_path": f"covers/{product_id}/cover.jpg"})
-        await store.update_product(product_id, status="completed", current_stage="publication", title=title, metadata=metadata)
+        await store.update_product(product_id, current_stage="cover")
+        cover_bytes = await _make_cover(title, topic)
+        cover_path = f"{product_id}/cover.jpg"
+        cover_url = await store.db.upload("covers", cover_path, cover_bytes, "image/jpeg")
+
+        metadata.update({
+            "pdf_url": pdf_url,
+            "document_url": docx_url,
+            "cover_url": cover_url,
+            "document_path": f"ebooks/{pdf_path}",
+            "docx_path": f"exports/{docx_path}",
+            "cover_path": f"covers/{cover_path}",
+            "asset_status": "complete",
+        })
+        metadata = mark_publication_ready(metadata)
+        await store.update_product(product_id, status="ready_to_sell" if metadata["publication_ready"] else "completed", current_stage="publication", title=title, metadata=metadata)
         await store.update_job(job_id, "completed", attempts=attempts)
-        logger.info("completed full product job=%s product=%s", job_id, product_id)
+        logger.info("completed full commercial product job=%s product=%s", job_id, product_id)
     except Exception as exc:
         message = str(exc)[:1000]
         if attempts < MAX_ATTEMPTS:
