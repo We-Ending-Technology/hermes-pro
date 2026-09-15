@@ -14,11 +14,14 @@ from .db.supabase import SupabaseREST, SupabaseError
 from .queue import JobQueue
 from .schemas import *
 from .services.analytics import AnalyticsService
+from .services.controls import ControlService
 from .services.integrations import integration_service
+from .services.opportunities import OpportunityService
 from .services.persistence import PersistentStore
 from .services.quality import quality_service
 from .services.radar import radar_service
 from .services.sales import SalesService
+from .services.service_opportunities import ServiceOpportunityService
 
 settings = get_settings()
 ai_gateway = build_ai_gateway(settings)
@@ -28,6 +31,9 @@ store = PersistentStore(db)
 queue = JobQueue(settings.redis_url)
 sales_service = SalesService(db)
 analytics_service = AnalyticsService(db)
+opportunity_service = OpportunityService(db)
+service_opportunity_service = ServiceOpportunityService(db)
+control_service = ControlService(db)
 
 
 @asynccontextmanager
@@ -39,7 +45,7 @@ async def lifespan(app: FastAPI):
     await queue.close()
 
 
-app = FastAPI(title=settings.app_name, version="0.4.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 
@@ -83,12 +89,15 @@ async def run_agent(request: AgentRunRequest) -> AgentRunResponse:
 async def chat(request: ChatRequest) -> ChatResponse:
     now = datetime.now().astimezone()
     temporal_context = now.strftime("%Y-%m-%d %H:%M:%S %Z (weekday=%A)")
-    result = await ai_gateway.complete(request.message, system=(
-        "You are Hermes Pro, an operations assistant for digital products. "
-        "Be concise, truthful, and never invent sales, integrations, or completed jobs. "
-        f"The current server date and time is {temporal_context}. "
-        "When asked for the current date or time, use this value and state that it is server time."
-    ))
+    try:
+        result = await ai_gateway.complete(request.message, system=(
+            "You are Hermes Pro, an autonomous commerce operations assistant. "
+            "Be concise, truthful, and never invent sales, integrations, market data, or completed jobs. "
+            f"The current server date and time is {temporal_context}. "
+            "When asked for the current date or time, use this value and state that it is server time."
+        ))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"AI Gateway indisponível: {exc}") from exc
     return ChatResponse(response=result.content, provider=result.provider, model=result.model)
 
 
@@ -159,6 +168,82 @@ async def radar_default() -> RadarResponse:
     return RadarResponse(score=result.score, confidence=result.confidence, dimensions=result.dimensions, findings=result.findings)
 
 
+@app.get("/api/v1/opportunities", response_model=list[OpportunityResponse])
+async def opportunities(limit: int = 50) -> list[OpportunityResponse]:
+    try:
+        rows = await opportunity_service.list(max(1, min(limit, 100)))
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail="Persistência de oportunidades indisponível.") from exc
+    return [OpportunityResponse(**row) for row in rows]
+
+
+@app.post("/api/v1/opportunities", response_model=OpportunityResponse, status_code=201)
+async def create_opportunity(request: OpportunityCreateRequest) -> OpportunityResponse:
+    try:
+        row = await opportunity_service.create(request.model_dump())
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return OpportunityResponse(**row)
+
+
+@app.post("/api/v1/opportunities/{opportunity_id}/score")
+async def score_opportunity(opportunity_id: str) -> dict:
+    try:
+        return await opportunity_service.score(opportunity_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="opportunity not found") from exc
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/api/v1/services", response_model=list[ServiceResponse])
+async def services(limit: int = 50) -> list[ServiceResponse]:
+    try:
+        rows = await service_opportunity_service.list(max(1, min(limit, 100)))
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail="Persistência de serviços indisponível.") from exc
+    return [ServiceResponse(**row) for row in rows]
+
+
+@app.post("/api/v1/services", response_model=ServiceResponse, status_code=201)
+async def create_service(request: ServiceCreateRequest) -> ServiceResponse:
+    try:
+        row = await service_opportunity_service.create(request.model_dump())
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return ServiceResponse(**row)
+
+
+@app.get("/api/v1/controls", response_model=ControlResponse)
+async def controls() -> ControlResponse:
+    try:
+        return ControlResponse(**await control_service.get())
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail="Persistência de controles indisponível.") from exc
+
+
+@app.put("/api/v1/controls", response_model=ControlResponse)
+async def update_controls(request: ControlUpdateRequest) -> ControlResponse:
+    try:
+        payload = {key: value for key, value in request.model_dump().items() if value is not None}
+        return ControlResponse(**await control_service.update(payload))
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail="Não foi possível atualizar os controles.") from exc
+
+
+@app.post("/api/v1/events", response_model=EventResponse, status_code=201)
+async def create_event(request: EventCreateRequest) -> EventResponse:
+    try:
+        if request.idempotency_key:
+            existing = await db.select("hermes_events", params={"select": "*", "idempotency_key": f"eq.{request.idempotency_key}", "limit": "1"})
+            if existing:
+                return EventResponse(**existing[0])
+        row = await db.insert("hermes_events", request.model_dump())
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail="Persistência de eventos indisponível.") from exc
+    return EventResponse(**row)
+
+
 @app.post("/api/v1/products/{product_id}/quality", response_model=QualityResponse)
 async def quality(product_id: str, product: dict) -> QualityResponse:
     if not await store.get_product(product_id):
@@ -189,14 +274,24 @@ async def dashboard() -> DashboardResponse:
         products_list = await store.list_products()
         jobs_list = await store.list_jobs()
         sales_data = await sales_service.summary()
+        expenses = await db.select("hermes_expenses", params={"select": "category,amount"})
     except SupabaseError:
         products_list, jobs_list = [], []
         sales_data = {"revenue": None, "orders": None}
+        expenses = []
+    costs = {"ai": 0.0, "infra": 0.0, "ads": 0.0, "other": 0.0}
+    for expense in expenses:
+        category = str(expense.get("category", "other"))
+        if category in costs:
+            costs[category] += float(expense.get("amount") or 0)
+    revenue = sales_data.get("revenue")
+    operating_profit = None if revenue is None else round(float(revenue) - sum(costs.values()), 2)
     return DashboardResponse(
         products=len(products_list),
         active_jobs=sum(row["status"] in {"pending", "running", "retrying"} for row in jobs_list),
-        completed_products=sum(row["status"] in {"completed", "content_ready"} for row in products_list),
-        revenue=sales_data.get("revenue"),
+        completed_products=sum(row["status"] in {"completed", "content_ready", "ready_to_sell"} for row in products_list),
+        revenue=revenue,
         sales=sales_data.get("orders"),
+        operating_profit=operating_profit,
         integrations=integration_service.status(),
     )
