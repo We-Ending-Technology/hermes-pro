@@ -7,14 +7,15 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .ai_gateway.factory import build_ai_gateway
+from .agents.autonomous import AGENT_NAMES, CommerceAgent
 from .agents.diagnostic import DiagnosticAgent
 from .agents.registry import AgentRegistry
-from .agents.stubs import AGENT_NAMES, PassThroughAgent
 from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
 from .queue import JobQueue
 from .schemas import *
 from .services.analytics import AnalyticsService
+from .services.autonomous_cycle import discover_public_signals
 from .services.commerce_store import CommerceStore
 from .services.controls import ControlService
 from .services.integrations import integration_service
@@ -37,6 +38,19 @@ sales_service = SalesService(db)
 analytics_service = AnalyticsService(db)
 
 
+async def autonomous_loop() -> None:
+    """Continuously discovers public market signals without publishing or spending money."""
+    while True:
+        try:
+            if not controls.get_status().get("kill_switch") and not controls.get_status().get("pause_radar"):
+                await discover_public_signals(commerce, limit=8)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+        await asyncio.sleep(900)
+
+
 async def embedded_worker() -> None:
     while True:
         try:
@@ -53,20 +67,23 @@ async def embedded_worker() -> None:
 async def lifespan(app: FastAPI):
     registry.register(DiagnosticAgent(ai_gateway))
     for agent_name in AGENT_NAMES:
-        registry.register(PassThroughAgent(agent_name))
+        registry.register(CommerceAgent(agent_name, ai_gateway))
     worker_task = asyncio.create_task(embedded_worker(), name="hermes-embedded-worker")
+    autonomous_task = asyncio.create_task(autonomous_loop(), name="hermes-autonomous-loop")
     try:
         yield
     finally:
         worker_task.cancel()
-        try:
-            await worker_task
-        except asyncio.CancelledError:
-            pass
+        autonomous_task.cancel()
+        for task in (worker_task, autonomous_task):
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         await queue.close()
 
 
-app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.6.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 
@@ -214,7 +231,7 @@ async def events() -> list[dict]:
         return await commerce.list_events()
     except SupabaseError as exc:
         raise HTTPException(status_code=503, detail="Persistência de eventos indisponível.") from exc
-
+    
 
 @app.get("/api/v1/expenses")
 async def expenses() -> list[dict]:
