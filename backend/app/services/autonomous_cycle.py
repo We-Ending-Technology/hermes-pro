@@ -48,16 +48,7 @@ async def discover_public_signals(store: CommerceStore, limit: int = 8) -> list[
                 continue
             key = hashlib.sha256(f"news:{title}:{link}".encode()).hexdigest()[:32]
             signals = {"public_news_signal": 1.0, "topic": topic}
-            scored = score_opportunity(
-                demand=1.0,
-                margin=None,
-                ease=None,
-                conversion=None,
-                capacity=None,
-                competition=None,
-                cost=None,
-                risk=None,
-            )
+            scored = score_opportunity(demand=1.0)
             try:
                 row = await store.create_opportunity(
                     {
