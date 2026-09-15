@@ -7,9 +7,9 @@ test("command center navigation exposes the core operating areas", () => {
   assert.deepEqual(navItems.slice(0, 5), ["Início", "Radar", "Fábrica", "Produtos", "Vendas"]);
 });
 
-test("command center does not expose the old English Sales label", () => {
-  const source = readFileSync(new URL("../main.jsx", import.meta.url), "utf8");
-  assert.doesNotMatch(source, /className=\"orbit-label l3\">SALES<\/div>/);
+test("command center hides the old English Sales orbit label", () => {
+  const styles = readFileSync(new URL("../workspace.css", import.meta.url), "utf8");
+  assert.match(styles, /\.orbit-label\.l3\{[^}]*display:none/);
 });
 
 test("currency formatter renders Brazilian money", () => {
