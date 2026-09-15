@@ -1,67 +1,201 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { formatCurrency, navItems, statusTone } from "./lib/ui.js";
 import "./style.css";
 import "./workspace.css";
 
-const API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-m7wd.onrender.com";
-const nav = ["Início", "Hermes", "Fábrica", "Produtos", "Jobs", "Agentes"];
+const API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-commercial.onrender.com";
+
+const agentCatalog = [
+  ["RADAR", "Descobre sinais e oportunidades", "radar"],
+  ["STRATEGIST", "Valida potencial e margem", "strategy"],
+  ["WRITER", "Produz conteúdo", "writer"],
+  ["EDITOR", "Revisa e prepara QA", "reviewer"],
+  ["DESIGNER", "Prepara identidade e ativos", "designer"],
+  ["PUBLISHER", "Prepara canais de venda", "publisher"],
+  ["GUARDIAN", "Protege orçamento e qualidade", "supervisor"],
+];
+
+async function jsonFetch(path, options = {}) {
+  const response = await fetch(`${API}${path}`, { ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
+  return body;
+}
 
 function App() {
   const [view, setView] = useState("Início");
-  const [topic, setTopic] = useState("");
-  const [selected, setSelected] = useState(null);
-  const [chatInput, setChatInput] = useState("");
-  const [chat, setChat] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [jobs, setJobs] = useState([]);
+  const [data, setData] = useState({ dashboard: null, products: [], jobs: [], opportunities: [], integrations: [], sales: null, analytics: null });
   const [online, setOnline] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [topic, setTopic] = useState("");
+  const [chat, setChat] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [selected, setSelected] = useState(null);
+  const [mobileNav, setMobileNav] = useState(false);
 
   async function refresh() {
     try {
-      const [h, p, j] = await Promise.all([fetch(`${API}/health`), fetch(`${API}/api/v1/products`), fetch(`${API}/api/v1/jobs`)]);
-      setOnline(h.ok);
-      if (p.ok) setProducts(await p.json());
-      if (j.ok) setJobs(await j.json());
-      if (selected && p.ok) {
-        const latest = (await fetch(`${API}/api/v1/products/${selected.id}`)).ok ? await (await fetch(`${API}/api/v1/products/${selected.id}`)).json() : null;
-        if (latest) setSelected(latest);
-      }
-    } catch { setOnline(false); }
+      const [health, dashboard, products, jobs, opportunities, integrations, sales, analytics] = await Promise.all([
+        jsonFetch("/health"),
+        jsonFetch("/api/v1/dashboard"),
+        jsonFetch("/api/v1/products"),
+        jsonFetch("/api/v1/jobs"),
+        jsonFetch("/api/v1/opportunities").catch(() => []),
+        jsonFetch("/api/v1/integrations").catch(() => []),
+        jsonFetch("/api/v1/sales").catch(() => null),
+        jsonFetch("/api/v1/analytics").catch(() => null),
+      ]);
+      setOnline(health?.status === "ok");
+      setData({ dashboard, products, jobs, opportunities, integrations, sales, analytics });
+    } catch (error) {
+      setOnline(false);
+      setNotice(error.message);
+    }
   }
-  useEffect(() => { refresh(); const id = setInterval(refresh, 8000); return () => clearInterval(id); }, [selected?.id]);
 
-  async function createProduct(e) {
-    e.preventDefault(); const value = topic.trim(); if (!value) return;
-    setNotice("Hermes recebeu o produto. A fábrica começou a trabalhar.");
+  useEffect(() => {
+    refresh();
+    const timer = setInterval(refresh, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  async function createProduct(event) {
+    event.preventDefault();
+    const value = topic.trim();
+    if (!value || busy) return;
+    setBusy(true);
     try {
-      const r = await fetch(`${API}/api/v1/products`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ topic: value }) });
-      const body = await r.json(); if (!r.ok) throw new Error(body.detail || "Falha ao criar produto");
-      setTopic(""); setView("Produtos"); await refresh();
-    } catch (e) { setNotice(e.message); }
+      const product = await jsonFetch("/api/v1/products", { method: "POST", body: JSON.stringify({ topic: value }) });
+      setTopic("");
+      setSelected(product);
+      setView("Produtos");
+      setNotice("Produção iniciada. O worker assumiu o job.");
+      await refresh();
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setBusy(false);
+    }
   }
 
-  async function sendChat(e) {
-    e.preventDefault(); const text = chatInput.trim(); if (!text) return;
-    setChat(x => [...x, { role: "user", text }]); setChatInput("");
+  async function sendChat(event) {
+    event.preventDefault();
+    const text = chatInput.trim();
+    if (!text || busy) return;
+    setChat(items => [...items, { role: "user", text }]);
+    setChatInput("");
+    setBusy(true);
     try {
-      const r = await fetch(`${API}/api/v1/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text }) });
-      const b = await r.json(); setChat(x => [...x, { role: "assistant", text: r.ok ? b.response : `Erro do Hermes: ${b.detail || "sem resposta"}` }]);
-    } catch { setChat(x => [...x, { role: "assistant", text: "API inacessível neste momento." }]); }
+      const response = await jsonFetch("/api/v1/chat", { method: "POST", body: JSON.stringify({ message: text }) });
+      setChat(items => [...items, { role: "assistant", text: response.response, meta: `${response.provider} · ${response.model}` }]);
+    } catch (error) {
+      setChat(items => [...items, { role: "assistant", text: `Erro do Hermes: ${error.message}` }]);
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function openProduct(product) { setSelected(product); setView("Produto"); }
+  const activeJobs = data.jobs.filter(job => ["pending", "running", "retrying"].includes(job.status)).length;
+  const readyProducts = data.products.filter(product => ["ready_to_sell", "completed"].includes(product.status)).length;
+  const revenue = data.sales?.revenue ?? data.dashboard?.revenue;
 
-  return <div className="shell"><aside className="sidebar"><div className="brand"><div className="brand-mark">H</div><div><strong>HERMES</strong><span>PRO / COMMAND CENTER</span></div></div><div className="live-pill"><i className={online ? "online" : "offline"}></i>{online ? "SISTEMA ONLINE" : "API INDISPONÍVEL"}</div><nav>{nav.map(x => <button key={x} className={view === x ? "selected" : ""} onClick={() => setView(x)}>{x}</button>)}</nav><button onClick={refresh}>↻ Atualizar</button></aside><main className="main"><header className="topbar"><div><span className="kicker">HERMES PRO</span><h1>{view === "Produto" ? "Produto" : view}</h1></div><span className="api-label"><i className={online ? "online" : "offline"}></i>{online ? "API conectada" : "Aguardando API"}</span></header>{notice && <div className="notice">{notice}<button onClick={() => setNotice("")}>×</button></div>}{view === "Início" && <Home products={products} jobs={jobs} go={setView} />}{view === "Hermes" && <Chat chat={chat} input={chatInput} setInput={setChatInput} send={sendChat} />}{view === "Fábrica" && <Factory topic={topic} setTopic={setTopic} submit={createProduct} />}{view === "Produtos" && <Products items={products} openProduct={openProduct} />}{view === "Produto" && selected && <ProductWorkspace product={selected} back={() => setView("Produtos")} />}{view === "Jobs" && <Jobs items={jobs} />}{view === "Agentes" && <Agents />}</main></div>;
+  return (
+    <div className="app-shell">
+      <div className={`mobile-overlay ${mobileNav ? "show" : ""}`} onClick={() => setMobileNav(false)} />
+      <aside className={`sidebar ${mobileNav ? "open" : ""}`}>
+        <div className="brand-row">
+          <div className="brand-orb">H</div>
+          <div><strong>HERMES</strong><span>AUTONOMOUS COMMERCE</span></div>
+        </div>
+        <div className={`system-state ${online ? "live" : "down"}`}><i /> <span>{online ? "Sistema operacional" : "Conexão pendente"}</span><small>{online ? "LIVE" : "OFFLINE"}</small></div>
+        <nav className="main-nav">
+          {navItems.map((item, index) => <button key={item} className={view === item ? "active" : ""} onClick={() => { setView(item); setMobileNav(false); }}><NavIcon index={index} /><span>{item}</span></button>)}
+        </nav>
+        <div className="sidebar-bottom">
+          <div className="mini-budget"><span>Meta operacional</span><strong>R$ 900/dia</strong><div><i style={{ width: `${Math.min(100, Number(revenue || 0) / 9)}%` }} /></div><small>{revenue != null ? `${formatCurrency(revenue)} acumulado` : "Sem vendas registradas"}</small></div>
+          <button className="refresh-btn" onClick={refresh}>↻ Sincronizar agora</button>
+        </div>
+      </aside>
+
+      <main className="main-content">
+        <header className="topbar">
+          <button className="mobile-menu" onClick={() => setMobileNav(true)}>☰</button>
+          <div className="crumbs"><span>HERMES</span><b>/</b><strong>{view}</strong></div>
+          <div className="top-actions"><div className="system-time"><span className="pulse-dot" /> 24/7 AUTONOMOUS</div><button className="round-btn" onClick={refresh}>↻</button><div className="profile">W</div></div>
+        </header>
+
+        {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>×</button></div>}
+
+        {view === "Início" && <Home data={data} online={online} activeJobs={activeJobs} readyProducts={readyProducts} revenue={revenue} go={setView} />}
+        {view === "Radar" && <Radar opportunities={data.opportunities} />}
+        {view === "Fábrica" && <Factory topic={topic} setTopic={setTopic} submit={createProduct} busy={busy} />}
+        {view === "Produtos" && <Products items={data.products} selected={selected} setSelected={setSelected} />}
+        {view === "Vendas" && <Sales sales={data.sales} revenue={revenue} />}
+        {view === "Analytics" && <Analytics analytics={data.analytics} data={data} />}
+        {view === "Agentes" && <Agents online={online} />}
+
+        <button className="hermes-float" onClick={() => setView("Hermes")}><span>H</span><div><b>Hermes</b><small>Fale comigo</small></div><i>↗</i></button>
+        {view === "Hermes" && <Chat chat={chat} input={chatInput} setInput={setChatInput} send={sendChat} busy={busy} />}
+      </main>
+    </div>
+  );
 }
 
-function Home({ products, jobs, go }) { return <section className="page"><div className="hero"><div><span className="kicker violet">LIVE OPS</span><h2>Da ideia ao <em>produto.</em></h2><p>Hermes transforma um tema em conteúdo, ativos e pacote comercial verificável.</p><button className="primary" onClick={() => go("Fábrica")}>＋ Criar ebook</button></div></div><div className="metric-grid"><Metric label="Produtos" value={products.length} /><Metric label="Jobs" value={jobs.length} /><Metric label="Prontos para vender" value={products.filter(x => x.status === "ready_to_sell").length} /></div><h3>Pipeline</h3><div className="pipeline"><span>IA</span><i>→</i><span>CONTEÚDO</span><i>→</i><span>QA</span><i>→</i><span>PDF + DOCX</span><i>→</i><span>CAPA</span><i>→</i><span>OFERTA</span></div></section>; }
-function Metric({ label, value }) { return <article className="metric"><span>{label}</span><strong>{value}</strong></article>; }
-function Chat({ chat, input, setInput, send }) { return <section className="page"><span className="kicker violet">HERMES / IA</span><h2>Converse com Hermes</h2><p>Esta conversa usa o gateway de IA do backend.</p><div className="chat-window">{chat.length === 0 && <div className="chat-empty"><h3>Hermes está aguardando.</h3><p>Ex.: “Crie um ebook sobre IA para pequenos negócios”.</p></div>}{chat.map((m, i) => <div className={`bubble ${m.role}`} key={i}><b>{m.role === "user" ? "Você" : "Hermes"}</b><p>{m.text}</p></div>)}<form className="chat-form" onSubmit={send}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Fale com Hermes…" maxLength={4000} /><button className="primary">Enviar</button></form></div></section>; }
-function Factory({ topic, setTopic, submit }) { return <section className="page"><span className="kicker violet">PRODUCT FACTORY</span><h2>Criar ebook completo</h2><p>Hermes gera estratégia, texto, revisão, descrição comercial, preço recomendado, PDF, DOCX e capa.</p><form className="factory-form" onSubmit={submit}><textarea value={topic} onChange={e => setTopic(e.target.value)} placeholder="Ex.: Como ganhar dinheiro com IA para pequenos negócios" required minLength={3} /><button className="primary">Iniciar produção</button></form></section>; }
-function Products({ items, openProduct }) { return <section className="page"><span className="kicker violet">CATÁLOGO</span><h2>Seus produtos</h2>{items.length === 0 && <p>Nenhum produto.</p>}<div className="product-grid">{items.map(p => <ProductCard key={p.id} product={p} openProduct={openProduct} />)}</div></section>; }
-function ProductCard({ product, openProduct }) { const m = product.metadata || {}; const title = product.title || m.title || product.topic; const ready = product.status === "ready_to_sell"; return <article className={`product-card detailed ${ready ? "is-complete" : ""}`} onClick={() => openProduct(product)} tabIndex="0" onKeyDown={e => e.key === "Enter" && openProduct(product)}><div className="cover-box">{m.cover_url ? <img src={m.cover_url} alt={`Capa de ${title}`} /> : <div><b>H</b><small>{product.current_stage || product.status}</small></div>}</div><div className="product-info"><span className="tag">EBOOK</span><h4>{title}</h4>{m.subtitle && <p className="subtitle">{m.subtitle}</p>}<p>{product.topic}</p><p>Etapa: <strong>{product.current_stage}</strong> · Status: <strong>{product.status}</strong></p>{m.quality_score != null && <p>Qualidade: {m.quality_score}/100</p>}{m.suggested_price != null && <p>Preço sugerido: <strong>R$ {Number(m.suggested_price).toFixed(2).replace(".", ",")}</strong></p>}<div className="asset-actions"><button type="button" onClick={e => { e.stopPropagation(); openProduct(product); }}>Abrir produto</button>{m.pdf_url && <a onClick={e => e.stopPropagation()} href={m.pdf_url} target="_blank" rel="noreferrer">PDF</a>}{m.document_url && <a onClick={e => e.stopPropagation()} href={m.document_url} target="_blank" rel="noreferrer">DOCX</a>}</div></div></article>; }
-function ProductWorkspace({ product, back }) { const m = product.metadata || {}; const title = product.title || m.title || product.topic; const chapters = m.content?.chapters || []; const ready = m.publication_ready === true || product.status === "ready_to_sell"; return <section className="page product-workspace"><button className="back-button" onClick={back}>← Voltar para produtos</button><div className="workspace-head"><div><span className="kicker violet">PRODUCT WORKSPACE</span><h2>{title}</h2>{m.subtitle && <p className="workspace-subtitle">{m.subtitle}</p>}<p>{product.topic}</p></div><div className="status-stack"><strong>{ready ? "PRONTO PARA VENDER" : product.status}</strong><span>{product.current_stage || "sem etapa"}</span>{m.quality_score != null && <span>QA {m.quality_score}/100</span>}</div></div><div className="commercial-grid"><article className="details-panel"><h3>Oferta</h3><p><b>Descrição curta</b><br />{m.short_description || "Ainda não gerada."}</p><p><b>Descrição</b><br />{m.description || "Ainda não gerada."}</p><p><b>Público</b><br />{m.audience || "—"}</p><p><b>Categoria</b><br />{m.category || "—"}</p><p><b>Palavras-chave</b><br />{Array.isArray(m.keywords) ? m.keywords.join(" · ") : "—"}</p><p><b>Preço recomendado</b><br />{m.suggested_price != null ? `R$ ${Number(m.suggested_price).toFixed(2).replace(".", ",")}` : "Ainda não definido."}</p><p><b>Base do preço</b><br />{m.price_rationale || "Sem justificativa registrada."}</p></article><article className="details-panel"><h3>Prontidão</h3><p><b>Status comercial</b><br />{m.publication_status || "não definido"}</p><p><b>Publicação</b><br />{ready ? "Todos os ativos obrigatórios estão presentes." : "Ainda não pronto para venda."}</p><p><b>Arquivos</b><br />{m.asset_status === "complete" ? "PDF + DOCX + capa salvos." : "Pacote incompleto."}</p><p><b>Armazenamento</b><br />PDF: {m.document_path || "—"}<br />DOCX: {m.docx_path || "—"}<br />Capa: {m.cover_path || "—"}</p></article></div><div className="workspace-grid"><article className="asset-panel cover-panel"><div className="panel-title"><h3>Capa</h3><span>{m.cover_url ? "Gerada" : "Pendente"}</span></div>{m.cover_url ? <><img className="full-cover" src={m.cover_url} alt={`Capa de ${title}`} /><a className="primary link-button" href={m.cover_url} target="_blank" rel="noreferrer">Abrir capa</a></> : <div className="asset-empty"><strong>Capa ainda não disponível</strong><span>Ela aparece quando a fábrica concluir o design.</span></div>}</article><article className="asset-panel reader-panel"><div className="panel-title"><h3>Leitor do ebook</h3><span>{m.pdf_url ? "PDF pronto" : "Aguardando PDF"}</span></div>{m.pdf_url ? <iframe className="pdf-reader" src={`${m.pdf_url}#toolbar=1&navpanes=0`} title={`Leitor de ${title}`} /> : <div className="asset-empty"><strong>PDF ainda não disponível</strong><span>Volte quando o job estiver concluído.</span></div>}<div className="reader-actions">{m.pdf_url && <a className="primary link-button" href={m.pdf_url} target="_blank" rel="noreferrer">Ler em tela cheia</a>}{m.document_url && <a className="secondary link-button" href={m.document_url} target="_blank" rel="noreferrer">Abrir DOCX</a>}</div></article></div><article className="details-panel content-panel"><h3>Texto completo</h3>{m.content?.introduction && <div className="content-section"><h4>Introdução</h4><p>{m.content.introduction}</p></div>}{chapters.map((chapter, i) => <div className="content-section" key={i}><h4>{chapter.title || `Capítulo ${i + 1}`}</h4><p>{chapter.content || ""}</p></div>)}{m.content?.conclusion && <div className="content-section"><h4>Conclusão</h4><p>{m.content.conclusion}</p></div>}{!m.content && <div className="asset-empty"><strong>Texto ainda não disponível</strong><span>O worker ainda não terminou a geração.</span></div>}</article><article className="details-panel"><h3>Arquivos e produção</h3><div className="file-row"><span>PDF</span><strong>{m.pdf_url ? "Disponível" : "Pendente"}</strong>{m.pdf_url && <a href={m.pdf_url} target="_blank" rel="noreferrer">Abrir</a>}</div><div className="file-row"><span>DOCX</span><strong>{m.document_url ? "Disponível" : "Pendente"}</strong>{m.document_url && <a href={m.document_url} target="_blank" rel="noreferrer">Abrir</a>}</div><div className="file-row"><span>Capa</span><strong>{m.cover_url ? "Disponível" : "Pendente"}</strong>{m.cover_url && <a href={m.cover_url} target="_blank" rel="noreferrer">Abrir</a>}</div><div className="file-row"><span>IA</span><strong>{m.ai_provider || "—"} {m.ai_model ? `· ${m.ai_model}` : ""}</strong></div></article></section>; }
-function Jobs({ items }) { return <section className="page"><span className="kicker violet">ORCHESTRATION</span><h2>Jobs</h2>{items.map(j => <article className="job" key={j.id}><strong>{j.job_type}</strong><span>{j.status}</span><small>{j.attempts}/{j.max_attempts}</small>{j.error_message && <p>{j.error_message}</p>}</article>)}</section>; }
-function Agents() { return <section className="page"><span className="kicker violet">AGENT SYSTEM</span><h2>Agentes</h2><div className="agent-grid">{["RADAR","STRATEGIST","WRITER","EDITOR","DESIGNER","PUBLISHER","GUARDIAN"].map(x => <article className="agent" key={x}><strong>{x}</strong><span>standby até existir execução real</span></article>)}</div></section>; }
-createRoot(document.getElementById("root")).render(<App/>);
+function NavIcon({ index }) {
+  const glyphs = ["⌂", "⌁", "✦", "▣", "◈", "◒", "◎"];
+  return <b className="nav-icon">{glyphs[index]}</b>;
+}
+
+function Home({ data, online, activeJobs, readyProducts, revenue, go }) {
+  const products = data.products || [];
+  return <section className="page">
+    <div className="command-hero">
+      <div className="hero-copy"><div className="eyebrow"><i /> COMMAND CENTER · {online ? "LIVE" : "CONNECTING"}</div><h1>O comércio roda.<br /><em>Você decide.</em></h1><p>Hermes encontra oportunidades, coordena agentes, produz ativos e mede o resultado em um único centro de comando.</p><div className="hero-actions"><button className="primary" onClick={() => go("Fábrica")}>✦ Criar produto</button><button className="ghost" onClick={() => go("Radar")}>Ver Radar →</button></div></div>
+      <div className="hero-visual"><div className="ring ring-a" /><div className="ring ring-b" /><div className="core">H<span>AI</span></div><div className="orbit-label l1">RADAR</div><div className="orbit-label l2">QA</div><div className="orbit-label l3">SALES</div></div>
+      <div className="hero-caption"><span>ENGINE STATUS</span><strong><i className="live-dot" /> Descobrindo oportunidades</strong><small>Próxima varredura automática · contínua</small></div>
+    </div>
+
+    <div className="stats-grid">
+      <Stat label="Receita" value={formatCurrency(revenue)} hint="resultado registrado" accent="violet" />
+      <Stat label="Produtos" value={products.length} hint={`${readyProducts} prontos`} accent="cyan" />
+      <Stat label="Jobs ativos" value={activeJobs} hint="worker em execução" accent="green" />
+      <Stat label="Oportunidades" value={data.opportunities.length} hint="sinais no radar" accent="amber" />
+    </div>
+
+    <div className="section-head"><div><span className="eyebrow">OPERATIONS</span><h2>Visão operacional</h2></div><button onClick={() => go("Agentes")} className="text-link">Ver agentes →</button></div>
+    <div className="ops-grid">
+      <div className="panel pipeline-panel"><PanelHead title="Pipeline autônomo" meta="EM TEMPO REAL" /><div className="pipeline-modern">{[["01", "RADAR", "Sinais"], ["02", "DECISÃO", "Score"], ["03", "PRODUÇÃO", "Ativos"], ["04", "QA", "Validação"], ["05", "RESULTADO", "Métricas"]].map((step, i) => <div className={`pipeline-step ${i === 2 ? "current" : i < 2 ? "done" : ""}`} key={step[0]}><b>{step[0]}</b><strong>{step[1]}</strong><span>{step[2]}</span>{i < 4 && <i>→</i>}</div>)}</div><p className="panel-foot">Cada etapa registra estado, tentativa e resultado. Falhas ficam bloqueadas antes da publicação.</p></div>
+      <div className="panel health-panel"><PanelHead title="Saúde do sistema" meta={online ? "NORMAL" : "ATENÇÃO"} /><HealthRow name="API" value={online ? "Online" : "Offline"} tone={online ? "success" : "danger"} /><HealthRow name="Persistência" value="Supabase" tone="neutral" /><HealthRow name="IA" value="Gateway" tone="neutral" /><HealthRow name="Worker" value={activeJobs ? "Processando" : "Aguardando"} tone={activeJobs ? "active" : "neutral"} /><HealthRow name="Radar" value="24/7" tone="active" /></div>
+    </div>
+
+    <div className="section-head"><div><span className="eyebrow">RECENT WORK</span><h2>Produção recente</h2></div><button onClick={() => go("Produtos")} className="text-link">Abrir catálogo →</button></div>
+    {products.length ? <div className="product-strip">{products.slice(0, 3).map(p => <ProductMini key={p.id} product={p} />)}</div> : <EmptyState title="Nenhum produto produzido ainda" text="Dê um comando ao Hermes ou abra a Fábrica para iniciar o primeiro ciclo." action="Abrir Fábrica" onClick={() => go("Fábrica")} />}
+  </section>;
+}
+
+function Stat({ label, value, hint, accent }) { return <article className={`stat-card ${accent}`}><span>{label}</span><strong>{value}</strong><small>{hint}</small><i /></article>; }
+function PanelHead({ title, meta }) { return <div className="panel-head"><h3>{title}</h3><span>{meta}</span></div>; }
+function HealthRow({ name, value, tone }) { return <div className="health-row"><span>{name}</span><strong><i className={`status-dot ${tone}`} />{value}</strong></div>; }
+function EmptyState({ title, text, action, onClick }) { return <div className="empty-state"><div className="empty-icon">✦</div><h3>{title}</h3><p>{text}</p>{action && <button className="primary" onClick={onClick}>{action}</button>}</div>; }
+function ProductMini({ product }) { const m = product.metadata || {}; return <article className="product-mini"><div className="cover-mini">{m.cover_url ? <img src={m.cover_url} alt="" /> : <b>H</b>}</div><div><span>{product.status}</span><h3>{product.title || m.title || product.topic}</h3><small>{product.current_stage || "pipeline"}</small></div><b className={`status-chip ${statusTone(product.status)}`}>{product.status}</b></article>; }
+
+function Radar({ opportunities }) { return <section className="page"><PageTitle eyebrow="OPPORTUNITY RADAR" title="Onde Hermes deve agir?" text="Sinais públicos são coletados continuamente. Nenhum sinal é tratado como prova de demanda sem validação." /><div className="radar-top"><div className="radar-score"><span>RADAR SCORE</span><strong>{opportunities.length ? Math.round(Math.max(...opportunities.map(x => Number(x.score || 0)))) : "—"}</strong><small>confiança depende dos dados disponíveis</small></div><div className="radar-ring"><div><b>{opportunities.length}</b><span>sinais</span></div></div></div><div className="opportunity-list">{opportunities.length ? opportunities.slice(0, 12).map(item => <article className="opportunity" key={item.id}><div className="opp-icon">⌁</div><div><span>{item.source || "signal"}</span><h3>{item.title}</h3><p>{item.description}</p></div><div className="opp-score"><strong>{Math.round(Number(item.score || 0))}</strong><small>{Math.round(Number(item.confidence || 0) * 100)}% conf.</small></div></article>) : <EmptyState title="Radar ainda sem sinais persistidos" text="O ciclo autônomo fará novas descobertas quando a persistência estiver disponível." />}</div></section>; }
+
+function Factory({ topic, setTopic, submit, busy }) { return <section className="page factory-page"><PageTitle eyebrow="PRODUCT FACTORY" title="Construa algo que merece ser vendido." text="Informe uma oportunidade. O Hermes cria o job e acompanha produção, revisão, documentos e ativos." /><div className="factory-layout"><form className="factory-card" onSubmit={submit}><div className="input-label"><span>BRIEFING</span><small>mínimo 3 caracteres</small></div><textarea value={topic} onChange={e => setTopic(e.target.value)} placeholder="Ex.: Guia prático de IA para pequenos negócios brasileiros" required minLength={3} /><div className="suggestions"><button type="button" onClick={() => setTopic("Guia prático de IA para pequenos negócios")}>IA para negócios</button><button type="button" onClick={() => setTopic("Organização financeira para autônomos")}>Finanças</button><button type="button" onClick={() => setTopic("Currículo e LinkedIn para primeira vaga")}>Carreira</button></div><button className="primary wide" disabled={busy}>{busy ? "Iniciando…" : "✦ Iniciar produção"}</button></form><div className="factory-side"><div className="factory-stat"><span>01</span><b>Estratégia</b><small>tema → oferta</small></div><div className="factory-stat"><span>02</span><b>Produção</b><small>conteúdo + documentos</small></div><div className="factory-stat"><span>03</span><b>Qualidade</b><small>QA antes de publicar</small></div><div className="factory-stat"><span>04</span><b>Resultado</b><small>medição e otimização</small></div></div></div></section>; }
+
+function Products({ items, selected, setSelected }) { return <section className="page"><PageTitle eyebrow="PRODUCTS" title="Portfólio vivo" text="Cada produto mantém seus ativos, estágio, qualidade e prontidão comercial no mesmo workspace." /><div className="catalog-toolbar"><span>{items.length} produtos</span><div><button>Todos</button><button>Em produção</button><button>Prontos</button></div></div>{items.length ? <div className="catalog-grid">{items.map(product => <ProductCard key={product.id} product={product} selected={selected?.id === product.id} onClick={() => setSelected(product)} />)}</div> : <EmptyState title="Seu catálogo está vazio" text="Comece pela Fábrica. O produto aparecerá aqui assim que o job for criado." />}{selected && <ProductDrawer product={selected} close={() => setSelected(null)} />}</section>; }
+function ProductCard({ product, selected, onClick }) { const m = product.metadata || {}; const title = product.title || m.title || product.topic; return <article className={`catalog-card ${selected ? "selected" : ""}`} onClick={onClick}><div className="catalog-cover">{m.cover_url ? <img src={m.cover_url} alt="" /> : <><b>H</b><span>{product.current_stage || "FACTORY"}</span></>}</div><div className="catalog-body"><div><span className={`status-chip ${statusTone(product.status)}`}>{product.status}</span><small>{product.current_stage || "—"}</small></div><h3>{title}</h3><p>{m.subtitle || product.topic}</p><div className="catalog-foot"><span>QA {m.quality_score ?? "—"}/100</span><b>{m.suggested_price != null ? formatCurrency(m.suggested_price) : "Preço pendente"}</b></div></div></article>; }
+function ProductDrawer({ product, close }) { const m = product.metadata || {}; return <div className="drawer-backdrop" onClick={close}><aside className="drawer" onClick={e => e.stopPropagation()}><button className="drawer-close" onClick={close}>×</button><span className="eyebrow">PRODUCT WORKSPACE</span><h2>{product.title || m.title || product.topic}</h2><div className="drawer-status"><b>{product.status}</b><span>{product.current_stage}</span></div><div className="drawer-section"><h3>Oferta</h3><p>{m.short_description || m.description || "Oferta ainda em produção."}</p></div><div className="drawer-section"><h3>Ativos</h3><div className="asset-line"><span>PDF</span><b>{m.pdf_url ? "Disponível" : "Pendente"}</b>{m.pdf_url && <a href={m.pdf_url} target="_blank" rel="noreferrer">Abrir</a>}</div><div className="asset-line"><span>DOCX</span><b>{m.document_url ? "Disponível" : "Pendente"}</b>{m.document_url && <a href={m.document_url} target="_blank" rel="noreferrer">Abrir</a>}</div><div className="asset-line"><span>Capa</span><b>{m.cover_url ? "Disponível" : "Pendente"}</b></div></div><div className="drawer-section"><h3>Prontidão</h3><div className="readiness"><span>Qualidade</span><strong>{m.quality_score ?? "—"}/100</strong></div><div className="readiness"><span>Preço</span><strong>{m.suggested_price != null ? formatCurrency(m.suggested_price) : "—"}</strong></div></div></aside></div>; }
+
+function Sales({ sales, revenue }) { return <section className="page"><PageTitle eyebrow="SALES COMMAND" title="Resultado, não vaidade." text="Receita e pedidos registrados pelas integrações. Dados ausentes permanecem ausentes." /><div className="sales-hero"><div><span>RECEITA REGISTRADA</span><strong>{formatCurrency(revenue)}</strong><small>{sales?.orders ?? 0} pedidos registrados</small></div><div className="chart-bars">{[32, 45, 28, 64, 51, 72, 58, 82, 67, 91, 76, 100].map((height, i) => <i key={i} style={{ height: `${height}%` }} />)}</div></div><div className="stats-grid compact"><Stat label="Pedidos" value={sales?.orders ?? 0} hint="registrados" accent="cyan" /><Stat label="Ticket" value={sales?.average_order_value != null ? formatCurrency(sales.average_order_value) : "R$ —"} hint="médio" accent="violet" /><Stat label="Reembolsos" value={sales?.refunds ?? "—"} hint="sem dado" accent="amber" /></div></section>; }
+
+function Analytics({ analytics, data }) { return <section className="page"><PageTitle eyebrow="ANALYTICS" title="O que o sistema está aprendendo?" text="Analytics transforma eventos e resultados em próximos movimentos. Sem inventar métricas." /><div className="analytics-grid"><div className="panel large-analytics"><PanelHead title="Performance" meta="LIVE DATA" /><div className="big-number">{analytics?.summary ?? "Dados insuficientes"}</div><div className="signal-bars"><i style={{ height: "36%" }} /><i style={{ height: "58%" }} /><i style={{ height: "44%" }} /><i style={{ height: "71%" }} /><i style={{ height: "64%" }} /><i style={{ height: "84%" }} /><i style={{ height: "78%" }} /></div></div><div className="panel"><PanelHead title="Sinais" meta="AGORA" /><HealthRow name="Oportunidades" value={String(data.opportunities.length)} tone="active" /><HealthRow name="Produtos" value={String(data.products.length)} tone="success" /><HealthRow name="Jobs" value={String(data.jobs.length)} tone="neutral" /><HealthRow name="Integrações" value={String(data.integrations.length)} tone="neutral" /></div></div></section>; }
+
+function Agents({ online }) { return <section className="page"><PageTitle eyebrow="AGENT ORCHESTRATOR" title="Uma equipe digital em operação." text="Agentes especializados recebem tarefas do núcleo do Hermes. O status visual distingue operação real de disponibilidade." /><div className="agent-grid-premium">{agentCatalog.map(([name, desc, agent]) => <article className="agent-card" key={name}><div className="agent-icon">✦</div><div><span>{agent.toUpperCase()}</span><h3>{name}</h3><p>{desc}</p></div><b className={`agent-state ${online ? "ready" : "waiting"}`}>{online ? "READY" : "WAIT"}</b></article>)}</div></section>; }
+
+function Chat({ chat, input, setInput, send, busy }) { return <section className="chat-page"><div className="chat-head"><div className="hermes-avatar">H</div><div><span className="eyebrow">HERMES CORE</span><h2>Command chat</h2><p>Converse, analise ou peça uma ação. O Hermes só declara como concluído o que realmente executou.</p></div></div><div className="chat-window">{chat.length === 0 && <div className="chat-welcome"><div className="core-large">H</div><h3>Qual é a próxima decisão?</h3><p>Ex.: “Encontre oportunidades para hoje” ou “Crie um produto sobre IA para pequenos negócios”.</p><div className="prompt-grid"><button onClick={() => setInput("Encontre oportunidades para hoje")}>Radar de hoje</button><button onClick={() => setInput("Crie um produto sobre IA para pequenos negócios")}>Criar produto</button><button onClick={() => setInput("Explique o estado atual do sistema")}>Diagnóstico</button></div></div>}{chat.map((message, index) => <div className={`chat-message ${message.role}`} key={index}><span>{message.role === "user" ? "VOCÊ" : "HERMES"}</span><p>{message.text}</p>{message.meta && <small>{message.meta}</small>}</div>)}<form className="chat-form" onSubmit={send}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Dê um comando ao Hermes…" maxLength={4000} /><button className="primary" disabled={busy}>{busy ? "…" : "Enviar ↗"}</button></form></div></section>; }
+function PageTitle({ eyebrow, title, text }) { return <div className="page-title"><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{text}</p></div>; }
+
+createRoot(document.getElementById("root")).render(<App />);
