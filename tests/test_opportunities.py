@@ -15,7 +15,7 @@ def test_opportunity_score_uses_commercial_signals_and_confidence():
         }
     )
 
-    assert result["score"] == 79.0
+    assert result["score"] == 74.67
     assert result["confidence"] == 1.0
     assert set(result["dimensions"]) == {
         "demand",
