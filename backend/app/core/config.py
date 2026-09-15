@@ -2,6 +2,7 @@ from functools import lru_cache
 from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
     app_name: str = "Hermes Pro API"
     app_env: str = "development"
@@ -11,7 +12,7 @@ class Settings(BaseSettings):
     database_url: str = Field(default="", validation_alias="DATABASE_URL")
     ai_provider: str = Field(default="auto", validation_alias="AI_PROVIDER")
     ai_api_key: str | None = Field(default=None, validation_alias=AliasChoices("AI_API_KEY", "AI_GATEWAY_API_KEY"))
-    openai_api_key: str | None = Field(default=None, validation_alias=AliasChoices("OPENAI_API_KEY", "AI_API_KEY", "OPENAI_KEY"))
+    openai_api_key: str | None = Field(default=None, validation_alias=AliasChoices("OPENAI_API_KEY", "OPENAI_KEY"))
     openai_model: str = Field(default="gpt-5.6-luna", validation_alias="OPENAI_MODEL")
     gemini_api_key: str | None = Field(default=None, validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"))
     gemini_model: str = Field(default="gemini-2.5-flash", validation_alias=AliasChoices("GEMINI_MODEL", "GOOGLE_GEMINI_MODEL"))
@@ -34,17 +35,22 @@ class Settings(BaseSettings):
     @property
     def effective_ai_provider(self) -> str:
         requested = (self.ai_provider or "auto").strip().lower()
-        if requested == "gemini" and self.gemini_api_key:
-            return "gemini"
-        if requested == "openai" and self.openai_api_key:
-            return "openai"
+        if requested == "gemini":
+            return "gemini" if self.gemini_api_key else "unconfigured"
+        if requested == "openai":
+            return "openai" if self.openai_api_key else "unconfigured"
         if self.gemini_api_key:
             return "gemini"
         if self.openai_api_key:
             return "openai"
         if requested == "stub":
             return "stub"
-        return requested
+        return "unconfigured"
+
+    @property
+    def ai_configured(self) -> bool:
+        return self.effective_ai_provider in {"gemini", "openai", "stub"}
+
 
 @lru_cache
 def get_settings() -> Settings:
