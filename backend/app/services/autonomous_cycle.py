@@ -7,8 +7,8 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from ..commerce.opportunities import score_opportunity
 from .commerce_store import CommerceStore
+from .opportunities import score_opportunity
 
 
 TOPICS = (
@@ -27,9 +27,9 @@ def _clean(text: str) -> str:
 
 
 async def discover_public_signals(store: CommerceStore, limit: int = 8) -> list[dict[str, Any]]:
-    """Collects public Google News RSS headlines as market signals.
+    """Collect public Google News RSS headlines as market signals.
 
-    This is intentionally a signal source, not proof of demand. Missing metrics remain missing.
+    This is a signal source, not proof of demand. Missing metrics remain missing.
     """
     created: list[dict[str, Any]] = []
     for topic in TOPICS:
@@ -51,12 +51,12 @@ async def discover_public_signals(store: CommerceStore, limit: int = 8) -> list[
             scored = score_opportunity(
                 demand=1.0,
                 margin=None,
-                ease=0.7,
+                ease=None,
                 conversion=None,
-                capacity=0.8,
+                capacity=None,
                 competition=None,
-                cost=0.9,
-                risk=0.9,
+                cost=None,
+                risk=None,
             )
             try:
                 row = await store.create_opportunity(
