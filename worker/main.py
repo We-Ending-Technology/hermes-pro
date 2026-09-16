@@ -8,6 +8,7 @@ from backend.app.ai_gateway.factory import build_ai_gateway
 from backend.app.core.config import get_settings
 from backend.app.db.supabase import SupabaseREST
 from backend.app.queue import JobQueue
+from backend.app.services.document_assets import build_cover, build_docx, build_pdf, normalize_content
 from backend.app.services.persistence import PersistentStore
 
 logging.basicConfig(level=logging.INFO)
@@ -35,45 +36,69 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
 
     try:
         await store.update_job(job_id, "running", attempts=attempts, error_message=None)
-        gateway = build_ai_gateway(get_settings())
+        settings = get_settings()
+        if not settings.ai_configured:
+            raise RuntimeError("AI Gateway indisponível: GEMINI_API_KEY/GOOGLE_API_KEY não está configurada")
+        gateway = build_ai_gateway(settings)
         await store.update_product(product_id, status="generating", current_stage="topic")
         strategist = await gateway.complete(
             f"Create a concise product strategy for the digital ebook topic: {topic}. Return valid JSON with keys: positioning, audience, title, subtitle, outline (array of chapter titles).",
             system="You are the Hermes Pro strategist. Return only valid JSON. Do not claim market data you do not have.",
         )
+        strategy_data = json.loads(strategist.content)
         await store.update_product(product_id, current_stage="writer")
         writer = await gateway.complete(
             f"Using this strategy, write the ebook for topic '{topic}'. Strategy: {strategist.content}\nReturn valid JSON with keys: introduction, chapters (array of objects with title and content), conclusion.",
             system="You are the Hermes Pro writer. Return only valid JSON. Produce original, useful educational content and do not fabricate citations.",
         )
+        content = normalize_content(writer.content)
         await store.update_product(product_id, current_stage="reviewer")
         reviewer = await gateway.complete(
             f"Review this proposed ebook for topic '{topic}'. Identify factual, structural and readability problems and provide a quality score from 0-100. Return valid JSON with keys: score, findings (array), approved (boolean).\nSTRATEGY: {strategist.content}\nEBOOK: {writer.content}",
             system="You are the Hermes Pro reviewer. Return only valid JSON. Be conservative: approval requires score >= 80.",
         )
-        await store.update_product(product_id, current_stage="validation")
-        try:
-            strategy_data = json.loads(strategist.content)
-            review_data = json.loads(reviewer.content)
-        except (ValueError, TypeError, json.JSONDecodeError) as exc:
-            raise RuntimeError("Gemini returned invalid JSON for the product pipeline") from exc
-
+        review_data = json.loads(reviewer.content)
         score = int(review_data.get("score", 0))
         approved = bool(review_data.get("approved")) and score >= 80
+        title = str(strategy_data.get("title") or topic)
+        subtitle = str(strategy_data.get("subtitle") or "")
         metadata = {
             "strategy": strategy_data,
-            "content": writer.content,
+            "content": content,
             "review": review_data,
             "quality_score": score,
             "ai_provider": strategist.provider,
             "ai_model": strategist.model,
+            "content_versions": [{"id": "initial", "created_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(), "note": "Geração inicial", "content": content}],
+            "offer": {"title": title, "subtitle": subtitle, "description": f"Ebook sobre {topic}.", "price": 19.90, "currency": "BRL"},
         }
-        title = strategy_data.get("title") if isinstance(strategy_data, dict) else None
+        await store.update_product(product_id, current_stage="validation", title=title, metadata=metadata)
         if not approved:
-            await store.update_product(product_id, status="review_required", current_stage="reviewer", title=title, metadata=metadata)
-        else:
-            # This job completes the AI content phase only. Document, cover and publication must not be marked complete here.
-            await store.update_product(product_id, status="content_ready", current_stage="validation", title=title, metadata=metadata)
+            await store.update_product(product_id, status="review_required", current_stage="reviewer", metadata=metadata)
+            await store.update_job(job_id, "completed", attempts=attempts)
+            return
+
+        await store.update_product(product_id, current_stage="document")
+        db = store.db
+        docx = build_docx(title, content)
+        pdf = build_pdf(title, content)
+        cover = build_cover(title, subtitle)
+        stamp = __import__("uuid").uuid4().hex
+        docx_path = f"{product_id}/{stamp}.docx"
+        pdf_path = f"{product_id}/{stamp}.pdf"
+        cover_path = f"{product_id}/{stamp}.png"
+        await db.upload_storage("ebooks", docx_path, docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        await db.upload_storage("exports", pdf_path, pdf, "application/pdf")
+        await db.upload_storage("covers", cover_path, cover, "image/png")
+        assets = {
+            "docx": {"path": docx_path, "url": await db.create_signed_url("ebooks", docx_path)},
+            "pdf": {"path": pdf_path, "url": await db.create_signed_url("exports", pdf_path)},
+            "cover": {"path": cover_path, "url": await db.create_signed_url("covers", cover_path)},
+        }
+        metadata["assets"] = assets
+        metadata["cover_versions"] = [{"id": "initial", "path": cover_path, "url": assets["cover"]["url"], "prompt": "capa editorial premium", "active": True}]
+        metadata["active_cover"] = metadata["cover_versions"][0]
+        await store.update_product(product_id, status="ready_to_sell", current_stage="publication", metadata=metadata)
         await store.update_job(job_id, "completed", attempts=attempts)
         logger.info("completed product_generation job=%s product=%s approved=%s", job_id, product_id, approved)
     except Exception as exc:
@@ -96,8 +121,8 @@ async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
 async def run() -> None:
     settings = get_settings()
     store = PersistentStore(SupabaseREST(settings))
-    queue = JobQueue(settings.redis_url)
-    logger.info("Hermes Pro worker started; queue=hermes:jobs:product_generation")
+    queue = JobQueue(settings.redis_url, store.db)
+    logger.info("Hermes Pro worker started; queue=%s", "redis" if queue.uses_redis else "supabase")
     try:
         await recover_pending(store, queue)
         while True:
@@ -105,7 +130,6 @@ async def run() -> None:
             if job_id:
                 await process_product(job_id, store, queue)
             else:
-                # Recovery path: jobs survive worker/Redis restarts because their source of truth is Supabase.
                 await recover_pending(store, queue)
     finally:
         await queue.close()
