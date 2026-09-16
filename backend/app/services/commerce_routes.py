@@ -13,17 +13,14 @@ from .commerce_store import CommerceStore
 from .controls import ControlService
 from .persistence import PersistentStore
 
-
 class ServiceSearchRequest(BaseModel):
     query: str = Field(default="ai automation", min_length=2, max_length=120)
     limit: int = Field(default=12, ge=1, le=50)
-
 
 class ChannelPublishRequest(BaseModel):
     channel: str
     product_id: str
     dry_run: bool = True
-
 
 def build_commerce_router(store: PersistentStore, commerce: CommerceStore, controls: ControlService) -> APIRouter:
     router = APIRouter(prefix="/api/v1/commerce", tags=["commerce"])
@@ -49,12 +46,10 @@ def build_commerce_router(store: PersistentStore, commerce: CommerceStore, contr
     @router.get("/logs")
     async def logs(limit: int = 50) -> list[dict[str, Any]]:
         try:
-            return await commerce.list_events()[:limit]
-        except TypeError:
             events = await commerce.list_events()
-            return events[:limit]
         except SupabaseError as exc:
             raise HTTPException(status_code=503, detail="Eventos indisponíveis") from exc
+        return events[:limit]
 
     @router.get("/channels")
     async def channels() -> list[dict[str, Any]]:
@@ -76,23 +71,17 @@ def build_commerce_router(store: PersistentStore, commerce: CommerceStore, contr
     async def service_search(request: ServiceSearchRequest) -> dict[str, Any]:
         query = request.query.strip()
         results: list[dict[str, Any]] = []
-        # Public discovery only. Hermes does not auto-apply, bypass accounts, or submit applications.
         async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
             try:
                 remotive = await client.get("https://remotive.com/api/remote-jobs", params={"search": query})
                 if remotive.is_success:
                     for item in remotive.json().get("jobs", [])[: request.limit]:
                         results.append({
-                            "source": "remotive",
-                            "external_id": str(item.get("id")),
-                            "title": item.get("title"),
-                            "company": item.get("company_name"),
-                            "description": item.get("description", "")[:1200],
-                            "url": item.get("url"),
-                            "location": item.get("candidate_required_location"),
-                            "job_type": item.get("job_type"),
-                            "published_at": item.get("publication_date"),
-                            "kind": "service_opportunity",
+                            "source": "remotive", "external_id": str(item.get("id")),
+                            "title": item.get("title"), "company": item.get("company_name"),
+                            "description": item.get("description", "")[:1200], "url": item.get("url"),
+                            "location": item.get("candidate_required_location"), "job_type": item.get("job_type"),
+                            "published_at": item.get("publication_date"), "kind": "service_opportunity",
                         })
             except Exception:
                 pass
@@ -101,17 +90,14 @@ def build_commerce_router(store: PersistentStore, commerce: CommerceStore, contr
                 if arbeit.is_success:
                     for item in arbeit.json().get("data", [])[: request.limit]:
                         results.append({
-                            "source": "arbeitnow",
-                            "external_id": str(item.get("slug") or item.get("id")),
-                            "title": item.get("title"),
-                            "company": item.get("company_name"),
-                            "description": item.get("description", "")[:1200],
-                            "url": item.get("url"),
-                            "location": item.get("location"),
-                            "job_type": item.get("job_types"),
-                            "published_at": item.get("created_at"),
-                            "kind": "service_opportunity",
+                            "source": "arbeitnow", "external_id": str(item.get("slug") or item.get("id")),
+                            "title": item.get("title"), "company": item.get("company_name"),
+                            "description": item.get("description", "")[:1200], "url": item.get("url"),
+                            "location": item.get("location"), "job_type": item.get("job_types"),
+                            "published_at": item.get("created_at"), "kind": "service_opportunity",
                         })
+            except Exception:
+                pass
         for item in results:
             try:
                 payload = dict(item)
