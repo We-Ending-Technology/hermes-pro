@@ -29,6 +29,13 @@ class CommerceStore:
     async def list_opportunities(self) -> list[dict[str, Any]]:
         return await self.db.select("hermes_opportunities", params={"select": "*", "order": "score.desc,created_at.desc"})
 
+    async def mark_opportunity_selected(self, opportunity_id: str) -> dict[str, Any]:
+        return await self.db.update(
+            "hermes_opportunities",
+            {"status": "selected", "updated_at": datetime.now(timezone.utc).isoformat()},
+            where={"id": f"eq.{opportunity_id}"},
+        )
+
     async def record_expense(self, category: str, amount: float, description: str = "", metadata: dict[str, Any] | None = None) -> dict[str, Any]:
         return await self.db.insert("hermes_expenses", {"category": category, "amount": amount, "description": description, "metadata": metadata or {}, "occurred_at": datetime.now(timezone.utc).isoformat()})
 
