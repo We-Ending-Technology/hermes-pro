@@ -1,15 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 
 class AutonomousOrchestrator:
-    """Converts verified high-value opportunities into persistent product jobs.
-
-    Discovery is deliberately separated from execution: only product opportunities
-    with a score at or above the configured threshold are queued, and the
-    opportunity is marked selected before the next cycle can reuse it.
-    """
+    """Converts verified high-value opportunities into persistent product jobs."""
 
     def __init__(self, commerce: Any, store: Any, queue: Any, controls: Any, min_score: float = 75.0) -> None:
         self.commerce = commerce
@@ -43,11 +39,7 @@ class AutonomousOrchestrator:
                 key,
             )
             await self.queue.enqueue(str(job["id"]))
-            await self.commerce.db.update(
-                "hermes_opportunities",
-                {"status": "selected", "updated_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()},
-                where={"id": f"eq.{opportunity['id']}"},
-            )
+            await self.commerce.mark_opportunity_selected(str(opportunity["id"]))
             await self.commerce.record_event(
                 "autonomous_job_created",
                 {"opportunity_id": str(opportunity["id"]), "product_id": str(product["id"]), "job_id": str(job["id"]), "score": score, "confidence": confidence},
