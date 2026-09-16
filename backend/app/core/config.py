@@ -38,7 +38,11 @@ class Settings(BaseSettings):
         if requested == "gemini":
             return "gemini" if self.gemini_api_key else "unconfigured"
         if requested == "openai":
-            return "openai" if self.openai_api_key else "unconfigured"
+            if self.openai_api_key:
+                return "openai"
+            if self.gemini_api_key:
+                return "gemini"
+            return "unconfigured"
         if self.gemini_api_key:
             return "gemini"
         if self.openai_api_key:
