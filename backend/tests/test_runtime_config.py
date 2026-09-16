@@ -1,5 +1,7 @@
 import os
 
+import pytest
+
 from backend.app.core.config import Settings
 
 
@@ -19,3 +21,15 @@ def test_supabase_service_role_alias_is_resolved(monkeypatch):
     settings = Settings()
     assert settings.supabase_url == "https://example.supabase.co"
     assert settings.supabase_secret_key == "test-service-role"
+
+
+def test_default_gemini_model_is_current():
+    settings = Settings(_env_file=None)
+    assert settings.gemini_model == "gemini-3.6-flash"
+    assert settings.gemini_model != "gemini-2.5-flash"
+
+
+def test_legacy_gemini_model_is_rejected(monkeypatch):
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash")
+    with pytest.raises(ValueError, match="gemini-2.5-flash is no longer supported"):
+        Settings()
