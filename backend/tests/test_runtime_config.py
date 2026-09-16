@@ -33,3 +33,15 @@ def test_legacy_gemini_model_is_rejected(monkeypatch):
     monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash")
     with pytest.raises(ValueError, match="gemini-2.5-flash is no longer supported"):
         Settings()
+
+
+def test_provider_key_pools_preserve_primary_key_and_order(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-primary")
+    monkeypatch.setenv("GEMINI_API_KEYS", "gemini-primary,gemini-backup")
+    monkeypatch.setenv("OPENAI_API_KEYS", "openai-primary,openai-backup")
+    monkeypatch.setenv("AI_PROVIDER_ORDER", "gemini,openai")
+    settings = Settings()
+    assert settings.gemini_api_key_pool == ["gemini-primary", "gemini-backup"]
+    assert settings.openai_api_key_pool == ["openai-primary", "openai-backup"]
+    assert settings.provider_order_list == ["gemini", "openai"]
+    assert settings.effective_ai_provider == "gemini"
