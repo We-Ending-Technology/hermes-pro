@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .ai_gateway.factory import build_ai_gateway
+from .ai_gateway.unavailable import UnavailableAIGateway
 from .agents.autonomous import AGENT_NAMES, CommerceAgent
 from .agents.diagnostic import DiagnosticAgent
 from .agents.registry import AgentRegistry
@@ -24,17 +25,18 @@ from .services.persistence import PersistentStore
 from .services.quality import quality_service
 from .services.radar import radar_service
 from .services.sales import SalesService
+from .services.studio import build_studio_router
 from .worker_runtime import run_worker_cycle
 from worker.main import process_product, recover_pending
 
 settings = get_settings()
-ai_gateway = build_ai_gateway(settings)
+ai_gateway = build_ai_gateway(settings) if settings.ai_configured else UnavailableAIGateway()
 registry = AgentRegistry()
 db = SupabaseREST(settings)
 store = PersistentStore(db)
 commerce = CommerceStore(db)
 controls = ControlService()
-queue = JobQueue(settings.redis_url)
+queue = JobQueue(settings.redis_url, db)
 sales_service = SalesService(db)
 analytics_service = AnalyticsService(db)
 
@@ -79,8 +81,9 @@ async def lifespan(app: FastAPI):
                 pass
         await queue.close()
 
-app = FastAPI(title=settings.app_name, version="0.6.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.7.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.include_router(build_studio_router(store, db))
 
 def product_response(row: dict) -> ProductResponse:
     from .product_factory import PIPELINE_STAGES
@@ -99,6 +102,19 @@ async def root() -> dict[str, str]:
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     return HealthResponse(status="ok", service="hermes-pro-api", environment=settings.app_env)
+
+@app.get("/api/v1/system/status")
+async def system_status() -> dict[str, object]:
+    supabase_ok = await db.health() if settings.supabase_url and settings.supabase_secret_key else False
+    return {
+        "api": True,
+        "ai": settings.ai_configured,
+        "ai_provider": settings.effective_ai_provider,
+        "supabase": supabase_ok,
+        "queue": "redis" if queue.uses_redis else ("supabase" if settings.supabase_url and settings.supabase_secret_key else "unconfigured"),
+        "hotmart_credentials": bool(settings.hotmart_client_id and settings.hotmart_client_secret),
+        "telegram_credentials": bool(settings.telegram_bot_token and settings.telegram_chat_id),
+    }
 
 @app.get("/api/v1/agents")
 async def list_agents() -> dict[str, list[str]]:
