@@ -23,6 +23,7 @@ from .services.commerce_routes import build_commerce_router
 from .services.commerce_store import CommerceStore
 from .services.controls import ControlService
 from .services.integrations import integration_service
+from .services.orchestrator import AutonomousOrchestrator
 from .services.persistence import PersistentStore
 from .services.quality import quality_service
 from .services.radar import radar_service
@@ -41,12 +42,16 @@ controls = ControlService()
 queue = JobQueue(settings.redis_url, db)
 sales_service = SalesService(db)
 analytics_service = AnalyticsService(db)
+orchestrator = AutonomousOrchestrator(commerce, store, queue, controls)
 
 async def autonomous_loop() -> None:
     while True:
         try:
-            if not controls.get_status().get("kill_switch") and not controls.get_status().get("pause_radar"):
+            status = controls.get_status()
+            settings_state = status.get("settings") or {}
+            if not status.get("kill_switches", {}).get("global") and not settings_state.get("pause_radar"):
                 await discover_public_signals(commerce, limit=8)
+                await orchestrator.run_cycle(limit=3)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -108,189 +113,3 @@ async def health() -> HealthResponse:
     return HealthResponse(status="ok", service="hermes-pro-api", environment=settings.app_env)
 
 @app.get("/api/v1/system/status")
-async def system_status() -> dict[str, object]:
-    supabase_ok = await db.health() if settings.supabase_url and settings.supabase_secret_key else False
-    return {
-        "api": True,
-        "ai": settings.ai_configured,
-        "ai_provider": settings.effective_ai_provider,
-        "supabase": supabase_ok,
-        "queue": "redis" if queue.uses_redis else ("supabase" if settings.supabase_url and settings.supabase_secret_key else "unconfigured"),
-        "hotmart_credentials": bool(settings.hotmart_client_id and settings.hotmart_client_secret),
-        "telegram_credentials": bool(settings.telegram_bot_token and settings.telegram_chat_id),
-    }
-
-@app.get("/api/v1/agents")
-async def list_agents() -> dict[str, list[str]]:
-    return {"agents": registry.names()}
-
-@app.post("/api/v1/agents/run", response_model=AgentRunResponse)
-async def run_agent(request: AgentRunRequest) -> AgentRunResponse:
-    try:
-        agent = registry.get(request.agent)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    output = await agent.run(request.input)
-    return AgentRunResponse(run_id=str(uuid4()), agent=request.agent, status="completed", output=output)
-
-@app.post("/api/v1/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
-    try:
-        command_result = await handle_chat_command(request.message, store, queue)
-    except SupabaseError as exc:
-        raise HTTPException(status_code=503, detail=f"Persistência Supabase indisponível: {exc}") from exc
-    if command_result:
-        return ChatResponse(**command_result)
-    now = datetime.now().astimezone()
-    temporal_context = now.strftime("%Y-%m-%d %H:%M:%S %Z (weekday=%A)")
-    try:
-        result = await ai_gateway.complete(request.message, system=(
-            "You are Hermes Pro, an autonomous commerce operations assistant. "
-            "Be concise, truthful, and never invent sales, integrations, publication, or completed jobs. "
-            f"The current server date and time is {temporal_context}. "
-            "Use server time when asked for current time."
-        ))
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"AI Gateway indisponível: {exc}") from exc
-    return ChatResponse(response=result.content, provider=result.provider, model=result.model)
-
-@app.get("/api/v1/integrations", response_model=list[IntegrationStatus])
-async def integrations() -> list[IntegrationStatus]:
-    return [IntegrationStatus(**item) for item in integration_service.status()]
-
-@app.get("/api/v1/jobs", response_model=list[JobResponse])
-async def jobs() -> list[JobResponse]:
-    try:
-        rows = await store.list_jobs()
-    except SupabaseError:
-        return []
-    return [job_response(row) for row in rows]
-
-@app.get("/api/v1/jobs/{job_id}", response_model=JobResponse)
-async def get_job(job_id: str) -> JobResponse:
-    try:
-        row = await store.get_job(job_id)
-    except SupabaseError as exc:
-        raise HTTPException(status_code=503, detail="Persistência Supabase não configurada.") from exc
-    if not row:
-        raise HTTPException(status_code=404, detail="job not found")
-    return job_response(row)
-
-@app.get("/api/v1/products", response_model=list[ProductResponse])
-async def products() -> list[ProductResponse]:
-    try:
-        rows = await store.list_products()
-    except SupabaseError:
-        return []
-    return [product_response(row) for row in rows]
-
-@app.post("/api/v1/products", response_model=ProductResponse, status_code=202)
-async def create_product(request: ProductCreateRequest) -> ProductResponse:
-    try:
-        product, job = await store.create_product_and_job(request.topic, request.metadata, request.idempotency_key)
-        await queue.enqueue(str(job["id"]))
-    except SupabaseError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return product_response(product)
-
-@app.get("/api/v1/products/{product_id}", response_model=ProductResponse)
-async def get_product(product_id: str) -> ProductResponse:
-    try:
-        row = await store.get_product(product_id)
-    except SupabaseError as exc:
-        raise HTTPException(status_code=503, detail="Persistência Supabase não configurada.") from exc
-    if not row:
-        raise HTTPException(status_code=404, detail="product not found")
-    return product_response(row)
-
-@app.post("/api/v1/radar", response_model=RadarResponse)
-async def radar(request: RadarRequest) -> RadarResponse:
-    result = radar_service.score(request.model_dump())
-    return RadarResponse(score=result.score, confidence=result.confidence, dimensions=result.dimensions, findings=result.findings)
-
-@app.get("/api/v1/radar", response_model=RadarResponse)
-async def radar_default() -> RadarResponse:
-    result = radar_service.score({})
-    return RadarResponse(score=result.score, confidence=result.confidence, dimensions=result.dimensions, findings=result.findings)
-
-@app.post("/api/v1/opportunities", response_model=OpportunityResponse, status_code=201)
-async def create_opportunity(request: OpportunityCreateRequest) -> OpportunityResponse:
-    try:
-        row = await commerce.create_opportunity(request.model_dump(exclude_none=True), request.idempotency_key)
-    except SupabaseError as exc:
-        raise HTTPException(status_code=503, detail="Persistência de oportunidades indisponível.") from exc
-    return OpportunityResponse(**row)
-
-@app.get("/api/v1/opportunities", response_model=list[OpportunityResponse])
-async def opportunities() -> list[OpportunityResponse]:
-    try:
-        rows = await commerce.list_opportunities()
-    except SupabaseError as exc:
-        raise HTTPException(status_code=503, detail="Persistência de oportunidades indisponível.") from exc
-    return [OpportunityResponse(**row) for row in rows]
-
-@app.get("/api/v1/events")
-async def events() -> list[dict]:
-    try:
-        return await commerce.list_events()
-    except SupabaseError as exc:
-        raise HTTPException(status_code=503, detail="Persistência de eventos indisponível.") from exc
-
-@app.get("/api/v1/expenses")
-async def expenses() -> list[dict]:
-    try:
-        return await commerce.list_expenses()
-    except SupabaseError as exc:
-        raise HTTPException(status_code=503, detail="Persistência de custos indisponível.") from exc
-
-@app.get("/api/v1/controls")
-async def get_controls() -> dict[str, object]:
-    return controls.get_status()
-
-@app.post("/api/v1/controls/kill-switch", status_code=200)
-async def set_control(request: ControlRequest) -> dict[str, object]:
-    controls.set_kill_switch(request.name, request.enabled)
-    return controls.get_status()
-
-@app.post("/api/v1/products/{product_id}/quality", response_model=QualityResponse)
-async def quality(product_id: str, product: dict) -> QualityResponse:
-    try:
-        row = await store.get_product(product_id)
-    except SupabaseError as exc:
-        raise HTTPException(status_code=503, detail="Persistência Supabase não configurada.") from exc
-    if not row:
-        raise HTTPException(status_code=404, detail="product not found")
-    result = quality_service.evaluate(product)
-    return QualityResponse(score=result.score, decision=result.decision, dimensions=result.dimensions, findings=result.findings, safe_fixes=result.safe_fixes)
-
-@app.get("/api/v1/sales", response_model=SalesSummary)
-async def sales(range_start: date | None = None, range_end: date | None = None) -> SalesSummary:
-    try:
-        return SalesSummary(**await sales_service.summary(range_start, range_end))
-    except SupabaseError as exc:
-        raise HTTPException(status_code=503, detail="Persistência de vendas indisponível.") from exc
-
-@app.get("/api/v1/analytics", response_model=AnalyticsResponse)
-async def analytics(range_start: date | None = None, range_end: date | None = None) -> AnalyticsResponse:
-    try:
-        return AnalyticsResponse(**await analytics_service.insights(range_start, range_end))
-    except SupabaseError as exc:
-        raise HTTPException(status_code=503, detail="Persistência de analytics indisponível.") from exc
-
-@app.get("/api/v1/dashboard", response_model=DashboardResponse)
-async def dashboard() -> DashboardResponse:
-    try:
-        products_list = await store.list_products()
-        jobs_list = await store.list_jobs()
-        sales_data = await sales_service.summary()
-    except SupabaseError:
-        products_list, jobs_list = [], []
-        sales_data = {"revenue": None, "orders": None}
-    return DashboardResponse(
-        products=len(products_list),
-        active_jobs=sum(row["status"] in {"pending", "running", "retrying"} for row in jobs_list),
-        completed_products=sum(row["status"] in {"completed", "content_ready", "ready_to_sell"} for row in products_list),
-        revenue=sales_data.get("revenue"),
-        sales=sales_data.get("orders"),
-        integrations=integration_service.status(),
-    )
