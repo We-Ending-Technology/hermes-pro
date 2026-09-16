@@ -19,6 +19,11 @@ class FakeCommerce:
     async def list_opportunities(self):
         return self.opportunities
 
+    async def mark_opportunity_selected(self, opportunity_id):
+        for opportunity in self.opportunities:
+            if opportunity["id"] == opportunity_id:
+                opportunity["status"] = "selected"
+
     async def record_event(self, *args, **kwargs):
         self.events.append((args, kwargs))
 
