@@ -19,6 +19,7 @@ from .schemas import *
 from .services.analytics import AnalyticsService
 from .services.autonomous_cycle import discover_public_signals
 from .services.chat_commands import handle_chat_command
+from .services.commerce_routes import build_commerce_router
 from .services.commerce_store import CommerceStore
 from .services.controls import ControlService
 from .services.integrations import integration_service
@@ -86,6 +87,7 @@ app = FastAPI(title=settings.app_name, version="0.7.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(build_studio_router(store, db))
 app.include_router(build_hotmart_router(store))
+app.include_router(build_commerce_router(store, commerce, controls))
 
 def product_response(row: dict) -> ProductResponse:
     from .product_factory import PIPELINE_STAGES
