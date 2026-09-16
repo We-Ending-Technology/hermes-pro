@@ -1,23 +1,33 @@
-from datetime import datetime
-
-from backend.app.main import chat
-from backend.app.schemas import ChatRequest
+from backend.app.services.chat_commands import handle_chat_command
 
 
-async def test_chat_current_date_does_not_require_ai(monkeypatch):
-    monkeypatch.setattr("backend.app.main.ai_gateway", None)
-    result = await chat(ChatRequest(message="QUE DIA É HOJE"))
-    assert "2026" in result.response
+class FakeStore:
+    async def create_product_and_job(self, topic, metadata, idempotency_key):
+        return ({"id": "product-1"}, {"id": "job-1"})
 
 
-async def test_chat_product_request_creates_job(monkeypatch):
-    calls = []
+class FakeQueue:
+    def __init__(self):
+        self.ids = []
 
-    async def fake_create(request):
-        calls.append(request.message)
-        return {"response": "Job criado", "provider": "system", "model": "command"}
+    async def enqueue(self, job_id):
+        self.ids.append(job_id)
 
-    monkeypatch.setattr("backend.app.main.handle_chat_command", fake_create)
-    result = await chat(ChatRequest(message="produza um ebook sobre produtividade"))
-    assert calls == ["produza um ebook sobre produtividade"]
-    assert result.response == "Job criado"
+
+async def test_chat_current_date_does_not_require_ai():
+    result = await handle_chat_command("QUE DIA É HOJE", FakeStore(), FakeQueue())
+    assert result["provider"] == "system"
+    assert "/" in result["response"]
+
+
+async def test_chat_product_request_creates_job():
+    queue = FakeQueue()
+    result = await handle_chat_command("produza um ebook sobre produtividade", FakeStore(), queue)
+    assert queue.ids == ["job-1"]
+    assert result["provider"] == "system"
+    assert "produtividade" in result["response"]
+
+
+async def test_chat_unsupported_message_falls_through():
+    result = await handle_chat_command("me explique o radar", FakeStore(), FakeQueue())
+    assert result is None
