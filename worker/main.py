@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
+from uuid import uuid4
 
 from backend.app.ai_gateway.factory import build_ai_gateway
 from backend.app.core.config import get_settings
@@ -13,27 +15,22 @@ from backend.app.services.persistence import PersistentStore
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hermes.worker")
-
 MAX_ATTEMPTS = 3
 
 
 async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) -> None:
     job = await store.get_job(job_id)
-    if not job or job["job_type"] != "product_generation":
+    if not job or job["job_type"] != "product_generation" or job["status"] == "completed":
         return
-    if job["status"] == "completed":
-        return
-    if int(job["attempts"]) >= MAX_ATTEMPTS:
-        await store.update_job(job_id, "failed", attempts=job["attempts"], error_message="maximum attempts reached")
-        return
-
     attempts = int(job["attempts"]) + 1
-    product_id = (job.get("payload") or {}).get("product_id")
-    topic = (job.get("payload") or {}).get("topic")
+    if attempts > MAX_ATTEMPTS:
+        await store.update_job(job_id, "failed", attempts=int(job["attempts"]), error_message="maximum attempts reached")
+        return
+    payload = job.get("payload") or {}
+    product_id, topic = payload.get("product_id"), payload.get("topic")
     if not product_id or not topic:
         await store.update_job(job_id, "failed", attempts=attempts, error_message="invalid product_generation payload")
         return
-
     try:
         await store.update_job(job_id, "running", attempts=attempts, error_message=None)
         settings = get_settings()
@@ -69,24 +66,25 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             "quality_score": score,
             "ai_provider": strategist.provider,
             "ai_model": strategist.model,
-            "content_versions": [{"id": "initial", "created_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(), "note": "Geração inicial", "content": content}],
+            "content_versions": [{"id": "initial", "created_at": datetime.now(timezone.utc).isoformat(), "note": "Geração inicial", "content": content}],
             "offer": {"title": title, "subtitle": subtitle, "description": f"Ebook sobre {topic}.", "price": 19.90, "currency": "BRL"},
+            "subtitle": subtitle,
+            "description": f"Ebook sobre {topic}.",
+            "suggested_price": 19.90,
+            "short_description": f"Ebook prático sobre {topic}.",
         }
         await store.update_product(product_id, current_stage="validation", title=title, metadata=metadata)
         if not approved:
             await store.update_product(product_id, status="review_required", current_stage="reviewer", metadata=metadata)
             await store.update_job(job_id, "completed", attempts=attempts)
             return
-
         await store.update_product(product_id, current_stage="document")
         db = store.db
         docx = build_docx(title, content)
         pdf = build_pdf(title, content)
         cover = build_cover(title, subtitle)
-        stamp = __import__("uuid").uuid4().hex
-        docx_path = f"{product_id}/{stamp}.docx"
-        pdf_path = f"{product_id}/{stamp}.pdf"
-        cover_path = f"{product_id}/{stamp}.png"
+        stamp = uuid4().hex
+        docx_path, pdf_path, cover_path = f"{product_id}/{stamp}.docx", f"{product_id}/{stamp}.pdf", f"{product_id}/{stamp}.png"
         await db.upload_storage("ebooks", docx_path, docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
         await db.upload_storage("exports", pdf_path, pdf, "application/pdf")
         await db.upload_storage("covers", cover_path, cover, "image/png")
@@ -96,11 +94,13 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             "cover": {"path": cover_path, "url": await db.create_signed_url("covers", cover_path)},
         }
         metadata["assets"] = assets
+        metadata["document_url"] = assets["docx"]["url"]
+        metadata["pdf_url"] = assets["pdf"]["url"]
+        metadata["cover_url"] = assets["cover"]["url"]
         metadata["cover_versions"] = [{"id": "initial", "path": cover_path, "url": assets["cover"]["url"], "prompt": "capa editorial premium", "active": True}]
         metadata["active_cover"] = metadata["cover_versions"][0]
         await store.update_product(product_id, status="ready_to_sell", current_stage="publication", metadata=metadata)
         await store.update_job(job_id, "completed", attempts=attempts)
-        logger.info("completed product_generation job=%s product=%s approved=%s", job_id, product_id, approved)
     except Exception as exc:
         message = str(exc)[:1000]
         if attempts < MAX_ATTEMPTS:
