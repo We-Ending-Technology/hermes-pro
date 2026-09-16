@@ -1,6 +1,10 @@
 from functools import lru_cache
-from pydantic import Field, AliasChoices
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+CURRENT_GEMINI_MODEL = "gemini-3.6-flash"
+LEGACY_GEMINI_MODELS = {"gemini-2.5-flash"}
 
 
 class Settings(BaseSettings):
@@ -15,7 +19,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = Field(default=None, validation_alias=AliasChoices("OPENAI_API_KEY", "OPENAI_KEY"))
     openai_model: str = Field(default="gpt-5.6-luna", validation_alias="OPENAI_MODEL")
     gemini_api_key: str | None = Field(default=None, validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"))
-    gemini_model: str = Field(default="gemini-2.5-flash", validation_alias=AliasChoices("GEMINI_MODEL", "GOOGLE_GEMINI_MODEL"))
+    gemini_model: str = Field(default=CURRENT_GEMINI_MODEL, validation_alias=AliasChoices("GEMINI_MODEL", "GOOGLE_GEMINI_MODEL"))
     supabase_url: str | None = Field(default=None, validation_alias=AliasChoices("SUPABASE_URL", "SUPABASE_PROJECT_URL", "SUPABASE_HOST"))
     supabase_secret_key: str | None = Field(default=None, validation_alias=AliasChoices("SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY", "SUPABASE_SERVICE_ROLE", "SUPABASE_SECRET", "SUPABASE_KEY"))
     redis_url: str = Field(default="", validation_alias="REDIS_URL")
@@ -27,6 +31,14 @@ class Settings(BaseSettings):
     telegram_chat_id: str | None = Field(default=None, validation_alias="TELEGRAM_CHAT_ID")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @field_validator("gemini_model")
+    @classmethod
+    def validate_gemini_model(cls, value: str) -> str:
+        model = value.strip()
+        if model in LEGACY_GEMINI_MODELS:
+            raise ValueError(f"{model} is no longer supported; use {CURRENT_GEMINI_MODEL}")
+        return model
 
     @property
     def cors_origin_list(self) -> list[str]:
