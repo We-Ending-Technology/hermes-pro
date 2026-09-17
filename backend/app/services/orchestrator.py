@@ -1,22 +1,26 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
 
 class AutonomousOrchestrator:
-    """Converts verified high-value opportunities into persistent product jobs."""
+    """Converts verified opportunities into persistent jobs under autonomy policy."""
 
-    def __init__(self, commerce: Any, store: Any, queue: Any, controls: Any, min_score: float = 75.0) -> None:
+    def __init__(self, commerce: Any, store: Any, queue: Any, controls: Any, min_score: float = 75.0, memory: Any | None = None) -> None:
         self.commerce = commerce
         self.store = store
         self.queue = queue
         self.controls = controls
         self.min_score = min_score
+        self.memory = memory
 
     async def run_cycle(self, limit: int = 5) -> dict[str, Any]:
         created_jobs = 0
         skipped = 0
+        memory_consulted = False
+        if self.memory is not None:
+            await self.memory.retrieve("incident_resolution", limit=5)
+            memory_consulted = True
         opportunities = await self.commerce.list_opportunities()
         for opportunity in opportunities:
             if created_jobs >= limit:
@@ -46,4 +50,4 @@ class AutonomousOrchestrator:
                 idempotency_key=key,
             )
             created_jobs += 1
-        return {"created_jobs": created_jobs, "skipped": skipped}
+        return {"created_jobs": created_jobs, "skipped": skipped, "memory_consulted": memory_consulted}
