@@ -17,7 +17,7 @@ async def handle_chat_command(message: str, store: Any, queue: Any) -> dict[str,
             "model": "clock",
         }
 
-    product_match = re.search(r"(?:produza|crie|gere|faça|faca)\s+(?:um\s+)?(?:ebook|e-book|livro digital)(?:\s+(?:sobre|de|com o tema)\s+(.+))?", normalized, re.I)
+    product_match = re.search(r"(?:produza|crie|gere|faça|faca|faz)\s+(?:um\s+)?(?:ebook|e-book|livro digital)(?:\s+(?:sobre|de|com o tema)\s+(.+))?", normalized, re.I)
     if product_match:
         topic = (product_match.group(1) or "produtividade prática").strip(" .")
         product, job = await store.create_product_and_job(topic, {"source": "chat"}, None)
