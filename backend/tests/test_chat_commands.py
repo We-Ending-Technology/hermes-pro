@@ -28,6 +28,14 @@ async def test_chat_product_request_creates_job():
     assert "produtividade" in result["response"]
 
 
+async def test_chat_faz_ebook_request_creates_job():
+    queue = FakeQueue()
+    result = await handle_chat_command("faz um ebook de como ganhar dinheiro com IA.", FakeStore(), queue)
+    assert queue.ids == ["job-1"]
+    assert result["provider"] == "system"
+    assert "ganhar dinheiro com ia" in result["response"]
+
+
 async def test_chat_unsupported_message_falls_through():
     result = await handle_chat_command("me explique o radar", FakeStore(), FakeQueue())
     assert result is None
