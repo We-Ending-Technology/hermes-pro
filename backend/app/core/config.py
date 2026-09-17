@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     gemini_model: str = Field(default=CURRENT_GEMINI_MODEL, validation_alias=AliasChoices("GEMINI_MODEL", "GOOGLE_GEMINI_MODEL"))
     supabase_url: str | None = Field(default=None, validation_alias=AliasChoices("SUPABASE_URL", "SUPABASE_PROJECT_URL", "SUPABASE_HOST"))
     supabase_secret_key: str | None = Field(default=None, validation_alias=AliasChoices("SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY", "SUPABASE_SERVICE_ROLE", "SUPABASE_SECRET", "SUPABASE_KEY"))
+    supabase_internal_api_key: str | None = Field(default=None, validation_alias=AliasChoices("HERMES_SUPABASE_INTERNAL_KEY", "SUPABASE_INTERNAL_API_KEY"))
     redis_url: str = Field(default="", validation_alias="REDIS_URL")
     cors_origins: str = Field(default="http://localhost:5173,https://hermes-pro-command-center.onrender.com,https://hermes-pro.vercel.app", validation_alias="CORS_ORIGINS")
     hotmart_client_id: str | None = Field(default=None, validation_alias="HOTMART_CLIENT_ID")
