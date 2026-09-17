@@ -22,11 +22,14 @@ class SupabaseREST:
         self.base_url = self.project_url + "/rest/v1"
         self.storage_url = self.project_url + "/storage/v1"
         self.secret_key = settings.supabase_secret_key
+        self.internal_api_key = settings.supabase_internal_api_key
         self.headers = {
             "apikey": settings.supabase_secret_key or "",
             "Authorization": f"Bearer {settings.supabase_secret_key or ''}",
             "Content-Type": "application/json",
         }
+        if self.internal_api_key:
+            self.headers["x-hermes-internal-key"] = self.internal_api_key
 
     def _ensure_configured(self) -> None:
         if not self.secret_key or not self.project_url.startswith("http"):
@@ -71,7 +74,14 @@ class SupabaseREST:
 
     async def upload_storage(self, bucket: str, path: str, data: bytes, content_type: str) -> dict[str, Any]:
         self._ensure_configured()
-        headers = {"apikey": self.secret_key or "", "Authorization": f"Bearer {self.secret_key or ''}", "Content-Type": content_type, "x-upsert": "true"}
+        headers = {
+            "apikey": self.secret_key or "",
+            "Authorization": f"Bearer {self.secret_key or ''}",
+            "Content-Type": content_type,
+            "x-upsert": "true",
+        }
+        if self.internal_api_key:
+            headers["x-hermes-internal-key"] = self.internal_api_key
         async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(f"{self.storage_url}/object/{bucket}/{path}", headers=headers, content=data)
         if response.is_error:
@@ -81,6 +91,8 @@ class SupabaseREST:
     async def create_signed_url(self, bucket: str, path: str, expires_in: int = 3600) -> str:
         self._ensure_configured()
         headers = {"apikey": self.secret_key or "", "Authorization": f"Bearer {self.secret_key or ''}", "Content-Type": "application/json"}
+        if self.internal_api_key:
+            headers["x-hermes-internal-key"] = self.internal_api_key
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.post(f"{self.storage_url}/object/sign/{bucket}/{path}", headers=headers, json={"expiresIn": expires_in})
         if response.is_error:
