@@ -26,4 +26,8 @@ def build_ai_gateway(settings: Settings) -> AIGateway:
 
     if not slots:
         raise ValueError("No configured AI provider keys found")
+    # Preserve the established single-provider contract while enabling
+    # failover whenever multiple configured slots are available.
+    if len(slots) == 1:
+        return slots[0].gateway
     return FailoverAIGateway(slots)
