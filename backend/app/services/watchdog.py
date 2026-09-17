@@ -8,8 +8,10 @@ from typing import Any
 class WatchdogEngine:
     """Cheap, deterministic operational checks that wake autonomous recovery."""
 
-    def __init__(self, store: Any, *, stale_after_seconds: int = 1800) -> None:
+    def __init__(self, store: Any, queue: Any | None = None, controls: Any | None = None, *, stale_after_seconds: int = 1800) -> None:
         self.store = store
+        self.queue = queue
+        self.controls = controls
         self.stale_after_seconds = stale_after_seconds
 
     @staticmethod
@@ -20,6 +22,7 @@ class WatchdogEngine:
         current = self._parse(now) if now else datetime.now(timezone.utc)
         jobs = await self.store.list_jobs()
         detected = 0
+        recovered = 0
         fingerprints: list[str] = []
         for job in jobs:
             if job.get("status") not in {"running", "retrying", "queued"}:
@@ -41,4 +44,11 @@ class WatchdogEngine:
             })
             fingerprints.append(fingerprint)
             detected += 1
-        return {"checks": 1, "incidents": detected, "fingerprints": len(set(fingerprints))}
+            attempts = int(job.get("attempts") or 0)
+            max_attempts = int(job.get("max_attempts") or 3)
+            allowed = self.controls.is_allowed("retry_job") if self.controls else None
+            if self.queue and self.controls and allowed and allowed.allowed and attempts < max_attempts:
+                await self.store.update_job(str(job["id"]), "retrying", attempts=attempts + 1, error_message="watchdog: stale job recovered")
+                await self.queue.enqueue(str(job["id"]))
+                recovered += 1
+        return {"checks": 1, "incidents": detected, "recovered": recovered, "fingerprints": len(set(fingerprints))}
