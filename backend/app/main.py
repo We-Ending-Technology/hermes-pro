@@ -46,19 +46,6 @@ sales_service = SalesService(db)
 analytics_service = AnalyticsService(db)
 orchestrator = AutonomousOrchestrator(commerce, store, queue, controls)
 
-async def autonomous_loop() -> None:
-    while True:
-        try:
-            status = controls.get_status()
-            if not status.get("kill_switches", {}).get("global") and not status.get("settings", {}).get("pause_radar"):
-                await discover_public_signals(commerce, limit=8)
-                await orchestrator.run_cycle(limit=3)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            pass
-        await asyncio.sleep(900)
-
 async def embedded_worker() -> None:
     while True:
         try:
@@ -76,14 +63,12 @@ async def lifespan(app: FastAPI):
     for agent_name in AGENT_NAMES:
         registry.register(CommerceAgent(agent_name, ai_gateway))
     worker_task = asyncio.create_task(embedded_worker(), name="hermes-embedded-worker")
-    autonomous_task = asyncio.create_task(autonomous_loop(), name="hermes-autonomous-loop")
-    radar_task = asyncio.create_task(radar_scheduler_loop(commerce, db, controls), name="hermes-radar-scheduler")
+    radar_task = asyncio.create_task(radar_scheduler_loop(commerce, db, controls, orchestrator), name="hermes-radar-scheduler")
     try:
         yield
     finally:
         worker_task.cancel()
-        autonomous_task.cancel()
-        for task in (worker_task, autonomous_task, radar_task):
+        for task in (worker_task, radar_task):
             try:
                 await task
             except asyncio.CancelledError:
@@ -126,6 +111,8 @@ async def system_status() -> dict[str, object]:
         "queue": "redis" if queue.uses_redis else ("supabase" if settings.supabase_url and settings.supabase_secret_key else "unconfigured"),
         "hotmart_credentials": bool(settings.hotmart_client_id and settings.hotmart_client_secret),
         "telegram_credentials": bool(settings.telegram_bot_token and settings.telegram_chat_id),
+        "canva_credentials": bool(settings.canva_client_id and settings.canva_client_secret),
+        "google_trends": settings.trends_enabled,
     }
 
 @app.get("/api/v1/agents")
