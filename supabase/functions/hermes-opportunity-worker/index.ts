@@ -29,11 +29,14 @@ async function analyzeWithAI(job: any) {
     JSON.stringify(compact)
   ].join("\n");
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 7000);
   const res = await fetch(API_URL + "/api/v1/chat", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ message: prompt })
-  });
+    body: JSON.stringify({ message: prompt }),
+    signal: controller.signal
+  }).finally(() => clearTimeout(timer));
   if (!res.ok) throw new Error(`AI API HTTP ${res.status}`);
   return await res.json();
 }
@@ -179,10 +182,23 @@ Deno.serve(async (req) => {
     }).eq("id", job.id);
 
     try {
+      const proposal = buildProposal(job.payload || {}, null);
+
+      await supabase.from("hermes_jobs").update({
+        status: "manual_submission_required",
+        payload: {
+          ...(job.payload || {}),
+          proposal,
+          next_action: "review_proposal_and_submit_manually"
+        },
+        error_message: null,
+        updated_at: new Date().toISOString()
+      }).eq("id", job.id);
+
       let ai = null;
       try { ai = await analyzeWithAI(job.payload || {}); } catch (_) {}
 
-      const proposal = buildProposal(job.payload || {}, ai);
+      const enrichedProposal = buildProposal(job.payload || {}, ai);
       const nextStatus = job.payload?.application_automation_allowed === true
         ? "proposal_ready"
         : "manual_submission_required";
@@ -197,7 +213,7 @@ Deno.serve(async (req) => {
 
       await supabase.from("hermes_jobs").update({
         status: nextStatus,
-        payload,
+        payload: { ...payload, proposal: enrichedProposal },
         error_message: null,
         updated_at: new Date().toISOString()
       }).eq("id", job.id);
