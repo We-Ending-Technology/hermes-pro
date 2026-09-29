@@ -14,6 +14,10 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5.6-luna
       - key: DATABASE_URL
         sync: false
       - key: SUPABASE_URL
@@ -34,22 +38,22 @@ services:
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
-      - key: PUBLIC_API_URL
-        value: https://hermes-pro-api-commercial.onrender.com
-      - key: OAUTH_ENCRYPTION_KEY
+      - key: FREELANCER_ACCESS_TOKEN
         sync: false
-      - key: GOOGLE_CLIENT_ID
+      - key: FREELANCER_SANDBOX
+        value: "true"
+      - key: FREELANCER_ENABLED
+        value: "false"
+      - key: FREELANCER_AUTO_APPLY
+        value: "false"
+      - key: FREELANCER_BIDDER_ID
         sync: false
-      - key: GOOGLE_CLIENT_SECRET
+      - key: FREELANCER_PROFILE_ID
         sync: false
-      - key: THREADS_APP_ID
-        sync: false
-      - key: THREADS_APP_SECRET
-        sync: false
-      - key: CANVA_CLIENT_ID
-        sync: false
-      - key: CANVA_CLIENT_SECRET
-        sync: false
+      - key: AUTONOMY_ENABLED
+        value: "true"
+      - key: AUTONOMY_MIN_SCORE
+        value: "55"
 
   - type: worker
     name: hermes-pro-worker
@@ -65,6 +69,10 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5.6-luna
       - key: DATABASE_URL
         sync: false
       - key: SUPABASE_URL
@@ -73,13 +81,27 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+      - key: AUTONOMY_ENABLED
+        value: "true"
+      - key: AUTONOMY_MIN_SCORE
+        value: "55"
 
   - type: cron
     name: hermes-pro-maintenance
     runtime: python
-    schedule: "0 3 * * *"
+    schedule: "*/15 * * * *"
     buildCommand: pip install .
-    startCommand: python -c "print('maintenance placeholder: no production automation enabled')"
+    startCommand: python -m worker.autonomy_cycle
     envVars:
       - key: APP_ENV
         value: production
+      - key: AUTONOMY_ENABLED
+        value: "true"
+      - key: AUTONOMY_MIN_SCORE
+        value: "55"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: REDIS_URL
+        sync: false
