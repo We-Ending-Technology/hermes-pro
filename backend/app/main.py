@@ -27,6 +27,8 @@ from .services.orchestrator import AutonomousOrchestrator
 from .services.persistence import PersistentStore
 from .services.quality import quality_service
 from .services.radar import radar_service
+from .services.real_connections import build_connections_router
+from .services.radar_scheduler import run_radar_cycle, radar_scheduler_loop
 from .services.sales import SalesService
 from .services.studio import build_studio_router
 from .worker_runtime import run_worker_cycle
@@ -75,12 +77,13 @@ async def lifespan(app: FastAPI):
         registry.register(CommerceAgent(agent_name, ai_gateway))
     worker_task = asyncio.create_task(embedded_worker(), name="hermes-embedded-worker")
     autonomous_task = asyncio.create_task(autonomous_loop(), name="hermes-autonomous-loop")
+    radar_task = asyncio.create_task(radar_scheduler_loop(commerce, db, controls), name="hermes-radar-scheduler")
     try:
         yield
     finally:
         worker_task.cancel()
         autonomous_task.cancel()
-        for task in (worker_task, autonomous_task):
+        for task in (worker_task, autonomous_task, radar_task):
             try:
                 await task
             except asyncio.CancelledError:
@@ -92,6 +95,7 @@ app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list, allo
 app.include_router(build_studio_router(store, db))
 app.include_router(build_hotmart_router(store))
 app.include_router(build_commerce_router(store, commerce, controls))
+app.include_router(build_connections_router(db))
 
 def product_response(row: dict) -> ProductResponse:
     from .product_factory import PIPELINE_STAGES
@@ -211,6 +215,12 @@ async def get_product(product_id: str) -> ProductResponse:
 async def radar(request: RadarRequest) -> RadarResponse:
     result = radar_service.score(request.model_dump())
     return RadarResponse(score=result.score, confidence=result.confidence, dimensions=result.dimensions, findings=result.findings)
+
+@app.post("/api/v1/radar/run")
+async def radar_run_now() -> dict:
+    if controls.get_status().get("kill_switches", {}).get("global") or controls.get_status().get("settings", {}).get("pause_radar"):
+        raise HTTPException(status_code=423, detail="Radar pausado pelos controles do Hermes")
+    return await run_radar_cycle(commerce, db)
 
 @app.get("/api/v1/radar", response_model=RadarResponse)
 async def radar_default() -> RadarResponse:
