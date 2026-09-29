@@ -26,7 +26,7 @@ async function jsonFetch(path, options = {}) {
 
 function App() {
   const [view, setView] = useState("Início");
-  const [data, setData] = useState({ dashboard: null, products: [], jobs: [], opportunities: [], integrations: [], sales: null, analytics: null });
+  const [data, setData] = useState({ dashboard: null, products: [], jobs: [], opportunities: [], integrations: [], sales: null, analytics: null, servicePlatforms: [] });
   const [online, setOnline] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -46,10 +46,10 @@ function App() {
         jsonFetch("/api/v1/opportunities").catch(() => []),
         jsonFetch("/api/v1/integrations").catch(() => []),
         jsonFetch("/api/v1/sales").catch(() => null),
-        jsonFetch("/api/v1/analytics").catch(() => null),
+        jsonFetch("/api/v1/analytics").catch(() => null),\n        jsonFetch("/api/v1/commerce/service-platforms").catch(() => []),
       ]);
       setOnline(health?.status === "ok");
-      setData({ dashboard, products, jobs, opportunities, integrations, sales, analytics });
+      setData({ dashboard, products, jobs, opportunities, integrations, sales, analytics, servicePlatforms });
       if (selected?.id) {
         const fresh = products.find(product => product.id === selected.id);
         if (fresh) setSelected(fresh);
@@ -120,7 +120,7 @@ function App() {
         <header className="topbar"><button className="mobile-menu" onClick={() => setMobileNav(true)}>☰</button><div className="crumbs"><span>HERMES</span><b>/</b><strong>{view}</strong></div><div className="top-actions"><div className="system-time"><span className="pulse-dot" /> 24/7 AUTONOMOUS</div><button className="round-btn" onClick={refresh}>↻</button><div className="profile">W</div></div></header>
         {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>×</button></div>}
         {view === "Início" && <Home data={data} online={online} activeJobs={activeJobs} readyProducts={readyProducts} revenue={revenue} go={setView} />}
-        {view === "Radar" && <Radar opportunities={data.opportunities} />}
+        {view === "Radar" && <Radar opportunities={data.opportunities} />}\n        {view === "Serviços" && <Services opportunities={data.opportunities} platforms={data.servicePlatforms} />}
         {view === "Fábrica" && <Factory topic={topic} setTopic={setTopic} submit={createProduct} busy={busy} />}
         {view === "Produtos" && <Products items={data.products} selected={selected} setSelected={setSelected} />}
         {view === "Vendas" && <Sales sales={data.sales} revenue={revenue} />}
@@ -133,7 +133,7 @@ function App() {
   );
 }
 
-function NavIcon({ index }) { const glyphs = ["⌂", "⌁", "✦", "▣", "◈", "◒", "◎"]; return <b className="nav-icon">{glyphs[index]}</b>; }
+function NavIcon({ index }) { const glyphs = ["⌂", "⌁", "✦", "▣", "◈", "◒", "◎", "⚙"]; return <b className="nav-icon">{glyphs[index]}</b>; }
 
 function Home({ data, online, activeJobs, readyProducts, revenue, go }) { const products = data.products || []; return <section className="page"><div className="command-hero"><div className="hero-copy"><div className="eyebrow"><i /> COMMAND CENTER · {online ? "LIVE" : "CONNECTING"}</div><h1>O comércio roda.<br /><em>Você decide.</em></h1><p>Hermes encontra oportunidades, coordena agentes, produz ativos e mede o resultado em um único centro de comando.</p><div className="hero-actions"><button className="primary" onClick={() => go("Fábrica")}>✦ Criar produto</button><button className="ghost" onClick={() => go("Radar")}>Ver Radar →</button></div></div><div className="hero-visual"><div className="ring ring-a" /><div className="ring ring-b" /><div className="core">H<span>AI</span></div><div className="orbit-label l1">RADAR</div><div className="orbit-label l2">QA</div><div className="orbit-label l3">SALES</div></div><div className="hero-caption"><span>ENGINE STATUS</span><strong><i className="live-dot" /> Descobrindo oportunidades</strong><small>Próxima varredura automática · contínua</small></div></div><div className="stats-grid"><Stat label="Receita" value={formatCurrency(revenue)} hint="resultado registrado" accent="violet" /><Stat label="Produtos" value={products.length} hint={`${readyProducts} prontos`} accent="cyan" /><Stat label="Jobs ativos" value={activeJobs} hint="worker em execução" accent="green" /><Stat label="Oportunidades" value={data.opportunities.length} hint="sinais no radar" accent="amber" /></div><div className="section-head"><div><span className="eyebrow">OPERATIONS</span><h2>Visão operacional</h2></div><button onClick={() => go("Agentes")} className="text-link">Ver agentes →</button></div><div className="ops-grid"><div className="panel pipeline-panel"><PanelHead title="Pipeline autônomo" meta="EM TEMPO REAL" /><div className="pipeline-modern">{[["01","RADAR","Sinais"],["02","DECISÃO","Score"],["03","PRODUÇÃO","Ativos"],["04","QA","Validação"],["05","RESULTADO","Métricas"]].map((step,i)=><div className={`pipeline-step ${i===2?"current":i<2?"done":""}`} key={step[0]}><b>{step[0]}</b><strong>{step[1]}</strong><span>{step[2]}</span>{i<4&&<i>→</i>}</div>)}</div><p className="panel-foot">Cada etapa registra estado, tentativa e resultado. Falhas ficam bloqueadas antes da publicação.</p></div><div className="panel health-panel"><PanelHead title="Saúde do sistema" meta={online?"NORMAL":"ATENÇÃO"}/><HealthRow name="API" value={online?"Online":"Offline"} tone={online?"success":"danger"}/><HealthRow name="Persistência" value="Supabase" tone="neutral"/><HealthRow name="IA" value="Gateway" tone="neutral"/><HealthRow name="Worker" value={activeJobs?"Processando":"Aguardando"} tone={activeJobs?"active":"neutral"}/><HealthRow name="Radar" value="24/7" tone="active"/></div></div><div className="section-head"><div><span className="eyebrow">RECENT WORK</span><h2>Produção recente</h2></div><button onClick={()=>go("Produtos")} className="text-link">Abrir catálogo →</button></div>{products.length?<div className="product-strip">{products.slice(0,3).map(p=><ProductMini key={p.id} product={p}/>)}</div>:<EmptyState title="Nenhum produto produzido ainda" text="Dê um comando ao Hermes ou abra a Fábrica para iniciar o primeiro ciclo." action="Abrir Fábrica" onClick={()=>go("Fábrica")}/>}</section>; }
 
@@ -142,6 +142,50 @@ function PanelHead({ title,meta }) { return <div className="panel-head"><h3>{tit
 function HealthRow({ name,value,tone }) { return <div className="health-row"><span>{name}</span><strong><i className={`status-dot ${tone}`}/>{value}</strong></div>; }
 function EmptyState({ title,text,action,onClick }) { return <div className="empty-state"><div className="empty-icon">✦</div><h3>{title}</h3><p>{text}</p>{action&&<button className="primary" onClick={onClick}>{action}</button>}</div>; }
 function ProductMini({ product }) { const assets=getProductAssets(product); return <article className="product-mini"><div className="cover-mini">{assets.cover?<img src={assets.cover} alt="Capa"/>:<b>H</b>}</div><div><span>{product.status}</span><h3>{product.title||product.metadata?.title||product.topic}</h3><small>{product.current_stage||"pipeline"}</small></div><b className={`status-chip ${statusTone(product.status)}`}>{product.status}</b></article>; }
+
+function Services({ opportunities, platforms }) {
+  const [query,setQuery]=useState("website");
+  const [results,setResults]=useState(opportunities.filter(x=>x.type==="service"));
+  const [mode,setMode]=useState("all");
+  const [busy,setBusy]=useState(false);
+  const [message,setMessage]=useState("");
+  async function discover(){
+    setBusy(true); setMessage("");
+    try{
+      const data=await jsonFetch("/api/v1/commerce/services/search",{method:"POST",body:JSON.stringify({query,limit:20})});
+      setResults(data.opportunities||[]);
+      setMessage(`${data.count||0} oportunidades encontradas. Nenhuma proposta foi enviada automaticamente.`);
+    }catch(error){setMessage(error.message)}finally{setBusy(false)}
+  }
+  const filtered=results.filter(item=>{
+    if(mode==="all") return true;
+    const src=String(item.source||"").toLowerCase();
+    return mode==="automatic" ? ["remotive","arbeitnow"].includes(src) : !["remotive","arbeitnow"].includes(src);
+  });
+  return <section className="page services-page">
+    <PageTitle eyebrow="SERVICE COMMAND" title="Serviços que o Hermes pode executar." text="Descubra oportunidades, separe automação de intervenção humana e transforme cada trabalho em uma execução rastreável."/>
+    <div className="services-command">
+      <div className="service-search">
+        <div className="input-label"><span>BUSCAR OPORTUNIDADES</span><small>descoberta real</small></div>
+        <div className="service-search-row"><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="site, landing page, automação, bug..." /><button className="primary" onClick={discover} disabled={busy}>{busy?"Buscando…":"Buscar agora"}</button></div>
+        {message&&<small className="service-message">{message}</small>}
+      </div>
+      <div className="service-modes">
+        <button className={mode==="all"?"active":""} onClick={()=>setMode("all")}>Todos</button>
+        <button className={mode==="automatic"?"active":""} onClick={()=>setMode("automatic")}>Automação</button>
+        <button className={mode==="manual"?"active":""} onClick={()=>setMode("manual")}>Assistidos / manuais</button>
+      </div>
+    </div>
+    <div className="section-head"><div><span className="eyebrow">EXECUTION QUEUE</span><h2>Oportunidades</h2></div><span className="service-count">{filtered.length} itens</span></div>
+    <div className="service-list">{filtered.length?filtered.map(item=><article className="service-card" key={item.id||item.external_id}>
+      <div className="service-badge">{["remotive","arbeitnow"].includes(String(item.source).toLowerCase())?"AUTO":"MANUAL"}</div>
+      <div className="service-main"><span>{item.source||"oportunidade"}</span><h3>{item.title}</h3><p>{String(item.description||"").replace(/<[^>]+>/g,"").slice(0,280)}</p><small>{item.company||"Cliente não informado"}</small></div>
+      <div className="service-actions"><strong>{item.score!=null?Math.round(Number(item.score)):"—"}</strong><a href={item.url||item.source_url||"#"} target="_blank" rel="noreferrer">{item.url||item.source_url?"Abrir":"Sem link"} ↗</a></div>
+    </article>):<EmptyState title="Nenhuma oportunidade nesta categoria" text="Faça uma busca ou troque o filtro." action="Buscar serviços" onClick={discover}/>}</div>
+    <div className="section-head"><div><span className="eyebrow">CAPABILITY REGISTRY</span><h2>Onde cada tipo de ação é possível</h2></div></div>
+    <div className="platform-grid">{platforms.map(p=><article className="platform-card" key={p.id}><div><span>{p.mode.replaceAll("_"," ").toUpperCase()}</span><h3>{p.name}</h3><p>{p.note}</p></div><a href={p.url} target="_blank" rel="noreferrer">Abrir plataforma ↗</a></article>)}</div>
+  </section>;
+}
 
 function Radar({ opportunities }) { return <section className="page"><PageTitle eyebrow="OPPORTUNITY RADAR" title="Onde Hermes deve agir?" text="Sinais públicos são coletados continuamente. Nenhum sinal é tratado como prova de demanda sem validação."/><div className="radar-top"><div className="radar-score"><span>RADAR SCORE</span><strong>{opportunities.length?Math.round(Math.max(...opportunities.map(x=>Number(x.score||0)))):"—"}</strong><small>confiança depende dos dados disponíveis</small></div><div className="radar-ring"><div><b>{opportunities.length}</b><span>sinais</span></div></div></div><div className="opportunity-list">{opportunities.length?opportunities.slice(0,12).map(item=><article className="opportunity" key={item.id}><div className="opp-icon">⌁</div><div><span>{item.source||"signal"}</span><h3>{item.title}</h3><p>{item.description}</p></div><div className="opp-score"><strong>{Math.round(Number(item.score||0))}</strong><small>{Math.round(Number(item.confidence||0)*100)}% conf.</small></div></article>):<EmptyState title="Radar ainda sem sinais persistidos" text="O ciclo autônomo fará novas descobertas quando a persistência estiver disponível."/>}</div></section>; }
 
