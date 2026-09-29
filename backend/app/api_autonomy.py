@@ -6,7 +6,7 @@ from fastapi import APIRouter, Header, HTTPException
 
 from .core.config import get_settings
 from .db.supabase import SupabaseREST
-from .services.execution import execute_service_job, sync_freelancer_contracts
+from .services.execution_funded import execute_service_job, sync_freelancer_contracts
 from .integrations.freelancer import build_freelancer_adapter
 from .services.persistence import PersistentStore
 from .ai_gateway.factory import build_ai_gateway
