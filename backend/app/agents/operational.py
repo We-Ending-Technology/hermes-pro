@@ -66,7 +66,7 @@ class ExecutorAgent(Agent):
         opportunity = input_data.get("opportunity") or {}
         return {
             "status": "work_package_ready",
-            "execution_mode": "automated_preparation" if opportunity.get("automation_allowed") else "manual_submission",
+            "execution_mode": "automated_preparation" if opportunity.get("application_automation_allowed") else "manual_submission",
             "deliverables": ["requirements_checklist", "implementation_plan", "draft_response"],
             "requires_human_submission": not bool(opportunity.get("application_automation_allowed")),
         }
