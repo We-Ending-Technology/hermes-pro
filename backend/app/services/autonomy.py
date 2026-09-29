@@ -31,7 +31,7 @@ class AutonomyService:
                 "discovery_automation_allowed": item.discovery_automation_allowed,\n                    "application_automation_allowed": False,
                 "score": scored["score"],
                 "discovered_at": datetime.now(timezone.utc).isoformat(),
-                "next_action": "prepare" if item.automation_allowed else "manual_review",
+                "next_action": "prepare" if item.discovery_automation_allowed else "manual_review",
             }
             key = f"opportunity:{item.fingerprint}"
             existing = await self.store.create_job_if_absent("opportunity_pipeline", payload, key)
