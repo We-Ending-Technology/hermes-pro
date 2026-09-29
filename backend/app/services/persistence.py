@@ -40,15 +40,21 @@ class PersistentStore:
         rows = await self.db.select("hermes_products", params={"select": "*", "id": f"eq.{product_id}", "limit": "1"})
         return rows[0] if rows else None
 
-    async def list_products(self) -> list[dict[str, Any]]:
-        return await self.db.select("hermes_products", params={"select": "*", "order": "created_at.desc"})
+    async def list_products(self, limit: int = 100) -> list[dict[str, Any]]:
+        return await self.db.select(
+            "hermes_products",
+            params={"select": "*", "order": "created_at.desc", "limit": str(limit)},
+        )
 
     async def get_job(self, job_id: str) -> dict[str, Any] | None:
         rows = await self.db.select("hermes_jobs", params={"select": "*", "id": f"eq.{job_id}", "limit": "1"})
         return rows[0] if rows else None
 
-    async def list_jobs(self) -> list[dict[str, Any]]:
-        return await self.db.select("hermes_jobs", params={"select": "*", "order": "created_at.desc"})
+    async def list_jobs(self, limit: int = 100) -> list[dict[str, Any]]:
+        return await self.db.select(
+            "hermes_jobs",
+            params={"select": "*", "order": "created_at.desc", "limit": str(limit)},
+        )
 
     async def update_job(self, job_id: str, status: str, *, attempts: int | None = None, error_message: str | None = None) -> dict[str, Any]:
         values: dict[str, Any] = {"status": status, "updated_at": datetime.now(timezone.utc).isoformat(), "error_message": error_message}
