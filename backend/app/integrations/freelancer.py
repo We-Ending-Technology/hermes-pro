@@ -13,6 +13,8 @@ class FreelancerConfig:
     sandbox: bool = False
     enabled: bool = False
     auto_apply: bool = False
+    bidder_id: int | None = None
+    profile_id: int | None = None
 
     @property
     def api_base(self) -> str:
@@ -70,12 +72,23 @@ class FreelancerAdapter:
     async def get_project(self, project_id: int | str) -> dict[str, Any]:
         return await self._request("GET", f"/projects/0.1/projects/{project_id}/")
 
-    async def create_bid(self, *, project_id: int | str, amount: float, description: str, period: int | None = None) -> dict[str, Any]:
+    async def create_bid(self, *, project_id: int | str, amount: float, description: str, period: int = 3) -> dict[str, Any]:
         if not self.config.enabled or not self.config.auto_apply:
             raise FreelancerAPIError("automatic bidding is disabled; enable FREELANCER_ENABLED and FREELANCER_AUTO_APPLY")
-        payload: dict[str, Any] = {"project_id": int(project_id), "amount": amount, "description": description}
-        if period is not None:
-            payload["period"] = period
+        bidder_id = self.config.bidder_id
+        if bidder_id is None:
+            me = await self.self_user()
+            user = (me.get("result") or {}).get("user") or me.get("user") or (me.get("result") or {}).get("self") or {}
+            bidder_id = user.get("id")
+        if not bidder_id:
+            raise FreelancerAPIError("could not determine Freelancer bidder_id from authenticated account")
+        payload: dict[str, Any] = {
+            "project_id": int(project_id), "bidder_id": int(bidder_id),
+            "amount": int(round(amount)), "period": max(1, int(period)),
+            "milestone_percentage": 100, "description": description,
+        }
+        if self.config.profile_id is not None:
+            payload["profile_id"] = int(self.config.profile_id)
         return await self._request("POST", "/projects/0.1/bids/", json=payload)
 
     async def list_project_bids(self, project_id: int | str) -> dict[str, Any]:
@@ -90,4 +103,6 @@ def build_freelancer_adapter(settings: Any) -> FreelancerAdapter:
         sandbox=settings.freelancer_sandbox,
         enabled=settings.freelancer_enabled,
         auto_apply=settings.freelancer_auto_apply,
+        bidder_id=settings.freelancer_bidder_id,
+        profile_id=settings.freelancer_profile_id,
     ))
