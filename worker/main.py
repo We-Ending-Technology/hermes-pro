@@ -13,6 +13,7 @@ from backend.app.services.persistence import PersistentStore
 from backend.app.services.storage import SupabaseStorage
 from backend.app.agents.operational import AnalystAgent, ExecutorAgent, QAAgent, CommercialAgent, GuardianAgent
 from backend.app.services.autonomy import AutonomyService
+from backend.app.integrations.freelancer import build_freelancer_adapter, FreelancerAPIError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hermes.worker")
@@ -137,9 +138,26 @@ async def process_opportunity(job_id: str, store: PersistentStore, queue: JobQue
         if opportunity.get("application_automation_allowed"):
             commercial = await CommercialAgent(build_ai_gateway(get_settings())).run({"opportunity": opportunity})
             payload["pipeline"]["commercial"] = commercial
+            if opportunity.get("source") == "freelancer":
+                settings = get_settings()
+                adapter = build_freelancer_adapter(settings)
+                budget = opportunity.get("budget")
+                external_id = opportunity.get("external_id") or opportunity.get("opportunity_id")
+                if not budget or not external_id:
+                    raise RuntimeError("Freelancer auto-apply requires a project id and a numeric budget")
+                bid = await adapter.create_bid(
+                    project_id=external_id,
+                    amount=float(budget),
+                    description=commercial["draft"][:5000],
+                    period=max(1, int(analysis.get("estimated_effort", 35) / 10)),
+                )
+                payload["pipeline"]["submission"] = {"status": "submitted", "response": bid}
+                payload["status"] = "submitted"
+            else:
+                payload["status"] = "ready_for_submission"
         else:
             payload["pipeline"]["commercial"] = {"status": "draft_only", "reason": "No official application automation permission registered."}
-        payload["status"] = "ready_for_submission" if opportunity.get("application_automation_allowed") else "manual_submission_required"
+            payload["status"] = "manual_submission_required"
         await store.update_job(job_id, "completed", attempts=attempts, payload=payload)
     except Exception as exc:
         message = str(exc)[:1000]
