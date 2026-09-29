@@ -35,10 +35,8 @@ class Settings(BaseSettings):
     telegram_chat_id: str | None = Field(default=None, validation_alias="TELEGRAM_CHAT_ID")
     public_api_url: str | None = Field(default="https://hermes-pro-api-commercial.onrender.com", validation_alias="PUBLIC_API_URL")
     oauth_encryption_key: str | None = Field(default=None, validation_alias="OAUTH_ENCRYPTION_KEY")
-    google_client_id: str | None = Field(default=None, validation_alias="GOOGLE_CLIENT_ID")
-    google_client_secret: str | None = Field(default=None, validation_alias="GOOGLE_CLIENT_SECRET")
-    threads_app_id: str | None = Field(default=None, validation_alias="THREADS_APP_ID")
-    threads_app_secret: str | None = Field(default=None, validation_alias="THREADS_APP_SECRET")
+    trends_geo: str = Field(default="BR", validation_alias="GOOGLE_TRENDS_GEO")
+    trends_enabled: bool = Field(default=True, validation_alias="GOOGLE_TRENDS_ENABLED")
     canva_client_id: str | None = Field(default=None, validation_alias="CANVA_CLIENT_ID")
     canva_client_secret: str | None = Field(default=None, validation_alias="CANVA_CLIENT_SECRET")
 
