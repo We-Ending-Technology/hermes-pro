@@ -4,15 +4,14 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ..db.supabase import SupabaseREST
-from ..models.jobs import Job, JobStatus
+from ..models.jobs import JobStatus
 from ..product_factory import PIPELINE_STAGES
-
 
 class PersistentStore:
     def __init__(self, db: SupabaseREST) -> None:
         self.db = db
 
-    async def create_product_and_job(self, topic: str, metadata: dict[str, Any], idempotency_key: str | None) -> tuple[dict[str, Any], dict[str, Any]]:
+    async def create_product_and_job(self, topic: str, metadata: dict[str, Any], idempotency_key: str | None):
         if idempotency_key:
             existing = await self.db.select("hermes_products", params={"select": "*", "idempotency_key": f"eq.{idempotency_key}", "limit": "1"})
             if existing:
@@ -24,45 +23,46 @@ class PersistentStore:
             "topic": topic.strip(), "status": "queued", "current_stage": PIPELINE_STAGES[0],
             "metadata": metadata or {}, "idempotency_key": idempotency_key, "created_at": now, "updated_at": now,
         })
-        try:
-            job = await self.db.insert("hermes_jobs", {
-                "job_type": "product_generation", "status": JobStatus.PENDING.value,
-                "attempts": 0, "max_attempts": 3,
-                "payload": {"product_id": product["id"], "topic": product["topic"]},
-                "idempotency_key": idempotency_key, "created_at": now, "updated_at": now,
-            })
-        except Exception:
-            raise
-        product = await self.db.update("hermes_products", {"job_id": job["id"], "updated_at": now}, where={"id": f"eq.{product['id']}"})
+        job = await self.db.insert("hermes_jobs", {
+            "job_type": "product_generation", "status": JobStatus.PENDING.value,
+            "attempts": 0, "max_attempts": 3,
+            "payload": {"product_id": product["id"], "topic": product["topic"]},
+            "idempotency_key": idempotency_key, "created_at": now, "updated_at": now,
+        })
+        product = await self.db.update("hermes_products", {"job_id": job["id"], "updated_at": now}, {"id": f"eq.{product['id']}"})
         return product, job
 
-    async def get_product(self, product_id: str) -> dict[str, Any] | None:
+    async def create_job_if_absent(self, job_type: str, payload: dict[str, Any], idempotency_key: str):
+        existing = await self.db.select("hermes_jobs", params={"select": "*", "idempotency_key": f"eq.{idempotency_key}", "limit": "1"})
+        if existing:
+            return existing[0]
+        now = datetime.now(timezone.utc).isoformat()
+        return await self.db.insert("hermes_jobs", {
+            "job_type": job_type, "status": "pending", "attempts": 0, "max_attempts": 3,
+            "payload": payload, "idempotency_key": idempotency_key, "created_at": now, "updated_at": now,
+        })
+
+    async def get_product(self, product_id: str):
         rows = await self.db.select("hermes_products", params={"select": "*", "id": f"eq.{product_id}", "limit": "1"})
         return rows[0] if rows else None
 
-    async def list_products(self, limit: int = 100) -> list[dict[str, Any]]:
-        return await self.db.select(
-            "hermes_products",
-            params={"select": "*", "order": "created_at.desc", "limit": str(limit)},
-        )
+    async def list_products(self):
+        return await self.db.select("hermes_products", params={"select": "*", "order": "created_at.desc"})
 
-    async def get_job(self, job_id: str) -> dict[str, Any] | None:
+    async def get_job(self, job_id: str):
         rows = await self.db.select("hermes_jobs", params={"select": "*", "id": f"eq.{job_id}", "limit": "1"})
         return rows[0] if rows else None
 
-    async def list_jobs(self, limit: int = 100) -> list[dict[str, Any]]:
-        return await self.db.select(
-            "hermes_jobs",
-            params={"select": "*", "order": "created_at.desc", "limit": str(limit)},
-        )
+    async def list_jobs(self):
+        return await self.db.select("hermes_jobs", params={"select": "*", "order": "created_at.desc"})
 
-    async def update_job(self, job_id: str, status: str, *, attempts: int | None = None, error_message: str | None = None) -> dict[str, Any]:
+    async def update_job(self, job_id: str, status: str, *, attempts: int | None = None, error_message: str | None = None, payload: dict[str, Any] | None = None):
         values: dict[str, Any] = {"status": status, "updated_at": datetime.now(timezone.utc).isoformat(), "error_message": error_message}
-        if attempts is not None:
-            values["attempts"] = attempts
+        if attempts is not None: values["attempts"] = attempts
+        if payload is not None: values["payload"] = payload
         return await self.db.update("hermes_jobs", values, where={"id": f"eq.{job_id}"})
 
-    async def update_product(self, product_id: str, *, status: str | None = None, current_stage: str | None = None, title: str | None = None, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def update_product(self, product_id: str, *, status: str | None = None, current_stage: str | None = None, title: str | None = None, metadata: dict[str, Any] | None = None):
         values: dict[str, Any] = {"updated_at": datetime.now(timezone.utc).isoformat()}
         if status is not None: values["status"] = status
         if current_stage is not None: values["current_stage"] = current_stage
@@ -70,7 +70,7 @@ class PersistentStore:
         if metadata is not None: values["metadata"] = metadata
         return await self.db.update("hermes_products", values, where={"id": f"eq.{product_id}"})
 
-    async def append_event(self, provider: str, event_type: str, payload: dict[str, Any], external_id: str | None = None, amount: float | None = None, currency: str | None = None) -> dict[str, Any]:
+    async def append_event(self, provider: str, event_type: str, payload: dict[str, Any], external_id: str | None = None, amount: float | None = None, currency: str | None = None):
         return await self.db.insert("hermes_sales_events", {
             "provider": provider, "event_type": event_type, "external_id": external_id,
             "amount": amount, "currency": currency, "payload": payload,
