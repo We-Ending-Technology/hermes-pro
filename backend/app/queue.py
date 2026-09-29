@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import json
-
 from redis.asyncio import Redis
 
-
-QUEUE_NAME = "hermes:jobs:product_generation"
-
+QUEUE_NAME = "hermes:jobs"
 
 class JobQueue:
     def __init__(self, redis_url: str) -> None:
@@ -19,8 +16,7 @@ class JobQueue:
         item = await self.redis.brpop(QUEUE_NAME, timeout=timeout)
         if not item:
             return None
-        payload = json.loads(item[1])
-        return payload["job_id"]
+        return json.loads(item[1])["job_id"]
 
     async def close(self) -> None:
         await self.redis.aclose()
