@@ -8,16 +8,6 @@ services:
     envVars:
       - key: APP_ENV
         value: production
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SECRET_KEY
-        sync: false
-      - key: REDIS_URL
-        sync: false
-      - key: GOOGLE_TRENDS_GEO
-        value: BR
-      - key: GOOGLE_TRENDS_ENABLED
-        value: "true"
       - key: AI_PROVIDER
         value: gemini
       - key: GEMINI_API_KEY
@@ -87,11 +77,21 @@ services:
         sync: false
 
   - type: cron
-    name: hermes-pro-maintenance
+    name: hermes-pro-radar
     runtime: python
-    schedule: "0 3 * * *"
+    schedule: "*/15 * * * *"
     buildCommand: pip install .
     startCommand: python -m worker.radar_cron
     envVars:
       - key: APP_ENV
         value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: GOOGLE_TRENDS_GEO
+        value: BR
+      - key: GOOGLE_TRENDS_ENABLED
+        value: "true"
