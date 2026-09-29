@@ -27,6 +27,14 @@ class SupabaseREST:
             "Authorization": f"Bearer {settings.supabase_secret_key or ''}",
             "Content-Type": "application/json",
         }
+        # Reuse one bounded AsyncClient instead of creating a new connection
+        # pool for every Supabase request. The Command Center polls the API
+        # frequently, so per-request clients create unnecessary connection and
+        # allocator churn under sustained traffic.
+        self._client = httpx.AsyncClient(
+            timeout=20,
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        )
 
     def _ensure_configured(self) -> None:
         if not self.secret_key or not self.project_url.startswith("http"):
@@ -43,8 +51,9 @@ class SupabaseREST:
         headers = dict(self.headers)
         if prefer:
             headers["Prefer"] = prefer
-        async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.request(method, f"{self.base_url}/{table}", headers=headers, params=params, json=json)
+        response = await self._client.request(
+            method, f"{self.base_url}/{table}", headers=headers, params=params, json=json
+        )
         if response.is_error:
             detail = response.text[:500]
             logger.error("Supabase request failed: method=%s table=%s status=%s detail=%s", method, table, response.status_code, detail)
@@ -72,8 +81,12 @@ class SupabaseREST:
     async def upload_storage(self, bucket: str, path: str, data: bytes, content_type: str) -> dict[str, Any]:
         self._ensure_configured()
         headers = {"apikey": self.secret_key or "", "Authorization": f"Bearer {self.secret_key or ''}", "Content-Type": content_type, "x-upsert": "true"}
-        async with httpx.AsyncClient(timeout=60) as client:
-            response = await client.post(f"{self.storage_url}/object/{bucket}/{path}", headers=headers, content=data)
+        response = await self._client.post(
+            f"{self.storage_url}/object/{bucket}/{path}",
+            headers=headers,
+            content=data,
+            timeout=60,
+        )
         if response.is_error:
             raise SupabaseError(f"Supabase storage upload failed: {response.status_code} {response.text[:500]}")
         return response.json() if response.content else {"path": path}
@@ -81,8 +94,11 @@ class SupabaseREST:
     async def create_signed_url(self, bucket: str, path: str, expires_in: int = 3600) -> str:
         self._ensure_configured()
         headers = {"apikey": self.secret_key or "", "Authorization": f"Bearer {self.secret_key or ''}", "Content-Type": "application/json"}
-        async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.post(f"{self.storage_url}/object/sign/{bucket}/{path}", headers=headers, json={"expiresIn": expires_in})
+        response = await self._client.post(
+            f"{self.storage_url}/object/sign/{bucket}/{path}",
+            headers=headers,
+            json={"expiresIn": expires_in},
+        )
         if response.is_error:
             raise SupabaseError(f"Supabase signed URL failed: {response.status_code} {response.text[:500]}")
         payload = response.json()
@@ -92,6 +108,9 @@ class SupabaseREST:
         if signed.startswith("http"):
             return signed
         return f"{self.storage_url}{signed}"
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
 
     async def health(self) -> bool:
         try:

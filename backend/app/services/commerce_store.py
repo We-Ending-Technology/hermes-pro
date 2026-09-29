@@ -26,8 +26,11 @@ class CommerceStore:
         }
         return await self.db.insert("hermes_opportunities", payload)
 
-    async def list_opportunities(self) -> list[dict[str, Any]]:
-        return await self.db.select("hermes_opportunities", params={"select": "*", "order": "score.desc,created_at.desc"})
+    async def list_opportunities(self, limit: int = 100) -> list[dict[str, Any]]:
+        return await self.db.select(
+            "hermes_opportunities",
+            params={"select": "*", "order": "score.desc,created_at.desc", "limit": str(limit)},
+        )
 
     async def mark_opportunity_selected(self, opportunity_id: str) -> dict[str, Any]:
         return await self.db.update(

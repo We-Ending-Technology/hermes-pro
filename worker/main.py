@@ -133,6 +133,7 @@ async def run() -> None:
                 await recover_pending(store, queue)
     finally:
         await queue.close()
+        await store.db.aclose()
 
 
 if __name__ == "__main__":
