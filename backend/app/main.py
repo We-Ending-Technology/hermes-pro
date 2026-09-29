@@ -12,6 +12,7 @@ from .agents.stubs import AGENT_NAMES, PassThroughAgent
 from .agents.operational import (RadarAgent, ResearcherAgent, AnalystAgent, ExecutorAgent, QAAgent, CommercialAgent, FinanceAgent, RecoveryAgent, GuardianAgent, WatchtowerAgent, SupervisorAgent)
 from .services.autonomy import AutonomyService
 from .api_commercial import router as commercial_router
+from .api_autonomy import router as autonomy_router
 from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
 from .queue import JobQueue
@@ -60,6 +61,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(commercial_router)
+app.include_router(autonomy_router)
 
 def product_response(row: dict) -> ProductResponse:
     metadata = dict(row.get("metadata") or {})
