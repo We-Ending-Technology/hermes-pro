@@ -1,33 +1,29 @@
-from .adapters import GeminiAdapter, OpenAIAdapter
-from .base import AIGateway
-from .failover import FailoverAIGateway, ProviderSlot
+from .base import AIGateway, AIResponse
 from .stub import StubAIGateway
+from .adapters import GeminiAdapter, OpenAIAdapter
 from ..core.config import Settings
 
+class FallbackGateway(AIGateway):
+    def __init__(self, primary: AIGateway, fallback: AIGateway):
+        self.primary = primary
+        self.fallback = fallback
+
+    async def complete(self, prompt: str, *, system: str | None = None) -> AIResponse:
+        try:
+            return await self.primary.complete(prompt, system=system)
+        except Exception as primary_error:
+            try:
+                return await self.fallback.complete(prompt, system=system)
+            except Exception as fallback_error:
+                raise RuntimeError(
+                    f"AI Gateway unavailable: primary={primary_error}; fallback={fallback_error}"
+                ) from fallback_error
 
 def build_ai_gateway(settings: Settings) -> AIGateway:
-    if settings.ai_provider.strip().lower() == "stub":
+    gemini = GeminiAdapter(api_key=settings.gemini_api_key or settings.ai_api_key, model=settings.gemini_model)
+    openai = OpenAIAdapter(api_key=settings.openai_api_key, model=settings.openai_model)
+    if settings.ai_provider == "openai":
+        return FallbackGateway(openai, gemini)
+    if settings.ai_provider == "stub":
         return StubAIGateway()
-
-    slots: list[ProviderSlot] = []
-    pools = {
-        "gemini": settings.gemini_api_key_pool,
-        "openai": settings.openai_api_key_pool,
-    }
-    for provider in settings.provider_order_list:
-        for index, key in enumerate(pools.get(provider, []), start=1):
-            if provider == "gemini":
-                gateway = GeminiAdapter(api_key=key, model=settings.gemini_model)
-            elif provider == "openai":
-                gateway = OpenAIAdapter(api_key=key, model=settings.openai_model)
-            else:
-                continue
-            slots.append(ProviderSlot(provider=provider, key_index=index, gateway=gateway))
-
-    if not slots:
-        raise ValueError("No configured AI provider keys found")
-    # Preserve the established single-provider contract while enabling
-    # failover whenever multiple configured slots are available.
-    if len(slots) == 1:
-        return slots[0].gateway
-    return FailoverAIGateway(slots)
+    return FallbackGateway(gemini, openai)
