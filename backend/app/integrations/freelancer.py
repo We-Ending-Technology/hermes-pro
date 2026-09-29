@@ -132,13 +132,13 @@ class FreelancerAdapter:
         }
         return await self._request("POST", "/projects/0.1/milestone_requests/", json=payload)
 
-    async def request_milestone_release(self, milestone_request_id: int | str) -> dict[str, Any]:
+    async def request_milestone_release(self, milestone_id: int | str) -> dict[str, Any]:
         if not self.config.enabled:
             raise FreelancerAPIError("Freelancer integration is disabled")
         return await self._request(
             "PUT",
-            f"/projects/0.1/milestone_requests/{milestone_request_id}/",
-            json={"action": "accept"},
+            f"/projects/0.1/milestones/{milestone_id}/",
+            json={"action": "request_release", "amount": 0, "reason": "task_description", "reason_text": "Hermes Pro delivery submitted"},
         )
 
     async def get_milestone_payment(self, milestone_id: int | str) -> dict[str, Any]:
