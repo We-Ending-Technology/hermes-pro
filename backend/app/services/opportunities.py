@@ -17,7 +17,7 @@ class Opportunity:
     tags: list[str]
     budget: float | None
     currency: str
-    automation_allowed: bool
+    discovery_automation_allowed: bool
     raw: dict[str, Any]
 
     @property
@@ -115,7 +115,7 @@ async def fetch_opportunities(limit: int = 40) -> list[Opportunity]:
                     tags=tags[:30],
                     budget=_money(row.get("salary") or row.get("salary_min")),
                     currency=_text(row.get("currency") or "USD") or "USD",
-                    automation_allowed=bool(cfg["automation_allowed"]),
+                    discovery_automation_allowed=bool(cfg["automation_allowed"]),
                     raw=row,
                 ))
     return results
@@ -141,6 +141,6 @@ def score_opportunity(item: Opportunity) -> dict[str, Any]:
         "urgency": urgency,
         "value": value,
         "skills": skills,
-        "automation_allowed": item.automation_allowed,
+        "discovery_automation_allowed": item.discovery_automation_allowed,\n                    "application_automation_allowed": False,
         "source_policy": "automated_public_api" if item.automation_allowed else "manual_only",
     }
