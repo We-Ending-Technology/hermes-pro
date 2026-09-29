@@ -1,8 +1,6 @@
 from __future__ import annotations
-
 import asyncio
 import logging
-
 from backend.app.core.config import get_settings
 from backend.app.db.supabase import SupabaseREST
 from backend.app.queue import JobQueue
