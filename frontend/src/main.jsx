@@ -38,7 +38,7 @@ function App() {
 
   async function refresh() {
     try {
-      const [health, dashboard, products, jobs, opportunities, integrations, sales, analytics] = await Promise.all([
+      const [health, dashboard, products, jobs, opportunities, integrations, sales, analytics, servicePlatforms] = await Promise.all([
         jsonFetch("/health"),
         jsonFetch("/api/v1/dashboard"),
         jsonFetch("/api/v1/products"),
@@ -46,7 +46,8 @@ function App() {
         jsonFetch("/api/v1/opportunities").catch(() => []),
         jsonFetch("/api/v1/integrations").catch(() => []),
         jsonFetch("/api/v1/sales").catch(() => null),
-        jsonFetch("/api/v1/analytics").catch(() => null),\n        jsonFetch("/api/v1/commerce/service-platforms").catch(() => []),
+        jsonFetch("/api/v1/analytics").catch(() => null),
+        jsonFetch("/api/v1/commerce/service-platforms").catch(() => []),
       ]);
       setOnline(health?.status === "ok");
       setData({ dashboard, products, jobs, opportunities, integrations, sales, analytics, servicePlatforms });
@@ -120,7 +121,8 @@ function App() {
         <header className="topbar"><button className="mobile-menu" onClick={() => setMobileNav(true)}>☰</button><div className="crumbs"><span>HERMES</span><b>/</b><strong>{view}</strong></div><div className="top-actions"><div className="system-time"><span className="pulse-dot" /> 24/7 AUTONOMOUS</div><button className="round-btn" onClick={refresh}>↻</button><div className="profile">W</div></div></header>
         {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>×</button></div>}
         {view === "Início" && <Home data={data} online={online} activeJobs={activeJobs} readyProducts={readyProducts} revenue={revenue} go={setView} />}
-        {view === "Radar" && <Radar opportunities={data.opportunities} />}\n        {view === "Serviços" && <Services opportunities={data.opportunities} platforms={data.servicePlatforms} />}
+        {view === "Radar" && <Radar opportunities={data.opportunities} />}
+        {view === "Serviços" && <Services opportunities={data.opportunities} platforms={data.servicePlatforms} />}
         {view === "Fábrica" && <Factory topic={topic} setTopic={setTopic} submit={createProduct} busy={busy} />}
         {view === "Produtos" && <Products items={data.products} selected={selected} setSelected={setSelected} />}
         {view === "Vendas" && <Sales sales={data.sales} revenue={revenue} />}
