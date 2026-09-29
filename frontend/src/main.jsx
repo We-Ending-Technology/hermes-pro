@@ -128,6 +128,7 @@ function App() {
         {view === "Vendas" && <Sales sales={data.sales} revenue={revenue} />}
         {view === "Analytics" && <Analytics analytics={data.analytics} data={data} />}
         {view === "Agentes" && <Agents online={online} />}
+        {view === "Conexões" && <Connections integrations={data.integrations} />}
         <button className="hermes-float" onClick={() => setView("Hermes")}><span>H</span><div><b>Hermes</b><small>Fale comigo</small></div><i>↗</i></button>
         {view === "Hermes" && <Chat chat={chat} input={chatInput} setInput={setChatInput} send={sendChat} busy={busy} />}
       </main>
@@ -223,6 +224,33 @@ function ProductWorkspace({ product,close }) {
 
 function Sales({ sales,revenue }) { return <section className="page"><PageTitle eyebrow="SALES COMMAND" title="Resultado, não vaidade." text="Receita e pedidos registrados pelas integrações. Dados ausentes permanecem ausentes."/><div className="sales-hero"><div><span>RECEITA REGISTRADA</span><strong>{formatCurrency(revenue)}</strong><small>{sales?.orders??0} pedidos registrados</small></div><div className="chart-bars">{[32,45,28,64,51,72,58,82,67,91,76,100].map((height,i)=><i key={i} style={{height:`${height}%`}}/>)}</div></div><div className="stats-grid compact"><Stat label="Pedidos" value={sales?.orders??0} hint="registrados" accent="cyan"/><Stat label="Ticket" value={sales?.average_order_value!=null?formatCurrency(sales.average_order_value):"R$ —"} hint="médio" accent="violet"/><Stat label="Reembolsos" value={sales?.refunds??"—"} hint="sem dado" accent="amber"/></div></section>; }
 function Analytics({ analytics,data }) { return <section className="page"><PageTitle eyebrow="ANALYTICS" title="O que o sistema está aprendendo?" text="Analytics transforma eventos e resultados em próximos movimentos. Sem inventar métricas."/><div className="analytics-grid"><div className="panel large-analytics"><PanelHead title="Performance" meta="LIVE DATA"/><div className="big-number">{analytics?.summary??"Dados insuficientes"}</div><div className="signal-bars"><i style={{height:"36%"}}/><i style={{height:"58%"}}/><i style={{height:"44%"}}/><i style={{height:"71%"}}/><i style={{height:"64%"}}/><i style={{height:"84%"}}/><i style={{height:"78%"}}/></div></div><div className="panel"><PanelHead title="Sinais" meta="AGORA"/><HealthRow name="Oportunidades" value={String(data.opportunities.length)} tone="active"/><HealthRow name="Produtos" value={String(data.products.length)} tone="success"/><HealthRow name="Jobs" value={String(data.jobs.length)} tone="neutral"/><HealthRow name="Integrações" value={String(data.integrations.length)} tone="neutral"/></div></div></section>; }
+function Connections({ integrations }) {
+  const known = new Map((integrations || []).map(item => [String(item.id || item.name || "").toLowerCase(), item]));
+  const catalog = [
+    ["google-drive","Google Drive","Arquivos, ebooks e exports","API oficial · sem custo padrão dentro das quotas","https://developers.google.com/drive/api"],
+    ["google-gmail","Gmail","Leads, notificações e atendimento","API oficial · quotas gratuitas para uso normal","https://developers.google.com/gmail/api"],
+    ["google-calendar","Google Calendar","Agendamento e tarefas","API oficial · uso padrão via Google Cloud","https://developers.google.com/calendar/api"],
+    ["gemini","Gemini","Escrita, revisão e raciocínio","Há nível sem custo para desenvolvedores","https://ai.google.dev/gemini-api/docs/pricing"],
+    ["canva","Canva","Capas, layouts e ativos visuais","Connect APIs sem cobrança para desenvolver a integração","https://www.canva.com/developers/reach-beyond/"],
+    ["github","GitHub","Código, PRs e versionamento","Integração oficial","https://github.com/"],
+    ["vercel","Vercel","Deploy de aplicações","Integração oficial","https://vercel.com/"],
+    ["telegram","Telegram","Alertas e comandos","Bot API oficial","https://core.telegram.org/bots/api"],
+  ];
+  return <section className="page">
+    <PageTitle eyebrow="CONNECTION HUB" title="Conecte o Hermes ao que já é seu." text="Cada conexão fica explícita: o Hermes mostra o que está conectado, o que exige credencial e quais APIs oficiais podem ser usadas."/>
+    <div className="connection-grid">{catalog.map(([id,name,capability,note,url]) => {
+      const current = known.get(id) || known.get(name.toLowerCase());
+      const connected = Boolean(current?.connected || current?.enabled || current?.status === "connected");
+      return <article className="connection-card" key={id}>
+        <div className="connection-head"><div className="connection-icon">{name[0]}</div><div><span>{connected?"CONECTADO":"NÃO CONFIGURADO"}</span><h3>{name}</h3></div><i className={connected?"status-dot success":"status-dot neutral"}/></div>
+        <p>{capability}</p><small>{note}</small>
+        <a href={url} target="_blank" rel="noreferrer">Documentação / conexão ↗</a>
+      </article>;
+    })}</div>
+    <div className="panel connection-policy"><PanelHead title="Regra do Hermes" meta="SEM CREDENCIAL FICTÍCIA"/><p>Conexão só vira “ativa” depois de uma credencial/token real ser validado. APIs gratuitas continuam sujeitas a quotas, permissões e termos do provedor.</p></div>
+  </section>;
+}
+
 function Agents({ online }) { return <section className="page"><PageTitle eyebrow="AGENT ORCHESTRATOR" title="Uma equipe digital em operação." text="Agentes especializados recebem tarefas do núcleo do Hermes. O status visual distingue operação real de disponibilidade."/><div className="agent-grid-premium">{agentCatalog.map(([name,desc,agent])=><article className="agent-card" key={name}><div className="agent-icon">✦</div><div><span>{agent.toUpperCase()}</span><h3>{name}</h3><p>{desc}</p></div><b className={`agent-state ${online?"ready":"waiting"}`}>{online?"READY":"WAIT"}</b></article>)}</div></section>; }
 function Chat({ chat,input,setInput,send,busy }) { return <section className="chat-page"><div className="chat-head"><div className="hermes-avatar">H</div><div><span className="eyebrow">HERMES CORE</span><h2>Command chat</h2><p>Converse, analise ou peça uma ação. O Hermes só declara como concluído o que realmente executou.</p></div></div><div className="chat-window">{chat.length===0&&<div className="chat-welcome"><div className="core-large">H</div><h3>Qual é a próxima decisão?</h3><p>Ex.: “Encontre oportunidades para hoje” ou “Crie um produto sobre IA para pequenos negócios”.</p><div className="prompt-grid"><button onClick={()=>setInput("Encontre oportunidades para hoje")}>Radar de hoje</button><button onClick={()=>setInput("Crie um produto sobre IA para pequenos negócios")}>Criar produto</button><button onClick={()=>setInput("Explique o estado atual do sistema")}>Diagnóstico</button></div></div>}{chat.map((message,index)=><div className={`chat-message ${message.role}`} key={index}><span>{message.role==="user"?"VOCÊ":"HERMES"}</span><p>{message.text}</p>{message.meta&&<small>{message.meta}</small>}</div>)}<form className="chat-form" onSubmit={send}><input value={input} onChange={e=>setInput(e.target.value)} placeholder="Dê um comando ao Hermes…" maxLength={4000}/><button className="primary" disabled={busy}>{busy?"…":"Enviar ↗"}</button></form></div></section>; }
 function PageTitle({ eyebrow,title,text }) { return <div className="page-title"><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{text}</p></div>; }
