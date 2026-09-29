@@ -28,7 +28,7 @@ class AutonomyService:
                 "tags": item.tags,
                 "budget": item.budget,
                 "currency": item.currency,
-                "automation_allowed": item.automation_allowed,
+                "discovery_automation_allowed": item.discovery_automation_allowed,\n                    "application_automation_allowed": False,
                 "score": scored["score"],
                 "discovered_at": datetime.now(timezone.utc).isoformat(),
                 "next_action": "prepare" if item.automation_allowed else "manual_review",
