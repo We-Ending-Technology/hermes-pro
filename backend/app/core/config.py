@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     hotmart_webhook_token: str | None = Field(default=None, validation_alias="HOTMART_WEBHOOK_TOKEN")
     telegram_bot_token: str | None = Field(default=None, validation_alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: str | None = Field(default=None, validation_alias="TELEGRAM_CHAT_ID")
+    public_api_url: str | None = Field(default="https://hermes-pro-api-commercial.onrender.com", validation_alias="PUBLIC_API_URL")
+    oauth_encryption_key: str | None = Field(default=None, validation_alias="OAUTH_ENCRYPTION_KEY")
+    google_client_id: str | None = Field(default=None, validation_alias="GOOGLE_CLIENT_ID")
+    google_client_secret: str | None = Field(default=None, validation_alias="GOOGLE_CLIENT_SECRET")
+    threads_app_id: str | None = Field(default=None, validation_alias="THREADS_APP_ID")
+    threads_app_secret: str | None = Field(default=None, validation_alias="THREADS_APP_SECRET")
+    canva_client_id: str | None = Field(default=None, validation_alias="CANVA_CLIENT_ID")
+    canva_client_secret: str | None = Field(default=None, validation_alias="CANVA_CLIENT_SECRET")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
