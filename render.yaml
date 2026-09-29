@@ -8,6 +8,16 @@ services:
     envVars:
       - key: APP_ENV
         value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: GOOGLE_TRENDS_GEO
+        value: BR
+      - key: GOOGLE_TRENDS_ENABLED
+        value: "true"
       - key: AI_PROVIDER
         value: gemini
       - key: GEMINI_API_KEY
