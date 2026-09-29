@@ -38,14 +38,10 @@ services:
         value: https://hermes-pro-api-commercial.onrender.com
       - key: OAUTH_ENCRYPTION_KEY
         sync: false
-      - key: GOOGLE_CLIENT_ID
-        sync: false
-      - key: GOOGLE_CLIENT_SECRET
-        sync: false
-      - key: THREADS_APP_ID
-        sync: false
-      - key: THREADS_APP_SECRET
-        sync: false
+      - key: GOOGLE_TRENDS_GEO
+        value: BR
+      - key: GOOGLE_TRENDS_ENABLED
+        value: "true"
       - key: CANVA_CLIENT_ID
         sync: false
       - key: CANVA_CLIENT_SECRET
@@ -73,13 +69,19 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+      - key: OAUTH_ENCRYPTION_KEY
+        sync: false
+      - key: CANVA_CLIENT_ID
+        sync: false
+      - key: CANVA_CLIENT_SECRET
+        sync: false
 
   - type: cron
     name: hermes-pro-maintenance
     runtime: python
     schedule: "0 3 * * *"
     buildCommand: pip install .
-    startCommand: python -c "print('maintenance placeholder: no production automation enabled')"
+    startCommand: python -m worker.radar_cron
     envVars:
       - key: APP_ENV
         value: production
