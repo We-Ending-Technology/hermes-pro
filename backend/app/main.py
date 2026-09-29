@@ -9,6 +9,8 @@ from .ai_gateway.factory import build_ai_gateway
 from .agents.diagnostic import DiagnosticAgent
 from .agents.registry import AgentRegistry
 from .agents.stubs import AGENT_NAMES, PassThroughAgent
+from .agents.operational import (RadarAgent, ResearcherAgent, AnalystAgent, ExecutorAgent, QAAgent, CommercialAgent, FinanceAgent, RecoveryAgent, GuardianAgent, WatchtowerAgent, SupervisorAgent)
+from .services.autonomy import AutonomyService
 from .api_commercial import router as commercial_router
 from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
@@ -29,12 +31,22 @@ db = SupabaseREST(settings)
 store = PersistentStore(db)
 sales_service = SalesService(db)
 queue = JobQueue(settings.redis_url)
+autonomy_service = AutonomyService(store, queue)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     registry.register(DiagnosticAgent(ai_gateway))
+    operational = [
+        RadarAgent(), ResearcherAgent(), AnalystAgent(), ExecutorAgent(), QAAgent(),
+        CommercialAgent(ai_gateway), FinanceAgent(), RecoveryAgent(), GuardianAgent(),
+        WatchtowerAgent(), SupervisorAgent(),
+    ]
+    for agent in operational:
+        registry.register(agent)
+    mapped = {agent.name for agent in operational} | {"diagnostic"}
     for agent_name in AGENT_NAMES:
-        registry.register(PassThroughAgent(agent_name))
+        if agent_name not in mapped:
+            registry.register(PassThroughAgent(agent_name))
     yield
     await queue.close()
 
@@ -88,6 +100,21 @@ async def chat(request: ChatRequest):
         ),
     )
     return ChatResponse(response=result.content, provider=result.provider, model=result.model)
+
+@app.post("/api/v1/autonomy/cycle")
+async def autonomy_cycle():
+    if not settings.autonomy_enabled:
+        raise HTTPException(status_code=409, detail="autonomy disabled")
+    return await autonomy_service.cycle(settings.autonomy_min_score)
+
+@app.get("/api/v1/autonomy/status")
+async def autonomy_status():
+    return {"enabled": settings.autonomy_enabled, "minimum_score": settings.autonomy_min_score, "agents": registry.names()}
+
+@app.get("/api/v1/opportunities")
+async def opportunities():
+    jobs = await store.list_jobs()
+    return [row for row in jobs if row.get("job_type") == "opportunity_pipeline"]
 
 @app.get("/api/v1/integrations", response_model=list[IntegrationStatus])
 async def integrations(): return [IntegrationStatus(**item) for item in integration_service.status()]
