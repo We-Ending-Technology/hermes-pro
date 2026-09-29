@@ -3,6 +3,7 @@ from typing import Any
 from .base import Agent
 from ..services.opportunities import SOURCES, fetch_opportunities, score_opportunity
 from ..ai_gateway.base import AIGateway
+from ..core.config import get_settings
 
 class RadarAgent(Agent):
     name = "radar"
@@ -18,7 +19,7 @@ class RadarAgent(Agent):
                     "url": item.url, "description": item.description, "tags": item.tags,
                     "budget": item.budget, "currency": item.currency,
                     "discovery_automation_allowed": item.discovery_automation_allowed,
-                    "application_automation_allowed": False, **scored,
+                    "application_automation_allowed": bool(item.source == "freelancer" and get_settings().freelancer_enabled and get_settings().freelancer_auto_apply), **scored,
                 })
         ranked.sort(key=lambda x: x["score"], reverse=True)
         return {"count": len(ranked), "opportunities": ranked[:30]}
