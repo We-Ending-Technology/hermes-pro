@@ -3,13 +3,14 @@ from __future__ import annotations
 import hashlib
 import re
 import urllib.parse
-import urllib.request
 import xml.etree.ElementTree as ET
 from typing import Any
 
+import httpx
+
 from .commerce_store import CommerceStore
 from .opportunities import OpportunityEngine, OpportunityInput
-
+from ..core.config import get_settings
 
 TOPICS = (
     "educação",
@@ -21,7 +22,6 @@ TOPICS = (
     "pequenos negócios",
 )
 
-
 _opportunity_engine = OpportunityEngine()
 
 
@@ -29,58 +29,80 @@ def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
 
 
-async def discover_public_signals(store: CommerceStore, limit: int = 8) -> list[dict[str, Any]]:
-    """Collect public Google News RSS headlines as market signals.
+async def _rss(url: str) -> ET.Element:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        return ET.fromstring(response.content)
 
-    News headlines are discovery signals only. They are not treated as proof of
-    demand, revenue, conversion, pricing, or sales. Missing dimensions remain
-    missing so the opportunity confidence score is not artificially inflated.
-    """
-    created: list[dict[str, Any]] = []
+
+async def _create_signal(store: CommerceStore, title: str, link: str, source: str, metadata: dict[str, Any]):
+    title = _clean(title)
+    if not title:
+        return None
+    key = hashlib.sha256(f"{source}:{title}:{link}".encode()).hexdigest()[:32]
+    scored = _opportunity_engine.score(OpportunityInput())
+    try:
+        return await store.create_opportunity(
+            {
+                "type": "product",
+                "title": f"Sinal de oportunidade: {title}",
+                "description": "Sinal público para validação posterior; não é confirmação de demanda.",
+                "source": source,
+                "source_url": link,
+                "signals": {"public_signal": 1.0},
+                "score": scored.score,
+                "confidence": scored.confidence,
+                "status": "discovered",
+                "metadata": metadata,
+            },
+            idempotency_key=key,
+        )
+    except Exception:
+        return None
+
+
+async def discover_google_trends(store: CommerceStore, geo: str = "BR", limit: int = 20):
+    if not get_settings().trends_enabled:
+        return []
+    url = f"https://trends.google.com/trending/rss?geo={urllib.parse.quote(geo)}"
+    try:
+        root = await _rss(url)
+    except Exception:
+        return []
+    found = []
+    for item in root.findall(".//item")[:limit]:
+        title = item.findtext("title") or ""
+        link = item.findtext("link") or ""
+        row = await _create_signal(store, title, link, "google_trends_public_rss", {"geo": geo, "kind": "trending_now"})
+        if row:
+            found.append(row)
+    return found
+
+
+async def discover_google_news(store: CommerceStore, limit: int = 12):
+    found = []
     per_topic = max(1, limit // len(TOPICS))
-
     for topic in TOPICS:
-        query = urllib.parse.quote(topic)
-        url = f"https://news.google.com/rss/search?q={query}&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+        params = urllib.parse.urlencode({"q": topic, "hl": "pt-BR", "gl": "BR", "ceid": "BR:pt-419"})
         try:
-            with urllib.request.urlopen(url, timeout=8) as response:
-                raw = response.read()
-            root = ET.fromstring(raw)
+            root = await _rss(f"https://news.google.com/rss/search?{params}")
         except Exception:
             continue
-
         for item in root.findall("./channel/item")[:per_topic]:
-            title = _clean(item.findtext("title") or "")
-            link = item.findtext("link") or ""
-            if not title:
-                continue
+            row = await _create_signal(
+                store,
+                item.findtext("title") or "",
+                item.findtext("link") or "",
+                "google_news_rss",
+                {"topic": topic, "kind": "news_signal"},
+            )
+            if row:
+                found.append(row)
+    return found
 
-            key = hashlib.sha256(f"news:{title}:{link}".encode()).hexdigest()[:32]
-            signals = {"public_news_signal": 1.0, "topic": topic}
 
-            # No demand metric is available from the RSS headline itself.
-            # Keep demand unknown instead of converting a news mention into
-            # fabricated demand evidence.
-            scored = _opportunity_engine.score(OpportunityInput())
-
-            try:
-                row = await store.create_opportunity(
-                    {
-                        "type": "product",
-                        "title": f"Sinal de oportunidade: {title}",
-                        "description": "Sinal público para pesquisa posterior; não é confirmação de demanda.",
-                        "source": "google_news_rss",
-                        "source_url": link,
-                        "signals": signals,
-                        "score": scored.score,
-                        "confidence": scored.confidence,
-                        "status": "discovered",
-                        "metadata": {"topic": topic, "requires_validation": True},
-                    },
-                    idempotency_key=key,
-                )
-                created.append(row)
-            except Exception:
-                continue
-
-    return created
+async def discover_public_signals(store: CommerceStore, limit: int = 24):
+    trends = await discover_google_trends(store, geo=get_settings().trends_geo, limit=min(20, limit))
+    news = await discover_google_news(store, limit=max(4, limit - len(trends)))
+    return trends + news
