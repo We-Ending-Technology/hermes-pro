@@ -11,7 +11,7 @@ async function schedulerSecret() {
   return data || "";
 }
 
-async function analyze(job: any) {
+async function analyzeWithAI(job: any) {
   const compact = {
     source: job.source,
     title: String(job.title || "").slice(0, 500),
@@ -24,7 +24,7 @@ async function analyze(job: any) {
   const prompt = [
     "Analise esta oportunidade para o pipeline Hermes.",
     "Não invente experiência, cliente, preço ou prazo.",
-    "Responda de forma objetiva com fit, esforço, risco, valor estimado, prioridade e próxima ação.",
+    "Responda objetivamente com fit, esforço, risco, valor estimado, prioridade e próxima ação.",
     "A candidatura automática é PROIBIDA quando application_automation_allowed=false.",
     JSON.stringify(compact)
   ].join("\n");
@@ -36,6 +36,120 @@ async function analyze(job: any) {
   });
   if (!res.ok) throw new Error(`AI API HTTP ${res.status}`);
   return await res.json();
+}
+
+function estimateHours(job: any) {
+  const text = `${job.title || ""} ${job.description || ""} ${(job.tags || []).join(" ")}`.toLowerCase();
+  let hours = 8;
+  if (/(bug|fix|erro|debug)/.test(text)) hours = 5;
+  if (/(report|relatório|analysis|análise|data)/.test(text)) hours = Math.max(hours, 8);
+  if (/(api|integration|integração|automation|automação|workflow)/.test(text)) hours = Math.max(hours, 12);
+  if (/(dashboard|full.?stack|web app|saas|platform|plataforma)/.test(text)) hours = Math.max(hours, 20);
+  if (/(ai|ia|machine learning|llm|agent|agente)/.test(text)) hours = Math.max(hours, 16);
+  if (/(senior|architect|architecture|arquitetura)/.test(text)) hours = Math.max(hours, 24);
+  return Math.min(hours, 60);
+}
+
+function suggestedPrice(job: any, hours: number) {
+  const text = `${job.title || ""} ${job.description || ""}`.toLowerCase();
+  const budget = Number(job.budget || job.salary_max || 0);
+  const rate = 70;
+  let price = Math.max(120, Math.round((hours * rate * 1.15) / 50) * 50);
+  if (budget > 0 && budget >= price) price = Math.min(budget, price);
+  const low = Math.max(100, Math.round((price * 0.9) / 50) * 50);
+  const high = Math.round((price * 1.2) / 50) * 50;
+  return {
+    currency: "BRL",
+    recommended: price,
+    range: { min: low, max: high },
+    basis: `${hours}h estimadas × R$ ${rate}/h + 15% de margem para escopo/risco`,
+    budget_detected: budget || null,
+    note: "Valor sugerido; revisar antes do envio."
+  };
+}
+
+function requiredFiles(job: any) {
+  const text = `${job.title || ""} ${job.description || ""} ${(job.tags || []).join(" ")}`.toLowerCase();
+  const files = [
+    "README.md com escopo, instalação e uso",
+    ".env.example sem segredos",
+    "Código-fonte do entregável",
+    "Checklist de requisitos e critérios de aceite"
+  ];
+  if (/(api|integration|integração|backend|fastapi|python)/.test(text)) files.push("Documentação da API e exemplos de requisição");
+  if (/(dashboard|web|frontend|react|site)/.test(text)) files.push("Screenshots ou link do ambiente de demonstração");
+  if (/(bug|fix|debug|test|qa|teste)/.test(text)) files.push("Relatório de testes e evidências da correção");
+  if (/(data|analysis|análise|report|relatório|excel|csv)/.test(text)) files.push("Relatório final e arquivo de dados/exportação, quando aplicável");
+  if (/(ai|ia|llm|machine learning|agent|agente)/.test(text)) files.push("Descrição da arquitetura do fluxo de IA e limites conhecidos");
+  return [...new Set(files)];
+}
+
+function checklist(job: any) {
+  const text = `${job.title || ""} ${job.description || ""}`.toLowerCase();
+  const items = [
+    "Ler o anúncio completo e confirmar escopo",
+    "Confirmar prazo e formato de entrega",
+    "Confirmar acesso, credenciais e materiais necessários",
+    "Validar requisitos obrigatórios e critérios de aceite",
+    "Testar o entregável antes da submissão",
+    "Revisar preço e prazo sugeridos",
+    "Revisar a proposta para remover qualquer afirmação não comprovada",
+    "Submeter somente pelo canal oficial da plataforma"
+  ];
+  if (/(api|integration|integração)/.test(text)) items.splice(4, 0, "Validar endpoints, autenticação, limites e ambiente de teste");
+  if (/(data|analysis|report|relatório)/.test(text)) items.splice(4, 0, "Validar origem dos dados, cálculos e formato do relatório");
+  if (/(bug|fix|debug)/.test(text)) items.splice(4, 0, "Reproduzir o problema antes da correção e registrar evidência");
+  return items;
+}
+
+function proposalText(job: any, hours: number, price: any) {
+  const title = String(job.title || "projeto");
+  return [
+    "Olá!",
+    "",
+    `Vi o projeto "${title}" e consigo estruturar a execução em etapas objetivas, começando pela validação do escopo e dos requisitos.`,
+    "",
+    "Minha proposta inicial é:",
+    `• Entender e validar o escopo: requisitos, entradas, saídas e critérios de aceite.`,
+    `• Implementar o que foi solicitado com foco em organização, testes e documentação.`,
+    `• Entregar os arquivos e evidências necessários para validação.`,
+    "",
+    `Estimativa inicial: ${hours} horas.`,
+    `Valor sugerido: R$ ${price.recommended.toFixed(2).replace(".", ",")} (ajustável após confirmar o escopo).`,
+    "",
+    "Antes de iniciar, confirmaria apenas os acessos, materiais de referência, prazo e critérios de aceite do projeto.",
+    "",
+    "Se o escopo estiver alinhado, posso começar pela primeira etapa e apresentar o resultado para validação."
+  ].join("\n");
+}
+
+function buildProposal(job: any, ai: any | null) {
+  const hours = estimateHours(job);
+  const price = suggestedPrice(job, hours);
+  const files = requiredFiles(job);
+  const checks = checklist(job);
+  return {
+    status: "ready_for_review",
+    generated_at: new Date().toISOString(),
+    title: `Proposta — ${job.title || "oportunidade"}`,
+    suggested_price: price,
+    estimated_hours: hours,
+    proposal_text: proposalText(job, hours, price),
+    required_files: files,
+    checklist: checks,
+    automation: {
+      discovery_allowed: job.discovery_automation_allowed === true,
+      application_allowed: job.application_automation_allowed === true,
+      submission_status: job.application_automation_allowed === true ? "eligible_for_official_adapter_review" : "manual_submission_required"
+    },
+    ai_analysis: ai ? {
+      provider: ai.provider || null,
+      model: ai.model || null,
+      response: ai.response || "",
+      generated_at: new Date().toISOString()
+    } : null,
+    claims_policy: "Não afirmar experiência, portfólio, prazo ou resultado que não estejam comprovados."
+  };
 }
 
 Deno.serve(async (req) => {
@@ -65,21 +179,35 @@ Deno.serve(async (req) => {
     }).eq("id", job.id);
 
     try {
-      const ai = await analyze(job.payload || {});
-      const analysis = {
-        provider: ai.provider || null,
-        model: ai.model || null,
-        response: ai.response || "",
-        analyzed_at: new Date().toISOString()
-      };
+      let ai = null;
+      try { ai = await analyzeWithAI(job.payload || {}); } catch (_) {}
+
+      const proposal = buildProposal(job.payload || {}, ai);
       const nextStatus = job.payload?.application_automation_allowed === true
-        ? "proposal_ready" : "manual_submission_required";
+        ? "proposal_ready"
+        : "manual_submission_required";
+
+      const payload = {
+        ...(job.payload || {}),
+        proposal,
+        next_action: nextStatus === "manual_submission_required"
+          ? "review_proposal_and_submit_manually"
+          : "review_proposal_and_use_official_adapter"
+      };
 
       await supabase.from("hermes_jobs").update({
         status: nextStatus,
-        payload: { ...(job.payload || {}), analysis, next_action: nextStatus === "manual_submission_required" ? "review_and_submit_manually" : "prepare_application" },
-        error_message: null, updated_at: new Date().toISOString()
+        payload,
+        error_message: null,
+        updated_at: new Date().toISOString()
       }).eq("id", job.id);
+
+      if (job.payload?.source && job.payload?.url) {
+        await supabase.from("hermes_opportunities")
+          .update({ status: "proposal_ready", metadata: { proposal } })
+          .eq("source", job.payload.source)
+          .eq("source_url", job.payload.url);
+      }
       processed++;
     } catch (e) {
       failed++;
@@ -87,7 +215,9 @@ Deno.serve(async (req) => {
       const terminal = attempts >= Number(job.max_attempts || 3);
       await supabase.from("hermes_jobs").update({
         status: terminal ? "failed" : "pending",
-        attempts, error_message: message, updated_at: new Date().toISOString()
+        attempts,
+        error_message: message,
+        updated_at: new Date().toISOString()
       }).eq("id", job.id);
     }
   }
