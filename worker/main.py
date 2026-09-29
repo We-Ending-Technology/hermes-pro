@@ -11,6 +11,8 @@ from backend.app.queue import JobQueue
 from backend.app.services.artifacts import build_artifacts
 from backend.app.services.persistence import PersistentStore
 from backend.app.services.storage import SupabaseStorage
+from backend.app.agents.operational import AnalystAgent, ExecutorAgent, QAAgent, CommercialAgent, GuardianAgent
+from backend.app.services.autonomy import AutonomyService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hermes.worker")
@@ -114,9 +116,42 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             await store.update_product(product_id, status="failed")
         logger.exception("product_generation failed job=%s", job_id)
 
+async def process_opportunity(job_id: str, store: PersistentStore, queue: JobQueue) -> None:
+    job = await store.get_job(job_id)
+    if not job or job.get("job_type") != "opportunity_pipeline" or job.get("status") in {"completed", "cancelled"}:
+        return
+    attempts = int(job.get("attempts", 0)) + 1
+    payload = dict(job.get("payload") or {})
+    try:
+        await store.update_job(job_id, "running", attempts=attempts, error_message=None)
+        opportunity = payload
+        guardian = await GuardianAgent().run({"opportunity": opportunity})
+        analysis = await AnalystAgent().run({"opportunity": opportunity})
+        qa = await QAAgent().run({"opportunity": opportunity})
+        if not qa.get("approved"):
+            payload["pipeline"] = {"guardian": guardian, "analysis": analysis, "qa": qa, "decision": "blocked"}
+            await store.update_job(job_id, "completed", attempts=attempts, payload=payload)
+            return
+        executor = await ExecutorAgent().run({"opportunity": opportunity})
+        payload["pipeline"] = {"guardian": guardian, "analysis": analysis, "qa": qa, "executor": executor}
+        if opportunity.get("application_automation_allowed"):
+            commercial = await CommercialAgent(build_ai_gateway(get_settings())).run({"opportunity": opportunity})
+            payload["pipeline"]["commercial"] = commercial
+        else:
+            payload["pipeline"]["commercial"] = {"status": "draft_only", "reason": "No official application automation permission registered."}
+        payload["status"] = "ready_for_submission" if opportunity.get("application_automation_allowed") else "manual_submission_required"
+        await store.update_job(job_id, "completed", attempts=attempts, payload=payload)
+    except Exception as exc:
+        message = str(exc)[:1000]
+        if attempts < MAX_ATTEMPTS:
+            await store.update_job(job_id, "retrying", attempts=attempts, error_message=message, payload=payload)
+            await queue.enqueue(job_id)
+        else:
+            await store.update_job(job_id, "failed", attempts=attempts, error_message=message, payload=payload)
+
 async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
     for job in await store.list_jobs():
-        if job["job_type"] == "product_generation" and job["status"] in {"pending", "retrying", "running"}:
+        if job["job_type"] in {"product_generation", "opportunity_pipeline"} and job["status"] in {"pending", "retrying", "running"}:
             # A running job may have died with its worker. Requeue it; the attempt counter prevents infinite retries.
             await queue.enqueue(str(job["id"]))
 
@@ -129,7 +164,12 @@ async def run() -> None:
         await recover_pending(store, queue)
         while True:
             job_id = await queue.dequeue(timeout=10)
-            if job_id: await process_product(job_id, store, queue)
+            if job_id:
+                job = await store.get_job(job_id)
+                if job and job.get("job_type") == "opportunity_pipeline":
+                    await process_opportunity(job_id, store, queue)
+                else:
+                    await process_product(job_id, store, queue)
             else: await recover_pending(store, queue)
     finally:
         await queue.close()
