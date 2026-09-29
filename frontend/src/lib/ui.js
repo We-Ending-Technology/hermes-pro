@@ -1,4 +1,4 @@
-export const navItems = ["Início", "Radar", "Serviços", "Fábrica", "Produtos", "Vendas", "Analytics", "Agentes"];
+export const navItems = ["Início", "Radar", "Serviços", "Fábrica", "Produtos", "Vendas", "Analytics", "Agentes", "Conexões"];
 
 export function formatCurrency(value) {
   if (value == null || Number.isNaN(Number(value))) return "R$ —";
