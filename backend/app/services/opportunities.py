@@ -6,6 +6,9 @@ from typing import Any
 
 import httpx
 
+from ..core.config import get_settings
+from ..integrations.freelancer import build_freelancer_adapter
+
 
 @dataclass(frozen=True)
 class Opportunity:
@@ -50,6 +53,11 @@ SOURCES = {
         "kind": "manual_or_official_api_only",
         "url": "https://www.99freelas.com.br/",
         "automation_allowed": False,
+    },
+    "freelancer": {
+        "kind": "official_api",
+        "url": "https://developer.freelancer.com/",
+        "automation_allowed": True,
     },
 }
 
