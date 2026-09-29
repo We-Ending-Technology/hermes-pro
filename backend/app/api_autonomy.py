@@ -7,6 +7,7 @@ from fastapi import APIRouter, Header, HTTPException
 from .core.config import get_settings
 from .db.supabase import SupabaseREST
 from .services.execution import execute_service_job, sync_freelancer_contracts
+from .integrations.freelancer import build_freelancer_adapter
 from .services.persistence import PersistentStore
 from .ai_gateway.factory import build_ai_gateway
 
@@ -27,6 +28,37 @@ async def _require_scheduler(value: str | None) -> None:
 async def freelancer_sync(x_hermes_scheduler: str | None = Header(default=None)) -> dict[str, Any]:
     await _require_scheduler(x_hermes_scheduler)
     return await sync_freelancer_contracts(store=store, settings=settings)
+
+
+
+@router.post("/freelancer/apply/{job_id}")
+async def freelancer_apply(
+    job_id: str,
+    x_hermes_scheduler: str | None = Header(default=None),
+) -> dict[str, Any]:
+    await _require_scheduler(x_hermes_scheduler)
+    job = await store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+    payload = dict(job.get("payload") or {})
+    if payload.get("source") != "freelancer" or payload.get("application_automation_allowed") is not True:
+        raise HTTPException(status_code=409, detail="automatic application is not enabled for this opportunity")
+    proposal = payload.get("proposal") or {}
+    price = ((proposal.get("suggested_price") or {}).get("recommended") if isinstance(proposal, dict) else None)
+    project_id = payload.get("external_id") or payload.get("opportunity_id")
+    if not project_id or not price:
+        raise HTTPException(status_code=409, detail="missing Freelancer project id or suggested price")
+    adapter = build_freelancer_adapter(settings)
+    bid = await adapter.create_bid(
+        project_id=project_id,
+        amount=float(price),
+        description=str(proposal.get("proposal_text") or "")[:5000],
+        period=max(1, int(proposal.get("estimated_hours") or 8) // 8),
+    )
+    payload["submission"] = {"status": "submitted", "bid": bid}
+    payload["status"] = "submitted"
+    await store.update_job(job_id, "submitted", attempts=int(job.get("attempts", 0)), payload=payload, error_message=None)
+    return {"ok": True, "job_id": job_id, "submission": bid}
 
 
 @router.post("/jobs/{job_id}/execute")
