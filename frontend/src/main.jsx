@@ -26,7 +26,7 @@ async function jsonFetch(path, options = {}) {
 
 function App() {
   const [view, setView] = useState("Início");
-  const [data, setData] = useState({ dashboard: null, products: [], jobs: [], opportunities: [], integrations: [], sales: null, analytics: null, servicePlatforms: [] });
+  const [data, setData] = useState({ dashboard: null, products: [], jobs: [], opportunities: [], integrations: [], connections: [], servicePlatforms: [], sales: null, analytics: null });
   const [online, setOnline] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -38,7 +38,7 @@ function App() {
 
   async function refresh() {
     try {
-      const [health, dashboard, products, jobs, opportunities, integrations, sales, analytics, servicePlatforms] = await Promise.all([
+      const [health, dashboard, products, jobs, opportunities, integrations, sales, analytics, connections, servicePlatforms] = await Promise.all([
         jsonFetch("/health"),
         jsonFetch("/api/v1/dashboard"),
         jsonFetch("/api/v1/products"),
@@ -47,10 +47,11 @@ function App() {
         jsonFetch("/api/v1/integrations").catch(() => []),
         jsonFetch("/api/v1/sales").catch(() => null),
         jsonFetch("/api/v1/analytics").catch(() => null),
+        jsonFetch("/api/v1/connections").catch(() => []),
         jsonFetch("/api/v1/commerce/service-platforms").catch(() => []),
       ]);
       setOnline(health?.status === "ok");
-      setData({ dashboard, products, jobs, opportunities, integrations, sales, analytics, servicePlatforms });
+      setData({ dashboard, products, jobs, opportunities, integrations, connections, servicePlatforms, sales, analytics });
       if (selected?.id) {
         const fresh = products.find(product => product.id === selected.id);
         if (fresh) setSelected(fresh);
@@ -121,14 +122,14 @@ function App() {
         <header className="topbar"><button className="mobile-menu" onClick={() => setMobileNav(true)}>☰</button><div className="crumbs"><span>HERMES</span><b>/</b><strong>{view}</strong></div><div className="top-actions"><div className="system-time"><span className="pulse-dot" /> 24/7 AUTONOMOUS</div><button className="round-btn" onClick={refresh}>↻</button><div className="profile">W</div></div></header>
         {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>×</button></div>}
         {view === "Início" && <Home data={data} online={online} activeJobs={activeJobs} readyProducts={readyProducts} revenue={revenue} go={setView} />}
-        {view === "Radar" && <Radar opportunities={data.opportunities} />}
-        {view === "Serviços" && <Services opportunities={data.opportunities} platforms={data.servicePlatforms} />}
+        {view === "Radar" && <Radar opportunities={data.opportunities} onRun={async()=>{try{setNotice("Executando varredura real do Radar…");const r=await jsonFetch("/api/v1/radar/run",{method:"POST"});setNotice(`Radar concluído: ${r.total} sinais processados.`);await refresh();}catch(e){setNotice(`Radar: ${e.message}`)}}} />}
         {view === "Fábrica" && <Factory topic={topic} setTopic={setTopic} submit={createProduct} busy={busy} />}
         {view === "Produtos" && <Products items={data.products} selected={selected} setSelected={setSelected} />}
         {view === "Vendas" && <Sales sales={data.sales} revenue={revenue} />}
         {view === "Analytics" && <Analytics analytics={data.analytics} data={data} />}
         {view === "Agentes" && <Agents online={online} />}
-        {view === "Conexões" && <Connections integrations={data.integrations} />}
+        {view === "Serviços" && <Services platforms={data.servicePlatforms} />}
+        {view === "Conexões" && <Connections connections={data.connections} />}
         <button className="hermes-float" onClick={() => setView("Hermes")}><span>H</span><div><b>Hermes</b><small>Fale comigo</small></div><i>↗</i></button>
         {view === "Hermes" && <Chat chat={chat} input={chatInput} setInput={setChatInput} send={sendChat} busy={busy} />}
       </main>
@@ -136,7 +137,7 @@ function App() {
   );
 }
 
-function NavIcon({ index }) { const glyphs = ["⌂", "⌁", "✦", "▣", "◈", "◒", "◎", "⚙"]; return <b className="nav-icon">{glyphs[index]}</b>; }
+function NavIcon({ index }) { const glyphs = ["⌂", "⌁", "✦", "▣", "◈", "◒", "◎"]; return <b className="nav-icon">{glyphs[index]}</b>; }
 
 function Home({ data, online, activeJobs, readyProducts, revenue, go }) { const products = data.products || []; return <section className="page"><div className="command-hero"><div className="hero-copy"><div className="eyebrow"><i /> COMMAND CENTER · {online ? "LIVE" : "CONNECTING"}</div><h1>O comércio roda.<br /><em>Você decide.</em></h1><p>Hermes encontra oportunidades, coordena agentes, produz ativos e mede o resultado em um único centro de comando.</p><div className="hero-actions"><button className="primary" onClick={() => go("Fábrica")}>✦ Criar produto</button><button className="ghost" onClick={() => go("Radar")}>Ver Radar →</button></div></div><div className="hero-visual"><div className="ring ring-a" /><div className="ring ring-b" /><div className="core">H<span>AI</span></div><div className="orbit-label l1">RADAR</div><div className="orbit-label l2">QA</div><div className="orbit-label l3">SALES</div></div><div className="hero-caption"><span>ENGINE STATUS</span><strong><i className="live-dot" /> Descobrindo oportunidades</strong><small>Próxima varredura automática · contínua</small></div></div><div className="stats-grid"><Stat label="Receita" value={formatCurrency(revenue)} hint="resultado registrado" accent="violet" /><Stat label="Produtos" value={products.length} hint={`${readyProducts} prontos`} accent="cyan" /><Stat label="Jobs ativos" value={activeJobs} hint="worker em execução" accent="green" /><Stat label="Oportunidades" value={data.opportunities.length} hint="sinais no radar" accent="amber" /></div><div className="section-head"><div><span className="eyebrow">OPERATIONS</span><h2>Visão operacional</h2></div><button onClick={() => go("Agentes")} className="text-link">Ver agentes →</button></div><div className="ops-grid"><div className="panel pipeline-panel"><PanelHead title="Pipeline autônomo" meta="EM TEMPO REAL" /><div className="pipeline-modern">{[["01","RADAR","Sinais"],["02","DECISÃO","Score"],["03","PRODUÇÃO","Ativos"],["04","QA","Validação"],["05","RESULTADO","Métricas"]].map((step,i)=><div className={`pipeline-step ${i===2?"current":i<2?"done":""}`} key={step[0]}><b>{step[0]}</b><strong>{step[1]}</strong><span>{step[2]}</span>{i<4&&<i>→</i>}</div>)}</div><p className="panel-foot">Cada etapa registra estado, tentativa e resultado. Falhas ficam bloqueadas antes da publicação.</p></div><div className="panel health-panel"><PanelHead title="Saúde do sistema" meta={online?"NORMAL":"ATENÇÃO"}/><HealthRow name="API" value={online?"Online":"Offline"} tone={online?"success":"danger"}/><HealthRow name="Persistência" value="Supabase" tone="neutral"/><HealthRow name="IA" value="Gateway" tone="neutral"/><HealthRow name="Worker" value={activeJobs?"Processando":"Aguardando"} tone={activeJobs?"active":"neutral"}/><HealthRow name="Radar" value="24/7" tone="active"/></div></div><div className="section-head"><div><span className="eyebrow">RECENT WORK</span><h2>Produção recente</h2></div><button onClick={()=>go("Produtos")} className="text-link">Abrir catálogo →</button></div>{products.length?<div className="product-strip">{products.slice(0,3).map(p=><ProductMini key={p.id} product={p}/>)}</div>:<EmptyState title="Nenhum produto produzido ainda" text="Dê um comando ao Hermes ou abra a Fábrica para iniciar o primeiro ciclo." action="Abrir Fábrica" onClick={()=>go("Fábrica")}/>}</section>; }
 
@@ -146,51 +147,11 @@ function HealthRow({ name,value,tone }) { return <div className="health-row"><sp
 function EmptyState({ title,text,action,onClick }) { return <div className="empty-state"><div className="empty-icon">✦</div><h3>{title}</h3><p>{text}</p>{action&&<button className="primary" onClick={onClick}>{action}</button>}</div>; }
 function ProductMini({ product }) { const assets=getProductAssets(product); return <article className="product-mini"><div className="cover-mini">{assets.cover?<img src={assets.cover} alt="Capa"/>:<b>H</b>}</div><div><span>{product.status}</span><h3>{product.title||product.metadata?.title||product.topic}</h3><small>{product.current_stage||"pipeline"}</small></div><b className={`status-chip ${statusTone(product.status)}`}>{product.status}</b></article>; }
 
-function Services({ opportunities, platforms }) {
-  const [query,setQuery]=useState("website");
-  const [results,setResults]=useState(opportunities.filter(x=>x.type==="service"));
-  const [mode,setMode]=useState("all");
-  const [busy,setBusy]=useState(false);
-  const [message,setMessage]=useState("");
-  async function discover(){
-    setBusy(true); setMessage("");
-    try{
-      const data=await jsonFetch("/api/v1/commerce/services/search",{method:"POST",body:JSON.stringify({query,limit:20})});
-      setResults(data.opportunities||[]);
-      setMessage(`${data.count||0} oportunidades encontradas. Nenhuma proposta foi enviada automaticamente.`);
-    }catch(error){setMessage(error.message)}finally{setBusy(false)}
-  }
-  const filtered=results.filter(item=>{
-    if(mode==="all") return true;
-    const src=String(item.source||"").toLowerCase();
-    return mode==="automatic" ? ["remotive","arbeitnow"].includes(src) : !["remotive","arbeitnow"].includes(src);
-  });
-  return <section className="page services-page">
-    <PageTitle eyebrow="SERVICE COMMAND" title="Serviços que o Hermes pode executar." text="Descubra oportunidades, separe automação de intervenção humana e transforme cada trabalho em uma execução rastreável."/>
-    <div className="services-command">
-      <div className="service-search">
-        <div className="input-label"><span>BUSCAR OPORTUNIDADES</span><small>descoberta real</small></div>
-        <div className="service-search-row"><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="site, landing page, automação, bug..." /><button className="primary" onClick={discover} disabled={busy}>{busy?"Buscando…":"Buscar agora"}</button></div>
-        {message&&<small className="service-message">{message}</small>}
-      </div>
-      <div className="service-modes">
-        <button className={mode==="all"?"active":""} onClick={()=>setMode("all")}>Todos</button>
-        <button className={mode==="automatic"?"active":""} onClick={()=>setMode("automatic")}>Automação</button>
-        <button className={mode==="manual"?"active":""} onClick={()=>setMode("manual")}>Assistidos / manuais</button>
-      </div>
-    </div>
-    <div className="section-head"><div><span className="eyebrow">EXECUTION QUEUE</span><h2>Oportunidades</h2></div><span className="service-count">{filtered.length} itens</span></div>
-    <div className="service-list">{filtered.length?filtered.map(item=><article className="service-card" key={item.id||item.external_id}>
-      <div className="service-badge">{["remotive","arbeitnow"].includes(String(item.source).toLowerCase())?"AUTO":"MANUAL"}</div>
-      <div className="service-main"><span>{item.source||"oportunidade"}</span><h3>{item.title}</h3><p>{String(item.description||"").replace(/<[^>]+>/g,"").slice(0,280)}</p><small>{item.company||"Cliente não informado"}</small></div>
-      <div className="service-actions"><strong>{item.score!=null?Math.round(Number(item.score)):"—"}</strong><a href={item.url||item.source_url||"#"} target="_blank" rel="noreferrer">{item.url||item.source_url?"Abrir":"Sem link"} ↗</a></div>
-    </article>):<EmptyState title="Nenhuma oportunidade nesta categoria" text="Faça uma busca ou troque o filtro." action="Buscar serviços" onClick={discover}/>}</div>
-    <div className="section-head"><div><span className="eyebrow">CAPABILITY REGISTRY</span><h2>Onde cada tipo de ação é possível</h2></div></div>
-    <div className="platform-grid">{platforms.map(p=><article className="platform-card" key={p.id}><div><span>{p.mode.replaceAll("_"," ").toUpperCase()}</span><h3>{p.name}</h3><p>{p.note}</p></div><a href={p.url} target="_blank" rel="noreferrer">Abrir plataforma ↗</a></article>)}</div>
-  </section>;
-}
+function Services({ platforms }) { const [q,setQ]=useState("website automação app"); const [items,setItems]=useState([]); const [busy,setBusy]=useState(false); async function search(){setBusy(true);try{const r=await jsonFetch("/api/v1/commerce/services/search",{method:"POST",body:JSON.stringify({query:q,limit:12})});setItems(r.opportunities||[])}catch(e){}finally{setBusy(false)}} return <section className="page"><PageTitle eyebrow="SERVICES ENGINE" title="Encontrar trabalho e executar." text="O Hermes descobre oportunidades por APIs públicas e mostra quando a próxima etapa é automática, assistida ou manual."/><div className="service-search"><input value={q} onChange={e=>setQ(e.target.value)} placeholder="website, app, automação, bug..." /><button className="primary" onClick={search} disabled={busy}>{busy?"Buscando…":"Buscar oportunidades"}</button></div><div className="opportunity-list">{items.map(x=><article className="opportunity" key={x.external_id||x.url}><div className="opp-icon">↗</div><div><span>{x.source}</span><h3>{x.title}</h3><p>{x.company||""}</p><a href={x.url} target="_blank" rel="noreferrer">Abrir oportunidade ↗</a></div></article>)}</div><div className="platform-grid">{platforms.map(p=><article className="platform-card" key={p.id}><span>{p.mode}</span><h3>{p.name}</h3><p>{p.note||p.status}</p></article>)}</div></section>; }
 
-function Radar({ opportunities }) { return <section className="page"><PageTitle eyebrow="OPPORTUNITY RADAR" title="Onde Hermes deve agir?" text="Sinais públicos são coletados continuamente. Nenhum sinal é tratado como prova de demanda sem validação."/><div className="radar-top"><div className="radar-score"><span>RADAR SCORE</span><strong>{opportunities.length?Math.round(Math.max(...opportunities.map(x=>Number(x.score||0)))):"—"}</strong><small>confiança depende dos dados disponíveis</small></div><div className="radar-ring"><div><b>{opportunities.length}</b><span>sinais</span></div></div></div><div className="opportunity-list">{opportunities.length?opportunities.slice(0,12).map(item=><article className="opportunity" key={item.id}><div className="opp-icon">⌁</div><div><span>{item.source||"signal"}</span><h3>{item.title}</h3><p>{item.description}</p></div><div className="opp-score"><strong>{Math.round(Number(item.score||0))}</strong><small>{Math.round(Number(item.confidence||0)*100)}% conf.</small></div></article>):<EmptyState title="Radar ainda sem sinais persistidos" text="O ciclo autônomo fará novas descobertas quando a persistência estiver disponível."/>}</div></section>; }
+function Connections({ connections }) { const map=new Map((connections||[]).map(x=>[x.provider,x])); const providers=[["google","Google · Drive/Gmail/Calendar","/api/v1/connections/google/start"],["threads","Threads · API oficial","/api/v1/connections/threads/start"],["canva","Canva · Designs/Exports","/api/v1/connections/canva/start"]]; async function connect(url){try{const r=await jsonFetch(url);window.location.href=r.authorization_url}catch(e){alert(e.message)}} return <section className="page"><PageTitle eyebrow="CONNECTION HUB" title="Conexões reais." text="OAuth oficial, tokens persistidos de forma criptografada e status real. Se a credencial não existe, o Hermes não finge estar conectado."/><div className="connection-grid">{providers.map(([id,name,url])=>{const x=map.get(id)||{};const connected=x.status==="connected";return <article className="connection-card" key={id}><div className="connection-head"><div className="connection-icon">{name[0]}</div><div><span>{connected?"CONECTADO":"NÃO CONFIGURADO"}</span><h3>{name}</h3></div><i className={connected?"status-dot success":"status-dot neutral"}/></div>{connected?<small>Escopos: {(x.scopes||[]).join(", ")}</small>:<button className="primary" onClick={()=>connect(url)}>Conectar com OAuth</button>}</article>})}</div></section>; }
+
+ return <section className="page"><div className="section-head"><div><span className="eyebrow">SCHEDULER</span><h2>Varredura automática a cada 15 min</h2></div><button className="primary" onClick={onRun}>Executar agora</button></div><PageTitle eyebrow="OPPORTUNITY RADAR" title="Onde Hermes deve agir?" text="Sinais públicos são coletados continuamente. Nenhum sinal é tratado como prova de demanda sem validação."/><div className="radar-top"><div className="radar-score"><span>RADAR SCORE</span><strong>{opportunities.length?Math.round(Math.max(...opportunities.map(x=>Number(x.score||0)))):"—"}</strong><small>confiança depende dos dados disponíveis</small></div><div className="radar-ring"><div><b>{opportunities.length}</b><span>sinais</span></div></div></div><div className="opportunity-list">{opportunities.length?opportunities.slice(0,12).map(item=><article className="opportunity" key={item.id}><div className="opp-icon">⌁</div><div><span>{item.source||"signal"}</span><h3>{item.title}</h3><p>{item.description}</p></div><div className="opp-score"><strong>{Math.round(Number(item.score||0))}</strong><small>{Math.round(Number(item.confidence||0)*100)}% conf.</small></div></article>):<EmptyState title="Radar ainda sem sinais persistidos" text="O ciclo autônomo fará novas descobertas quando a persistência estiver disponível."/>}</div></section>; }
 
 function Factory({ topic,setTopic,submit,busy }) { return <section className="page factory-page"><PageTitle eyebrow="PRODUCT FACTORY" title="Construa algo que merece ser vendido." text="Informe uma oportunidade. O Hermes cria o job e acompanha produção, revisão, documentos e ativos."/><div className="factory-layout"><form className="factory-card" onSubmit={submit}><div className="input-label"><span>BRIEFING</span><small>mínimo 3 caracteres</small></div><textarea value={topic} onChange={e=>setTopic(e.target.value)} placeholder="Ex.: Guia prático de IA para pequenos negócios brasileiros" required minLength={3}/><div className="suggestions"><button type="button" onClick={()=>setTopic("Guia prático de IA para pequenos negócios")}>IA para negócios</button><button type="button" onClick={()=>setTopic("Organização financeira para autônomos")}>Finanças</button><button type="button" onClick={()=>setTopic("Currículo e LinkedIn para primeira vaga")}>Carreira</button></div><button className="primary wide" disabled={busy}>{busy?"Iniciando…":"✦ Iniciar produção"}</button></form><div className="factory-side"><div className="factory-stat"><span>01</span><b>Estratégia</b><small>tema → oferta</small></div><div className="factory-stat"><span>02</span><b>Produção</b><small>conteúdo + documentos</small></div><div className="factory-stat"><span>03</span><b>Qualidade</b><small>QA antes de publicar</small></div><div className="factory-stat"><span>04</span><b>Resultado</b><small>medição e otimização</small></div></div></div></section>; }
 
@@ -224,33 +185,6 @@ function ProductWorkspace({ product,close }) {
 
 function Sales({ sales,revenue }) { return <section className="page"><PageTitle eyebrow="SALES COMMAND" title="Resultado, não vaidade." text="Receita e pedidos registrados pelas integrações. Dados ausentes permanecem ausentes."/><div className="sales-hero"><div><span>RECEITA REGISTRADA</span><strong>{formatCurrency(revenue)}</strong><small>{sales?.orders??0} pedidos registrados</small></div><div className="chart-bars">{[32,45,28,64,51,72,58,82,67,91,76,100].map((height,i)=><i key={i} style={{height:`${height}%`}}/>)}</div></div><div className="stats-grid compact"><Stat label="Pedidos" value={sales?.orders??0} hint="registrados" accent="cyan"/><Stat label="Ticket" value={sales?.average_order_value!=null?formatCurrency(sales.average_order_value):"R$ —"} hint="médio" accent="violet"/><Stat label="Reembolsos" value={sales?.refunds??"—"} hint="sem dado" accent="amber"/></div></section>; }
 function Analytics({ analytics,data }) { return <section className="page"><PageTitle eyebrow="ANALYTICS" title="O que o sistema está aprendendo?" text="Analytics transforma eventos e resultados em próximos movimentos. Sem inventar métricas."/><div className="analytics-grid"><div className="panel large-analytics"><PanelHead title="Performance" meta="LIVE DATA"/><div className="big-number">{analytics?.summary??"Dados insuficientes"}</div><div className="signal-bars"><i style={{height:"36%"}}/><i style={{height:"58%"}}/><i style={{height:"44%"}}/><i style={{height:"71%"}}/><i style={{height:"64%"}}/><i style={{height:"84%"}}/><i style={{height:"78%"}}/></div></div><div className="panel"><PanelHead title="Sinais" meta="AGORA"/><HealthRow name="Oportunidades" value={String(data.opportunities.length)} tone="active"/><HealthRow name="Produtos" value={String(data.products.length)} tone="success"/><HealthRow name="Jobs" value={String(data.jobs.length)} tone="neutral"/><HealthRow name="Integrações" value={String(data.integrations.length)} tone="neutral"/></div></div></section>; }
-function Connections({ integrations }) {
-  const known = new Map((integrations || []).map(item => [String(item.id || item.name || "").toLowerCase(), item]));
-  const catalog = [
-    ["google-drive","Google Drive","Arquivos, ebooks e exports","API oficial · sem custo padrão dentro das quotas","https://developers.google.com/drive/api"],
-    ["google-gmail","Gmail","Leads, notificações e atendimento","API oficial · quotas gratuitas para uso normal","https://developers.google.com/gmail/api"],
-    ["google-calendar","Google Calendar","Agendamento e tarefas","API oficial · uso padrão via Google Cloud","https://developers.google.com/calendar/api"],
-    ["gemini","Gemini","Escrita, revisão e raciocínio","Há nível sem custo para desenvolvedores","https://ai.google.dev/gemini-api/docs/pricing"],
-    ["canva","Canva","Capas, layouts e ativos visuais","Connect APIs sem cobrança para desenvolver a integração","https://www.canva.com/developers/reach-beyond/"],
-    ["github","GitHub","Código, PRs e versionamento","Integração oficial","https://github.com/"],
-    ["vercel","Vercel","Deploy de aplicações","Integração oficial","https://vercel.com/"],
-    ["telegram","Telegram","Alertas e comandos","Bot API oficial","https://core.telegram.org/bots/api"],
-  ];
-  return <section className="page">
-    <PageTitle eyebrow="CONNECTION HUB" title="Conecte o Hermes ao que já é seu." text="Cada conexão fica explícita: o Hermes mostra o que está conectado, o que exige credencial e quais APIs oficiais podem ser usadas."/>
-    <div className="connection-grid">{catalog.map(([id,name,capability,note,url]) => {
-      const current = known.get(id) || known.get(name.toLowerCase());
-      const connected = Boolean(current?.connected || current?.enabled || current?.status === "connected");
-      return <article className="connection-card" key={id}>
-        <div className="connection-head"><div className="connection-icon">{name[0]}</div><div><span>{connected?"CONECTADO":"NÃO CONFIGURADO"}</span><h3>{name}</h3></div><i className={connected?"status-dot success":"status-dot neutral"}/></div>
-        <p>{capability}</p><small>{note}</small>
-        <a href={url} target="_blank" rel="noreferrer">Documentação / conexão ↗</a>
-      </article>;
-    })}</div>
-    <div className="panel connection-policy"><PanelHead title="Regra do Hermes" meta="SEM CREDENCIAL FICTÍCIA"/><p>Conexão só vira “ativa” depois de uma credencial/token real ser validado. APIs gratuitas continuam sujeitas a quotas, permissões e termos do provedor.</p></div>
-  </section>;
-}
-
 function Agents({ online }) { return <section className="page"><PageTitle eyebrow="AGENT ORCHESTRATOR" title="Uma equipe digital em operação." text="Agentes especializados recebem tarefas do núcleo do Hermes. O status visual distingue operação real de disponibilidade."/><div className="agent-grid-premium">{agentCatalog.map(([name,desc,agent])=><article className="agent-card" key={name}><div className="agent-icon">✦</div><div><span>{agent.toUpperCase()}</span><h3>{name}</h3><p>{desc}</p></div><b className={`agent-state ${online?"ready":"waiting"}`}>{online?"READY":"WAIT"}</b></article>)}</div></section>; }
 function Chat({ chat,input,setInput,send,busy }) { return <section className="chat-page"><div className="chat-head"><div className="hermes-avatar">H</div><div><span className="eyebrow">HERMES CORE</span><h2>Command chat</h2><p>Converse, analise ou peça uma ação. O Hermes só declara como concluído o que realmente executou.</p></div></div><div className="chat-window">{chat.length===0&&<div className="chat-welcome"><div className="core-large">H</div><h3>Qual é a próxima decisão?</h3><p>Ex.: “Encontre oportunidades para hoje” ou “Crie um produto sobre IA para pequenos negócios”.</p><div className="prompt-grid"><button onClick={()=>setInput("Encontre oportunidades para hoje")}>Radar de hoje</button><button onClick={()=>setInput("Crie um produto sobre IA para pequenos negócios")}>Criar produto</button><button onClick={()=>setInput("Explique o estado atual do sistema")}>Diagnóstico</button></div></div>}{chat.map((message,index)=><div className={`chat-message ${message.role}`} key={index}><span>{message.role==="user"?"VOCÊ":"HERMES"}</span><p>{message.text}</p>{message.meta&&<small>{message.meta}</small>}</div>)}<form className="chat-form" onSubmit={send}><input value={input} onChange={e=>setInput(e.target.value)} placeholder="Dê um comando ao Hermes…" maxLength={4000}/><button className="primary" disabled={busy}>{busy?"…":"Enviar ↗"}</button></form></div></section>; }
 function PageTitle({ eyebrow,title,text }) { return <div className="page-title"><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{text}</p></div>; }
