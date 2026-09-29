@@ -94,6 +94,56 @@ class FreelancerAdapter:
     async def list_project_bids(self, project_id: int | str) -> dict[str, Any]:
         return await self._request("GET", f"/projects/0.1/projects/{project_id}/bids/")
 
+    async def list_bids(
+        self,
+        *,
+        bidder_id: int | None = None,
+        award_status: str | None = None,
+        paid_status: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"limit": min(max(limit, 1), 100)}
+        if bidder_id is not None:
+            params["bidders[]"] = bidder_id
+        if award_status:
+            params["award_statuses[]"] = award_status
+        if paid_status:
+            params["paid_statuses[]"] = paid_status
+        return await self._request("GET", "/projects/0.1/bids/", params=params)
+
+    async def list_project_milestones(self, project_id: int | str) -> dict[str, Any]:
+        return await self._request("GET", f"/projects/0.1/projects/{project_id}/milestones/")
+
+    async def create_milestone_request(
+        self,
+        *,
+        project_id: int | str,
+        bid_id: int | str,
+        amount: float,
+        description: str,
+    ) -> dict[str, Any]:
+        if not self.config.enabled:
+            raise FreelancerAPIError("Freelancer integration is disabled")
+        payload = {
+            "project_id": int(project_id),
+            "bid_id": int(bid_id),
+            "amount": int(round(amount)),
+            "description": description[:5000],
+        }
+        return await self._request("POST", "/projects/0.1/milestone_requests/", json=payload)
+
+    async def request_milestone_release(self, milestone_request_id: int | str) -> dict[str, Any]:
+        if not self.config.enabled:
+            raise FreelancerAPIError("Freelancer integration is disabled")
+        return await self._request(
+            "PUT",
+            f"/projects/0.1/milestone_requests/{milestone_request_id}/",
+            json={"action": "accept"},
+        )
+
+    async def get_milestone_payment(self, milestone_id: int | str) -> dict[str, Any]:
+        return await self._request("GET", f"/payments/0.1/milestones/{milestone_id}/")
+
 
 def build_freelancer_adapter(settings: Any) -> FreelancerAdapter:
     base_url = "https://www.sandbox.freelancer.com" if settings.freelancer_sandbox else "https://www.freelancer.com"
