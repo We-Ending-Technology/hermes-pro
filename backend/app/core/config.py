@@ -9,10 +9,12 @@ class Settings(BaseSettings):
     api_port: int = 8000
     log_level: str = "INFO"
     database_url: str = Field(default="", validation_alias="DATABASE_URL")
-    ai_provider: str = Field(default="stub", validation_alias="AI_PROVIDER")
+    ai_provider: str = Field(default="gemini", validation_alias="AI_PROVIDER")
     ai_api_key: str | None = Field(default=None, validation_alias="AI_API_KEY")
     gemini_api_key: str | None = Field(default=None, validation_alias="GEMINI_API_KEY")
     gemini_model: str = Field(default="gemini-2.5-flash", validation_alias="GEMINI_MODEL")
+    openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
+    openai_model: str = Field(default="gpt-5.6-luna", validation_alias="OPENAI_MODEL")
     supabase_url: str | None = Field(default=None, validation_alias="SUPABASE_URL")
     supabase_secret_key: str | None = Field(default=None, validation_alias="SUPABASE_SECRET_KEY")
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
@@ -22,6 +24,8 @@ class Settings(BaseSettings):
     hotmart_webhook_token: str | None = Field(default=None, validation_alias="HOTMART_WEBHOOK_TOKEN")
     telegram_bot_token: str | None = Field(default=None, validation_alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: str | None = Field(default=None, validation_alias="TELEGRAM_CHAT_ID")
+    autonomy_enabled: bool = Field(default=True, validation_alias="AUTONOMY_ENABLED")
+    autonomy_min_score: int = Field(default=55, validation_alias="AUTONOMY_MIN_SCORE")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
