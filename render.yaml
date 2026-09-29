@@ -34,6 +34,18 @@ services:
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
+      - key: PUBLIC_API_URL
+        value: https://hermes-pro-api-commercial.onrender.com
+      - key: OAUTH_ENCRYPTION_KEY
+        sync: false
+      - key: GOOGLE_TRENDS_GEO
+        value: BR
+      - key: GOOGLE_TRENDS_ENABLED
+        value: "true"
+      - key: CANVA_CLIENT_ID
+        sync: false
+      - key: CANVA_CLIENT_SECRET
+        sync: false
 
   - type: worker
     name: hermes-pro-worker
@@ -57,13 +69,29 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+      - key: OAUTH_ENCRYPTION_KEY
+        sync: false
+      - key: CANVA_CLIENT_ID
+        sync: false
+      - key: CANVA_CLIENT_SECRET
+        sync: false
 
   - type: cron
-    name: hermes-pro-maintenance
+    name: hermes-pro-radar
     runtime: python
-    schedule: "0 3 * * *"
+    schedule: "*/15 * * * *"
     buildCommand: pip install .
-    startCommand: python -c "print('maintenance placeholder: no production automation enabled')"
+    startCommand: python -m worker.radar_cron
     envVars:
       - key: APP_ENV
         value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: GOOGLE_TRENDS_GEO
+        value: BR
+      - key: GOOGLE_TRENDS_ENABLED
+        value: "true"
