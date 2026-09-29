@@ -11,6 +11,23 @@ async function schedulerSecret() {
   return data || "";
 }
 
+async function callApi(path: string, secret: string, method = "POST") {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(API_URL + path, {
+      method,
+      headers: { "content-type": "application/json", "x-hermes-scheduler": secret },
+      signal: controller.signal
+    });
+    const body = await res.text();
+    if (!res.ok) throw new Error(`Hermes API ${res.status}: ${body.slice(0, 500)}`);
+    return body ? JSON.parse(body) : {};
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function analyzeWithAI(job: any) {
   const compact = {
     source: job.source,
@@ -211,12 +228,25 @@ Deno.serve(async (req) => {
           : "review_proposal_and_use_official_adapter"
       };
 
+      const finalPayload = { ...payload, proposal: enrichedProposal };
       await supabase.from("hermes_jobs").update({
         status: nextStatus,
-        payload: { ...payload, proposal: enrichedProposal },
+        payload: finalPayload,
         error_message: null,
         updated_at: new Date().toISOString()
       }).eq("id", job.id);
+
+      if (nextStatus === "proposal_ready" && job.payload?.source === "freelancer") {
+        try {
+          await callApi(`/api/v1/autonomy/freelancer/apply/${job.id}`, expected);
+        } catch (e) {
+          await supabase.from("hermes_jobs").update({
+            status: "proposal_ready",
+            error_message: e instanceof Error ? e.message : String(e),
+            updated_at: new Date().toISOString()
+          }).eq("id", job.id);
+        }
+      }
 
       if (job.payload?.source && job.payload?.url) {
         await supabase.from("hermes_opportunities")
@@ -238,5 +268,27 @@ Deno.serve(async (req) => {
     }
   }
 
-  return Response.json({ ok: true, processed, failed });
+  let contractSync: any = null;
+  let executions: any[] = [];
+  try {
+    contractSync = await callApi("/api/v1/autonomy/freelancer/sync", expected);
+    const { data: executionJobs } = await supabase
+      .from("hermes_jobs")
+      .select("id,status,payload,attempts,max_attempts")
+      .eq("job_type", "service_execution")
+      .eq("status", "pending")
+      .order("created_at", { ascending: true })
+      .limit(3);
+    for (const executionJob of executionJobs || []) {
+      try {
+        executions.push(await callApi(`/api/v1/autonomy/jobs/${executionJob.id}/execute`, expected));
+      } catch (e) {
+        executions.push({ job_id: executionJob.id, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+  } catch (e) {
+    contractSync = { error: e instanceof Error ? e.message : String(e) };
+  }
+
+  return Response.json({ ok: true, processed, failed, contract_sync: contractSync, executions });
 });
