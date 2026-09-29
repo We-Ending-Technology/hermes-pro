@@ -51,6 +51,16 @@ def build_commerce_router(store: PersistentStore, commerce: CommerceStore, contr
             raise HTTPException(status_code=503, detail="Eventos indisponíveis") from exc
         return events[:limit]
 
+    @router.get("/service-platforms")
+    async def service_platforms() -> list[dict[str, Any]]:
+        return [
+            {"id": "freelancer", "name": "Freelancer.com", "mode": "api", "status": "available", "url": "https://www.freelancer.com/", "note": "Usar somente a API e permissões oficiais configuradas."},
+            {"id": "upwork", "name": "Upwork", "mode": "api_or_assisted", "status": "requires_credentials", "url": "https://www.upwork.com/", "note": "A automação depende das credenciais/permissões da conta e dos termos da plataforma."},
+            {"id": "workana", "name": "Workana", "mode": "manual", "status": "manual", "url": "https://www.workana.com/", "note": "Ação humana na plataforma; Hermes prepara análise e materiais."},
+            {"id": "99freelas", "name": "99Freelas", "mode": "manual", "status": "manual", "url": "https://www.99freelas.com.br/", "note": "Ação humana na plataforma; Hermes prepara análise e materiais."},
+            {"id": "contra", "name": "Contra", "mode": "assisted", "status": "manual_or_assisted", "url": "https://contra.com/", "note": "Fluxo assistido; executar somente capacidades oficialmente disponíveis."},
+        ]
+
     @router.get("/channels")
     async def channels() -> list[dict[str, Any]]:
         settings = get_settings()
