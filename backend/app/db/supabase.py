@@ -62,6 +62,20 @@ class SupabaseREST:
             raise SupabaseError(f"Supabase update {table} matched no rows")
         return result[0]
 
+    async def rpc(self, function: str, payload: dict[str, Any] | None = None) -> Any:
+        self._ensure_configured()
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(
+                f"{self.base_url}/rpc/{function}",
+                headers=self.headers,
+                json=payload or {},
+            )
+        if response.is_error:
+            raise SupabaseError(f"Supabase RPC {function} failed: {response.status_code} {response.text[:500]}")
+        if not response.content:
+            return None
+        return response.json()
+
     async def health(self) -> bool:
         try:
             await self.select("hermes_products", params={"select": "id", "limit": "1"})
