@@ -54,7 +54,7 @@ async def execute_service_job(*, job: dict[str, Any], store: PersistentStore, ga
         raise ExecutionError("delivery QA failed")
 
     adapter = build_freelancer_adapter(settings)
-    release_request = await adapter.request_milestone_release(milestone_id)
+    release_request = await adapter.request_milestone_release(milestone_id, amount)
     delivery = {
         "status": "delivery_submitted",
         "submitted_at": datetime.now(timezone.utc).isoformat(),
