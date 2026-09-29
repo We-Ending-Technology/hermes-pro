@@ -21,7 +21,7 @@ class RadarAgent(Agent):
                     "id": item.fingerprint, "source": item.source, "title": item.title,
                     "url": item.url, "description": item.description, "tags": item.tags,
                     "budget": item.budget, "currency": item.currency,
-                    "automation_allowed": item.automation_allowed, **scored,
+                    "discovery_automation_allowed": item.discovery_automation_allowed,\n                    "application_automation_allowed": False, **scored,
                 })
         ranked.sort(key=lambda x: x["score"], reverse=True)
         return {"count": len(ranked), "opportunities": ranked[:30]}
@@ -55,7 +55,7 @@ class AnalystAgent(Agent):
             "priority": round(float(opportunity.get("score", 0)) * 0.7 + (100 - effort) * 0.3),
             "estimated_effort": min(effort, 100),
             "risk": "low" if effort < 55 else "medium",
-            "next_action": "prepare_work_package" if opportunity.get("automation_allowed") else "manual_review",
+            "next_action": "prepare_work_package" if opportunity.get("application_automation_allowed") else "manual_review",
         }
 
 
@@ -68,7 +68,7 @@ class ExecutorAgent(Agent):
             "status": "work_package_ready",
             "execution_mode": "automated_preparation" if opportunity.get("automation_allowed") else "manual_submission",
             "deliverables": ["requirements_checklist", "implementation_plan", "draft_response"],
-            "requires_human_submission": not bool(opportunity.get("automation_allowed")),
+            "requires_human_submission": not bool(opportunity.get("application_automation_allowed")),
         }
 
 
