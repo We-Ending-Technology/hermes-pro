@@ -89,6 +89,7 @@ async def lifespan(app: FastAPI):
             except asyncio.CancelledError:
                 pass
         await queue.close()
+        await db.aclose()
 
 app = FastAPI(title=settings.app_name, version="0.7.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
