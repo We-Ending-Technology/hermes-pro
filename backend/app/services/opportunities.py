@@ -141,6 +141,6 @@ def score_opportunity(item: Opportunity) -> dict[str, Any]:
         "urgency": urgency,
         "value": value,
         "skills": skills,
-        "discovery_automation_allowed": item.discovery_automation_allowed,\n                    "application_automation_allowed": False,
+        "discovery_automation_allowed": item.discovery_automation_allowed,                    "application_automation_allowed": False,
         "source_policy": "automated_public_api" if item.discovery_automation_allowed else "manual_only",
     }
