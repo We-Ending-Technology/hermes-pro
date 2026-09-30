@@ -14,8 +14,10 @@ from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
 from .queue import JobQueue
 from .schemas import *
-from .schemas_ext import ProductUpdateRequest
+from .schemas_ext import ProductUpdateRequest, EbookUpdateRequest
 from .services.analytics import analytics_service
+from .services.artifacts import build_artifacts
+from .services.storage import SupabaseStorage
 from .services.integrations import integration_service
 from .services.persistence import PersistentStore
 from .services.quality import quality_service
@@ -175,6 +177,71 @@ async def radar(request: RadarRequest):
 async def radar_default():
     result = radar_service.score({})
     return RadarResponse(score=result.score, confidence=result.confidence, dimensions=result.dimensions, findings=result.findings)
+
+
+@app.get("/api/v1/products/{product_id}/ebook")
+async def get_ebook(product_id: str):
+    row = await store.get_product(product_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="product not found")
+    metadata = dict(row.get("metadata") or {})
+    return {
+        "id": product_id,
+        "title": row.get("title") or row.get("topic"),
+        "subtitle": (metadata.get("strategy") or {}).get("subtitle", ""),
+        "content_data": metadata.get("content_data") or {},
+        "content": metadata.get("content") or "",
+        "artifacts": metadata.get("artifacts") or {},
+        "artifact_status": metadata.get("artifact_status", "pending"),
+        "quality_score": metadata.get("quality_score"),
+    }
+
+@app.patch("/api/v1/products/{product_id}/ebook")
+async def update_ebook(product_id: str, request: EbookUpdateRequest):
+    row = await store.get_product(product_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="product not found")
+    if row["status"] in {"cancelled", "failed"}:
+        raise HTTPException(status_code=409, detail="product is not editable in its current state")
+    metadata = dict(row.get("metadata") or {})
+    strategy = dict(metadata.get("strategy") or {})
+    title = (request.title or row.get("title") or row.get("topic") or "Ebook").strip()
+    subtitle = request.subtitle if request.subtitle is not None else str(strategy.get("subtitle") or "")
+    content_data = request.content_data or {}
+    if not isinstance(content_data.get("chapters", []), list):
+        raise HTTPException(status_code=422, detail="content_data.chapters must be a list")
+    content_json = __import__("json").dumps(content_data, ensure_ascii=False)
+    metadata["content_data"] = content_data
+    metadata["content"] = content_json
+    metadata["artifact_status"] = "generating"
+    strategy["title"] = title
+    strategy["subtitle"] = subtitle
+    metadata["strategy"] = strategy
+    await store.update_product(product_id, title=title, current_stage="studio", status="generating_artifacts", metadata=metadata)
+    try:
+        artifacts = build_artifacts(title, subtitle, content_json)
+        storage = SupabaseStorage(settings)
+        artifact_urls = {}
+        for kind, (path, content, content_type) in artifacts.items():
+            artifact_urls[kind] = await storage.upload(f"{product_id}/{path}", content, content_type)
+        metadata["artifacts"] = artifact_urls
+        metadata["artifact_status"] = "ready"
+        updated = await store.update_product(product_id, status="ready_to_publish", current_stage="studio", metadata=metadata)
+    except Exception as exc:
+        metadata["artifact_status"] = "error"
+        metadata["artifact_error"] = str(exc)[:1000]
+        await store.update_product(product_id, status="artifact_error", current_stage="studio", metadata=metadata)
+        raise HTTPException(status_code=503, detail=f"artifact generation failed: {exc}") from exc
+    return {
+        "id": product_id,
+        "title": title,
+        "subtitle": subtitle,
+        "content_data": content_data,
+        "artifacts": metadata.get("artifacts", {}),
+        "artifact_status": metadata.get("artifact_status"),
+        "quality_score": metadata.get("quality_score"),
+        "status": updated.get("status"),
+    }
 
 @app.post("/api/v1/products/{product_id}/quality", response_model=QualityResponse)
 async def quality(product_id: str, product: dict):
