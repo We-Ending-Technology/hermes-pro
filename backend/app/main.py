@@ -15,7 +15,7 @@ from .db.supabase import SupabaseREST, SupabaseError
 from .queue import JobQueue
 from .schemas import *
 from .schemas_ext import ProductUpdateRequest, EbookUpdateRequest
-from .services.analytics import analytics_service
+from .services.analytics import AnalyticsService
 from .services.artifacts import build_artifacts
 from .services.storage import SupabaseStorage
 from .services.integrations import integration_service
@@ -30,6 +30,7 @@ registry = AgentRegistry()
 db = SupabaseREST(settings)
 store = PersistentStore(db)
 sales_service = SalesService(db)
+analytics_service = AnalyticsService(sales_service)
 queue = JobQueue(settings.redis_url)
 
 @asynccontextmanager
@@ -253,7 +254,7 @@ async def quality(product_id: str, product: dict):
 async def sales(range_start: date | None = None, range_end: date | None = None): return SalesSummary(**(await sales_service.summary(range_start, range_end)))
 
 @app.get("/api/v1/analytics", response_model=AnalyticsResponse)
-async def analytics(range_start: date | None = None, range_end: date | None = None): return AnalyticsResponse(**analytics_service.insights(range_start, range_end))
+async def analytics(range_start: date | None = None, range_end: date | None = None): return AnalyticsResponse(**(await analytics_service.insights(range_start, range_end)))
 
 @app.get("/api/v1/dashboard", response_model=DashboardResponse)
 async def dashboard():
