@@ -39,18 +39,6 @@ async def ready() -> dict[str, Any]:
     return {"status": "ready" if all(x["configured"] for x in checks) else "degraded", "service": "hermes-pro-api", "checks": checks}
 
 
-@router.get("/api/v1/operations")
-async def operations() -> dict[str, Any]:
-    return {
-        "kill_switch": settings.hermes_kill_switch,
-        "automation": "blocked" if settings.hermes_kill_switch else "armed",
-        "worker": "enabled" if settings.redis_url else "not_configured",
-        "scheduler": {"enabled": not settings.hermes_kill_switch, "type": "render_cron", "schedule": "*/15 * * * *", "task": "maintenance/recovery"},
-        "queue": {"name": "hermes:jobs:product_generation", "backend": "redis", "configured": bool(settings.redis_url)},
-        "integrations": integration_service.status(),
-    }
-
-
 @router.post("/api/v1/jobs/{job_id}/retry")
 async def retry_job(job_id: str) -> dict[str, Any]:
     job = await store.get_job(job_id)
