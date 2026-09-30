@@ -141,7 +141,105 @@ function Factory({ topic, setTopic, submit }) { return <Page title="Fábrica" su
 function ProductCard({ p, onClick }) { return <article className="product-card detailed" onClick={onClick}><div className="cover-placeholder"><span>H</span><small>{p.status}</small></div><div className="product-info"><span className="tag">EBOOK</span><h4>{p.title || p.topic}</h4><p>{p.topic}</p><div className="product-meta"><span>stage: {p.current_stage}</span><span>{p.metadata?.quality_score ? `${p.metadata.quality_score}/100` : "quality —"}</span></div></div></article>; }
 function Products({ items, select }) { return <Page title="Produtos" sub="Catálogo persistido no Supabase."><div className="product-grid">{items.length ? items.map(p => <ProductCard key={p.id} p={p} onClick={() => select(p)} />) : <Empty text="Nenhum produto ainda." />}</div></Page>; }
 function Jobs({ jobs, products, action }) { const productFor = j => products.find(p => p.metadata?.job_id === j.id); return <Page title="Jobs" sub="Fila real com estado e controles operacionais."><div className="job-list">{jobs.length ? jobs.map(j => { const p = productFor(j); const active = ["pending", "running", "retrying"].includes(j.status); return <article className="job" key={j.id}><div className={`job-icon ${j.status}`}>↻</div><div className="job-main"><strong>{p?.title || p?.topic || j.job_type}</strong><p>{j.error_message || `${j.job_type} • ${j.id}`}</p></div><span className={`job-status ${j.status}`}>{j.status}</span><small>{j.attempts}/{j.max_attempts}</small>{active && p && <div className="job-actions"><Button onClick={() => action(() => call(`/api/v1/products/${p.id}/pause`, { method: "POST" }), "Produção pausada.")}>Pausar</Button><Button onClick={() => action(() => call(`/api/v1/jobs/${j.id}/cancel`, { method: "POST" }), "Job cancelado.")}>Cancelar</Button></div>}{j.status === "paused" && p && <div className="job-actions"><Button primary onClick={() => action(() => call(`/api/v1/products/${p.id}/resume`, { method: "POST" }), "Produção retomada.")}>Retomar</Button></div>}</article>; }) : <Empty text="Nenhum job persistido." />}</div></Page>; }
-function Studio({ product, notify, refresh }) { const [title, setTitle] = useState(product?.title || ""); useEffect(() => setTitle(product?.title || ""), [product?.id, product?.title]); if (!product) return <Page title="Studio" sub="Selecione um produto no catálogo." />; const save = async () => { try { await call(`/api/v1/products/${product.id}`, { method: "PATCH", body: JSON.stringify({ title }) }); notify("Produto atualizado."); await refresh(); } catch (e) { notify(e.message); } }; return <Page title="Studio" sub="Edite o produto e abra os artefatos gerados."><div className="panel"><label>Título<input value={title} onChange={e => setTitle(e.target.value)} /></label><p>Status: <b>{product.status}</b> · etapa: <b>{product.current_stage}</b></p><Button primary onClick={save}>Salvar alterações</Button></div><div className="panel"><h3>Artefatos</h3>{Object.entries(product.metadata?.artifacts || {}).map(([k, v]) => <p key={k}><b>{k}:</b> <a href={v} target="_blank" rel="noreferrer">abrir arquivo</a></p>)}{!Object.keys(product.metadata?.artifacts || {}).length && <p>Os arquivos aparecerão quando o worker concluir a geração.</p>}</div></Page>; }
+function Studio({ product, notify, refresh }) {
+  const [title, setTitle] = useState(product?.title || "");
+  const [subtitle, setSubtitle] = useState("");
+  const [intro, setIntro] = useState("");
+  const [chapters, setChapters] = useState([]);
+  const [conclusion, setConclusion] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!product) return;
+    setTitle(product.title || product.topic || "");
+    setLoading(true);
+    call(`/api/v1/products/${product.id}/ebook`)
+      .then(data => {
+        if (cancelled) return;
+        setTitle(data.title || product.title || product.topic || "");
+        setSubtitle(data.subtitle || "");
+        const content = data.content_data || {};
+        setIntro(content.introduction || "");
+        setChapters(Array.isArray(content.chapters) ? content.chapters : []);
+        setConclusion(content.conclusion || "");
+      })
+      .catch(e => notify(e.message))
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [product?.id]);
+
+  if (!product) return <Page title="Studio" sub="Selecione um produto no catálogo." />;
+
+  const updateChapter = (index, field, value) => {
+    setChapters(items => items.map((item, i) => i === index ? { ...item, [field]: value } : item));
+  };
+  const addChapter = () => setChapters(items => [...items, { title: `Capítulo ${items.length + 1}`, content: "" }]);
+  const removeChapter = index => setChapters(items => items.filter((_, i) => i !== index));
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const result = await call(`/api/v1/products/${product.id}/ebook`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          title,
+          subtitle,
+          content_data: { introduction: intro, chapters, conclusion }
+        })
+      });
+      notify(`Ebook salvo. Artefatos: ${result.artifact_status}.`);
+      await refresh();
+    } catch (e) {
+      notify(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const artifacts = product.metadata?.artifacts || {};
+  return <Page title="Studio" sub="Edite o texto, gere novamente PDF/DOCX/capa e visualize os arquivos persistidos.">
+    <div className="two-col">
+      <div className="panel">
+        <K>EDITOR</K>
+        <label>Título<input value={title} onChange={e => setTitle(e.target.value)} /></label>
+        <label>Subtítulo<input value={subtitle} onChange={e => setSubtitle(e.target.value)} /></label>
+        {loading ? <p>Carregando conteúdo persistido…</p> : <>
+          <label>Introdução<textarea value={intro} onChange={e => setIntro(e.target.value)} rows="8" /></label>
+          <div className="section-heading"><div><K>CAPÍTULOS</K><h3>{chapters.length}</h3></div><Button onClick={addChapter}>＋ Capítulo</Button></div>
+          {chapters.map((chapter, index) => <div className="panel" key={index}>
+            <label>Capítulo {index + 1}<input value={chapter.title || ""} onChange={e => updateChapter(index, "title", e.target.value)} /></label>
+            <label>Conteúdo<textarea value={chapter.content || ""} onChange={e => updateChapter(index, "content", e.target.value)} rows="10" /></label>
+            <Button onClick={() => removeChapter(index)}>Remover capítulo</Button>
+          </div>)}
+          <label>Conclusão<textarea value={conclusion} onChange={e => setConclusion(e.target.value)} rows="8" /></label>
+          <Button primary onClick={save} disabled={saving}>{saving ? "Gerando artefatos…" : "Salvar e regenerar arquivos"}</Button>
+        </>}
+      </div>
+      <div>
+        <div className="panel">
+          <K>VISUALIZAÇÃO</K>
+          <h3>{title || "Ebook"}</h3>
+          <p>{subtitle}</p>
+          <h4>Introdução</h4><p>{intro || "Sem introdução."}</p>
+          {chapters.map((chapter, i) => <div key={i}><h4>{chapter.title || `Capítulo ${i + 1}`}</h4><p>{chapter.content || "Sem conteúdo."}</p></div>)}
+          <h4>Conclusão</h4><p>{conclusion || "Sem conclusão."}</p>
+        </div>
+        <div className="panel">
+          <K>CAPA</K>
+          {artifacts.cover ? <img src={artifacts.cover} alt="Capa do ebook" style={{ width: "100%", maxWidth: "360px", display: "block", borderRadius: "12px" }} /> : <p>A capa aparecerá após a geração dos artefatos.</p>}
+        </div>
+        <div className="panel">
+          <K>ARQUIVOS</K>
+          {Object.entries(artifacts).map(([kind, url]) => <p key={kind}><b>{kind}:</b> <a href={url} target="_blank" rel="noreferrer">abrir / visualizar</a></p>)}
+          {!Object.keys(artifacts).length && <p>Nenhum artefato persistido ainda.</p>}
+          <small>Status: {product.status} · etapa: {product.current_stage}</small>
+        </div>
+      </div>
+    </div>
+  </Page>;
+}
 function RadarView({ data, run }) { return <Page title="Radar" sub="Análise de oportunidade sem promessa de resultado."><Button primary onClick={run}>Analisar oportunidade</Button>{data && <div className="two-col"><div className="panel"><h3>Score {data.score}/100</h3><p>Confiança {data.confidence}%</p>{Object.entries(data.dimensions || {}).map(([k, v]) => <div className="health" key={k}><span>{k}</span><strong>{v}</strong></div>)}</div><div className="panel"><h3>Findings</h3>{(data.findings || []).map(x => <p key={x}>• {x}</p>)}</div></div>}</Page>; }
 function Publish({ product, integrations }) { const hotmart = integrations.find(x => x.name?.toLowerCase().includes("hotmart")); return <Page title="Publicação" sub="Preparação comercial e sincronização do catálogo Hotmart."><div className="panel"><h3>{product?.title || product?.topic || "Nenhum produto selecionado"}</h3><p>Hotmart: <b>{hotmart?.status || "não verificada"}</b></p><p>Artefatos: <b>{Object.keys(product?.metadata?.artifacts || {}).length ? "gerados" : "pendentes"}</b></p><p>A API pública da Hotmart permite consultar/sincronizar produtos e ofertas e receber webhooks. A criação de um novo produto digital continua no painel da Hotmart; o Hermes não simula uma publicação que a API não documenta.</p></div></Page>; }
 function SalesView({ data, load }) { return <Page title="Vendas" sub="Dados vindos de eventos reais persistidos."><Button primary onClick={load}>Atualizar vendas</Button>{data ? <div className="metric-grid"><Metric label="Receita" value={data.revenue ?? 0}/><Metric label="Pedidos" value={data.orders ?? 0}/><Metric label="Aprovados" value={data.approved ?? 0}/><Metric label="Reembolsos" value={data.refunds ?? 0}/></div> : <Empty text="Clique em atualizar para consultar as vendas reais." />}</Page>; }
