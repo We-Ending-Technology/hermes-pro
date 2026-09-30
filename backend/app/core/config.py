@@ -9,10 +9,12 @@ class Settings(BaseSettings):
     api_port: int = 8000
     log_level: str = "INFO"
     database_url: str = Field(default="", validation_alias="DATABASE_URL")
-    ai_provider: str = Field(default="stub", validation_alias="AI_PROVIDER")
+    ai_provider: str = Field(default="gemini", validation_alias="AI_PROVIDER")
     ai_api_key: str | None = Field(default=None, validation_alias="AI_API_KEY")
     gemini_api_key: str | None = Field(default=None, validation_alias="GEMINI_API_KEY")
     gemini_model: str = Field(default="gemini-2.5-flash", validation_alias="GEMINI_MODEL")
+    openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
+    openai_model: str = Field(default="gpt-5.6-luna", validation_alias="OPENAI_MODEL")
     supabase_url: str | None = Field(default=None, validation_alias="SUPABASE_URL")
     supabase_secret_key: str | None = Field(default=None, validation_alias="SUPABASE_SECRET_KEY")
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
@@ -22,6 +24,14 @@ class Settings(BaseSettings):
     hotmart_webhook_token: str | None = Field(default=None, validation_alias="HOTMART_WEBHOOK_TOKEN")
     telegram_bot_token: str | None = Field(default=None, validation_alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: str | None = Field(default=None, validation_alias="TELEGRAM_CHAT_ID")
+    freelancer_client_id: str | None = Field(default=None, validation_alias="FREELANCER_CLIENT_ID")
+    freelancer_client_secret: str | None = Field(default=None, validation_alias="FREELANCER_CLIENT_SECRET")
+    freelancer_redirect_uri: str | None = Field(default=None, validation_alias="FREELANCER_REDIRECT_URI")
+    upwork_client_id: str | None = Field(default=None, validation_alias="UPWORK_CLIENT_ID")
+    upwork_client_secret: str | None = Field(default=None, validation_alias="UPWORK_CLIENT_SECRET")
+    canva_client_id: str | None = Field(default=None, validation_alias="CANVA_CLIENT_ID")
+    canva_client_secret: str | None = Field(default=None, validation_alias="CANVA_CLIENT_SECRET")
+    hermes_kill_switch: bool = Field(default=False, validation_alias="HERMES_KILL_SWITCH")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

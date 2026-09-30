@@ -8,6 +8,9 @@ from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
 from .services.hotmart import HotmartClient, HotmartError
 from .services.integrations import integration_service
+from .queue import JobQueue
+from .services.artifacts import build_artifacts
+from .services.storage import SupabaseStorage
 from .services.persistence import PersistentStore
 from .services.telegram import TelegramNotifier
 
@@ -34,6 +37,65 @@ async def ready() -> dict[str, Any]:
             "message": item["message"],
         })
     return {"status": "ready" if all(x["configured"] for x in checks) else "degraded", "service": "hermes-pro-api", "checks": checks}
+
+
+@router.post("/api/v1/jobs/{job_id}/retry")
+async def retry_job(job_id: str) -> dict[str, Any]:
+    job = await store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+    if settings.hermes_kill_switch:
+        raise HTTPException(status_code=423, detail="automation blocked by kill switch")
+    if job["status"] in {"pending", "running", "retrying"}:
+        return job
+    if job["status"] == "completed":
+        raise HTTPException(status_code=409, detail="completed job cannot be retried")
+    attempts = int(job.get("attempts") or 0)
+    if attempts >= int(job.get("max_attempts") or 3):
+        raise HTTPException(status_code=409, detail="maximum attempts reached; create a new job")
+    updated = await store.update_job(job_id, "pending", error_message=None)
+    queue = JobQueue(settings.redis_url)
+    try:
+        await queue.enqueue(job_id)
+    finally:
+        await queue.close()
+    return updated
+
+
+@router.post("/api/v1/products/{product_id}/ebook/regenerate")
+async def regenerate_ebook_artifacts(product_id: str) -> dict[str, Any]:
+    row = await store.get_product(product_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="product not found")
+    metadata = dict(row.get("metadata") or {})
+    content_data = metadata.get("content_data") or {}
+    content = metadata.get("content") or ""
+    strategy = dict(metadata.get("strategy") or {})
+    title = str(row.get("title") or strategy.get("title") or row.get("topic") or "Ebook").strip()
+    subtitle = str(strategy.get("subtitle") or "")
+    if not content_data and not content:
+        raise HTTPException(status_code=409, detail="ebook has no persisted content to regenerate")
+    if not content:
+        import json
+        content = json.dumps(content_data, ensure_ascii=False)
+    try:
+        metadata["artifact_status"] = "generating"
+        await store.update_product(product_id, status="generating_artifacts", current_stage="studio", metadata=metadata)
+        artifacts = build_artifacts(title, subtitle, content)
+        storage = SupabaseStorage(settings)
+        urls: dict[str, str] = {}
+        for kind, (artifact_path, blob, content_type) in artifacts.items():
+            urls[kind] = await storage.upload(f"{product_id}/{artifact_path}", blob, content_type)
+        metadata["artifacts"] = urls
+        metadata["artifact_status"] = "ready"
+        metadata.pop("artifact_error", None)
+        updated = await store.update_product(product_id, status="ready_to_publish", current_stage="studio", metadata=metadata)
+        return {"id": product_id, "title": title, "subtitle": subtitle, "artifacts": urls, "artifact_status": "ready", "status": updated.get("status")}
+    except Exception as exc:
+        metadata["artifact_status"] = "error"
+        metadata["artifact_error"] = str(exc)[:1000]
+        await store.update_product(product_id, status="artifact_error", current_stage="studio", metadata=metadata)
+        raise HTTPException(status_code=503, detail=f"artifact regeneration failed: {exc}") from exc
 
 
 @router.get("/api/v1/hotmart/products")
