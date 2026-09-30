@@ -92,6 +92,16 @@ async def chat(request: ChatRequest):
 @app.get("/api/v1/integrations", response_model=list[IntegrationStatus])
 async def integrations(): return [IntegrationStatus(**item) for item in integration_service.status()]
 
+@app.get("/api/v1/operations")
+async def operations():
+    statuses = integration_service.status()
+    return {
+        "kill_switch": settings.hermes_kill_switch,
+        "automation": "blocked" if settings.hermes_kill_switch else "armed",
+        "worker": "enabled" if settings.redis_url else "not_configured",
+        "integrations": statuses,
+    }
+
 @app.get("/api/v1/jobs", response_model=list[JobResponse])
 async def jobs(): return [job_response(row) for row in await store.list_jobs()]
 
