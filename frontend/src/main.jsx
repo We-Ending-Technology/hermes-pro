@@ -17,6 +17,7 @@ function App() {
   const [products, setProducts] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [integrations, setIntegrations] = useState([]);
+  const [operations, setOperations] = useState({});
   const [dashboard, setDashboard] = useState({});
   const [selected, setSelected] = useState(null);
   const [notice, setNotice] = useState("");
@@ -35,12 +36,13 @@ function App() {
     const health = await safeCall("/health");
     setOnline(Boolean(health?.status === "ok"));
     const results = await Promise.all([
-      safeCall("/api/v1/dashboard"), safeCall("/api/v1/products"), safeCall("/api/v1/jobs"), safeCall("/api/v1/integrations")
+      safeCall("/api/v1/dashboard"), safeCall("/api/v1/products"), safeCall("/api/v1/jobs"), safeCall("/api/v1/integrations"), safeCall("/api/v1/operations")
     ]);
     if (results[0]) setDashboard(results[0]);
     if (Array.isArray(results[1])) setProducts(results[1]);
     if (Array.isArray(results[2])) setJobs(results[2]);
     if (Array.isArray(results[3])) setIntegrations(results[3]);
+    if (results[4]) setOperations(results[4]);
     setBusy(false);
   };
 
@@ -111,7 +113,7 @@ function App() {
       {view === "Analytics" && <AnalyticsView data={analytics} load={loadAnalytics} />}
       {view === "Experimentos" && <Experiments products={products} radar={radar} />}
       {view === "Agentes" && <Agents />}
-      {view === "Automação" && <Automation jobs={jobs} />}
+      {view === "Automação" && <Automation jobs={jobs} operations={operations} />}
       {view === "Integrações" && <Integrations items={integrations} diagnostics={diagnostics} runDiagnostics={runDiagnostics} />}
       {view === "Logs" && <Logs jobs={jobs} />}
       {view === "Guias" && <Guides />}
@@ -140,7 +142,7 @@ function Metric({ label, value }) { return <article className="metric"><span>{la
 function Factory({ topic, setTopic, submit }) { return <Page title="Fábrica" sub="Digite um tema e crie um job real no servidor."><form className="factory-form" onSubmit={submit}><label>Tema do produto<textarea value={topic} onChange={e => setTopic(e.target.value)} minLength="3" required placeholder="Ex.: guia de marketing digital para MEIs" /></label><div className="form-footer"><span>Render → Redis → Worker → Gemini → Supabase</span><Button primary type="submit">Iniciar produção ↗</Button></div></form><div className="pipeline">{["IDEIA", "ESTRATÉGIA", "CONTEÚDO", "REVISÃO", "STUDIO", "ARTEFATOS"].map((x, i) => <span key={x}>{i ? "→ " : ""}{x}</span>)}</div></Page>; }
 function ProductCard({ p, onClick }) { return <article className="product-card detailed" onClick={onClick}><div className="cover-placeholder"><span>H</span><small>{p.status}</small></div><div className="product-info"><span className="tag">EBOOK</span><h4>{p.title || p.topic}</h4><p>{p.topic}</p><div className="product-meta"><span>stage: {p.current_stage}</span><span>{p.metadata?.quality_score ? `${p.metadata.quality_score}/100` : "quality —"}</span></div></div></article>; }
 function Products({ items, select }) { return <Page title="Produtos" sub="Catálogo persistido no Supabase."><div className="product-grid">{items.length ? items.map(p => <ProductCard key={p.id} p={p} onClick={() => select(p)} />) : <Empty text="Nenhum produto ainda." />}</div></Page>; }
-function Jobs({ jobs, products, action }) { const productFor = j => products.find(p => p.metadata?.job_id === j.id); return <Page title="Jobs" sub="Fila real com estado e controles operacionais."><div className="job-list">{jobs.length ? jobs.map(j => { const p = productFor(j); const active = ["pending", "running", "retrying"].includes(j.status); return <article className="job" key={j.id}><div className={`job-icon ${j.status}`}>↻</div><div className="job-main"><strong>{p?.title || p?.topic || j.job_type}</strong><p>{j.error_message || `${j.job_type} • ${j.id}`}</p></div><span className={`job-status ${j.status}`}>{j.status}</span><small>{j.attempts}/{j.max_attempts}</small>{active && p && <div className="job-actions"><Button onClick={() => action(() => call(`/api/v1/products/${p.id}/pause`, { method: "POST" }), "Produção pausada.")}>Pausar</Button><Button onClick={() => action(() => call(`/api/v1/jobs/${j.id}/cancel`, { method: "POST" }), "Job cancelado.")}>Cancelar</Button></div>}{j.status === "paused" && p && <div className="job-actions"><Button primary onClick={() => action(() => call(`/api/v1/products/${p.id}/resume`, { method: "POST" }), "Produção retomada.")}>Retomar</Button></div>}</article>; }) : <Empty text="Nenhum job persistido." />}</div></Page>; }
+function Jobs({ jobs, products, action }) { const productFor = j => products.find(p => p.metadata?.job_id === j.id); return <Page title="Jobs" sub="Fila real com estado e controles operacionais."><div className="job-list">{jobs.length ? jobs.map(j => { const p = productFor(j); const active = ["pending", "running", "retrying"].includes(j.status); return <article className="job" key={j.id}><div className={`job-icon ${j.status}`}>↻</div><div className="job-main"><strong>{p?.title || p?.topic || j.job_type}</strong><p>{j.error_message || `${j.job_type} • ${j.id}`}</p></div><span className={`job-status ${j.status}`}>{j.status}</span><small>{j.attempts}/{j.max_attempts}</small>{active && p && <div className="job-actions"><Button onClick={() => action(() => call(`/api/v1/products/${p.id}/pause`, { method: "POST" }), "Produção pausada.")}>Pausar</Button><Button onClick={() => action(() => call(`/api/v1/jobs/${j.id}/cancel`, { method: "POST" }), "Job cancelado.")}>Cancelar</Button></div>}{j.status === "paused" && p && <div className="job-actions"><Button primary onClick={() => action(() => call(`/api/v1/products/${p.id}/resume`, { method: "POST" }), "Produção retomada.")}>Retomar</Button></div>}{j.status === "failed" && <div className="job-actions"><Button primary onClick={() => action(() => call(`/api/v1/jobs/${j.id}/retry`, { method: "POST" }), "Job reenfileirado.")}>Tentar novamente</Button></div>}</article>; }) : <Empty text="Nenhum job persistido." />}</div></Page>; }
 function Studio({ product, notify, refresh }) {
   const [title, setTitle] = useState(product?.title || "");
   const [subtitle, setSubtitle] = useState("");
@@ -149,6 +151,7 @@ function Studio({ product, notify, refresh }) {
   const [conclusion, setConclusion] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [artifacts, setArtifacts] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -164,6 +167,7 @@ function Studio({ product, notify, refresh }) {
         setIntro(content.introduction || "");
         setChapters(Array.isArray(content.chapters) ? content.chapters : []);
         setConclusion(content.conclusion || "");
+        setArtifacts(data.artifacts || {});
       })
       .catch(e => notify(e.message))
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -189,6 +193,7 @@ function Studio({ product, notify, refresh }) {
           content_data: { introduction: intro, chapters, conclusion }
         })
       });
+      setArtifacts(result.artifacts || {});
       notify(`Ebook salvo. Artefatos: ${result.artifact_status}.`);
       await refresh();
     } catch (e) {
@@ -198,7 +203,16 @@ function Studio({ product, notify, refresh }) {
     }
   };
 
-  const artifacts = product.metadata?.artifacts || {};
+  const regenerate = async () => {
+    setSaving(true);
+    try {
+      const result = await call(`/api/v1/products/${product.id}/ebook/regenerate`, { method: "POST" });
+      setArtifacts(result.artifacts || {});
+      notify("Capa, PDF e DOCX regenerados.");
+      await refresh();
+    } catch (e) { notify(e.message); }
+    finally { setSaving(false); }
+  };
   return <Page title="Studio" sub="Edite o texto, gere novamente PDF/DOCX/capa e visualize os arquivos persistidos.">
     <div className="two-col">
       <div className="panel">
@@ -215,6 +229,7 @@ function Studio({ product, notify, refresh }) {
           </div>)}
           <label>Conclusão<textarea value={conclusion} onChange={e => setConclusion(e.target.value)} rows="8" /></label>
           <Button primary onClick={save} disabled={saving}>{saving ? "Gerando artefatos…" : "Salvar e regenerar arquivos"}</Button>
+          <Button onClick={regenerate} disabled={saving}>↻ Regenerar arquivos sem editar texto</Button>
         </>}
       </div>
       <div>
@@ -250,7 +265,7 @@ function Integrations({ items, diagnostics, runDiagnostics }) { return <Page tit
 function Experiments({ products, radar }) { return <Page title="Experimentos" sub="Área para comparar temas e resultados reais."><div className="metric-grid"><Metric label="Produtos" value={products.length}/><Metric label="Radar disponível" value={radar ? "sim" : "não"}/></div><Empty text="Os experimentos usam somente produtos e análises persistidos; não há conversões inventadas." /></Page>; }
 function Agents() { return <Page title="Agentes" sub="Agentes operacionais registrados no backend."><AgentList /></Page>; }
 function AgentList() { const [items, setItems] = useState([]); const [result, setResult] = useState(null); useEffect(() => { call("/api/v1/agents").then(x => setItems(x?.agents || [])).catch(() => setItems([])); }, []); const run = async agent => { try { setResult(await call("/api/v1/agents/run", { method: "POST", body: JSON.stringify({ agent, input: "diagnóstico operacional do Hermes Pro" }) })); } catch (e) { setResult({ error: e.message }); } }; return <div className="product-grid">{items.map(agent => <div className="panel" key={agent}><h3>{agent}</h3><Button onClick={() => run(agent)}>Executar</Button></div>)}{result && <div className="panel"><pre>{JSON.stringify(result, null, 2)}</pre></div>}</div>; }
-function Automation({ jobs }) { const active = useMemo(() => jobs.filter(j => ["pending", "running", "retrying"].includes(j.status)).length, [jobs]); return <Page title="Automação" sub="Visão operacional da fila e do worker."><div className="metric-grid"><Metric label="Jobs ativos" value={active}/><Metric label="Jobs totais" value={jobs.length}/></div><Empty text="A execução automática ocorre no worker; este painel não finge agendamentos que ainda não existem no backend." /></Page>; }
+function Automation({ jobs, operations }) { const active = useMemo(() => jobs.filter(j => ["pending", "running", "retrying"].includes(j.status)).length, [jobs]); const scheduler = operations?.scheduler || {}; return <Page title="Automação" sub="Estado real do worker, fila e scheduler."><div className="metric-grid"><Metric label="Jobs ativos" value={active}/><Metric label="Jobs totais" value={jobs.length}/><Metric label="Worker" value={operations?.worker || "—"}/><Metric label="Scheduler" value={scheduler.enabled ? scheduler.schedule || "ativo" : "bloqueado"}/></div><div className="two-col"><div className="panel"><K>EXECUÇÃO</K><h3>{operations?.automation === "armed" ? "Automação armada" : "Automação bloqueada"}</h3><p>Fila: {operations?.queue?.name || "—"}</p><p>Backend: {operations?.queue?.backend || "—"}</p></div><div className="panel"><K>MANUTENÇÃO</K><h3>{scheduler.type || "scheduler"}</h3><p>{scheduler.enabled ? `Executa ${scheduler.task || "maintenance"} a cada ${scheduler.schedule || "intervalo configurado"}.` : "Desativado pelo kill switch."}</p></div></div></Page>; }
 function Logs({ jobs }) { return <Page title="Logs" sub="Eventos de jobs retornados pelo backend."><div className="job-list">{jobs.map(j => <div className="panel" key={j.id}><strong>{j.status}</strong><p>{j.id}</p><small>{j.error_message || "sem erro"}</small></div>)}</div></Page>; }
 function Guides() { return <Page title="Guias" sub="Operação do Hermes Pro."><div className="two-col"><div className="panel"><h3>1. Conexão</h3><p>Vercel hospeda a interface. O backend fica no Render. O cliente usa o proxy Vercel e cai para o Render diretamente quando o proxy falhar.</p></div><div className="panel"><h3>2. Produção</h3><p>Fábrica cria produto e job. Redis entrega ao worker. Gemini produz e revisa conteúdo. Supabase persiste estado e artefatos.</p></div><div className="panel"><h3>3. Hotmart</h3><p>O Hermes consulta o catálogo disponível e recebe vendas por webhook. A criação inicial do produto continua no painel Hotmart.</p></div><div className="panel"><h3>4. Se estiver offline</h3><p>Abra Integrações e execute o diagnóstico. Se Render estiver offline, o painel mostrará a conexão necessária em vez de um erro NOT_FOUND genérico.</p></div></div></Page>; }
 
