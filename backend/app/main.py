@@ -102,6 +102,17 @@ async def operations():
         "kill_switch": settings.hermes_kill_switch,
         "automation": "blocked" if settings.hermes_kill_switch else "armed",
         "worker": "enabled" if settings.redis_url else "not_configured",
+        "scheduler": {
+            "enabled": not settings.hermes_kill_switch,
+            "type": "render_cron",
+            "schedule": "*/15 * * * *",
+            "task": "maintenance/recovery",
+        },
+        "queue": {
+            "name": "hermes:jobs:product_generation",
+            "backend": "redis",
+            "configured": bool(settings.redis_url),
+        },
         "integrations": statuses,
     }
 
