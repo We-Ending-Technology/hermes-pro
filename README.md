@@ -46,3 +46,19 @@ O arquivo `render.yaml` descreve o serviço web, o worker e as variáveis de amb
 ## Escopo desta etapa
 
 A fundação inclui health checks, configuração por ambiente, um endpoint de exemplo, abstração do gateway de IA, registro de agentes, fila em memória para desenvolvimento, worker executável, migration inicial, testes e documentação. Integrações de marketplaces e automação de produção ficam explicitamente fora do escopo.
+
+
+## Autonomous agents
+
+The foundation now includes an OpenAI Agents SDK orchestrator, a Hermes Chefe manager, Radar/Factory/Dev/Analyst specialists, persistent agent runs, agent memory storage, a dedicated Redis queue, worker execution, retry/recovery, an autonomous scheduler tick, and an Agents control-center view.
+
+Autonomy is intentionally disabled until the OpenAI credential is configured:
+
+```text
+OPENAI_API_KEY=...
+OPENAI_AGENT_MODEL=gpt-6-astra
+AUTONOMY_ENABLED=true
+AUTONOMY_INTERVAL_SECONDS=900
+```
+
+The agent layer does not replace the existing Factory, Studio, Jobs, Worker or Supabase persistence. It orchestrates them. External marketplace/social integrations remain separate and require their own official credentials.
