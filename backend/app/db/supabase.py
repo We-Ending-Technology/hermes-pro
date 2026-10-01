@@ -62,6 +62,18 @@ class SupabaseREST:
             raise SupabaseError(f"Supabase update {table} matched no rows")
         return result[0]
 
+    async def upsert(self, table: str, values: dict[str, Any], *, conflict: str) -> dict[str, Any]:
+        result = await self.request(
+            "POST",
+            table,
+            params={"on_conflict": conflict},
+            json=values,
+            prefer="resolution=merge-duplicates,return=representation",
+        )
+        if not result:
+            raise SupabaseError(f"Supabase upsert {table} returned no row")
+        return result[0]
+
     async def health(self) -> bool:
         try:
             await self.select("hermes_products", params={"select": "id", "limit": "1"})
