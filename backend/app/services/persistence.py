@@ -65,6 +65,30 @@ class PersistentStore:
         if metadata is not None: values["metadata"] = metadata
         return await self.db.update("hermes_products", values, where={"id": f"eq.{product_id}"})
 
+    async def create_agent_job(self, instruction: str, source: str, now: str) -> dict[str, Any]:
+        row = await self.db.insert("hermes_jobs", {
+            "job_type": "agent_run",
+            "status": "pending",
+            "attempts": 0,
+            "max_attempts": 3,
+            "payload": {"instruction": instruction, "source": source},
+            "created_at": now,
+            "updated_at": now,
+        })
+        await self.db.insert("hermes_agent_runs", {
+            "job_id": row["id"],
+            "agent": "Hermes Chefe",
+            "source": source,
+            "status": "pending",
+            "instruction": instruction,
+            "output": {},
+            "created_at": now,
+        })
+        return row
+
+    async def list_agent_runs(self) -> list[dict[str, Any]]:
+        return await self.db.select("hermes_agent_runs", params={"select": "*", "order": "created_at.desc"})
+
     async def append_event(self, provider: str, event_type: str, payload: dict[str, Any], external_id: str | None = None, amount: float | None = None, currency: str | None = None) -> dict[str, Any]:
         return await self.db.insert("hermes_sales_events", {
             "provider": provider, "event_type": event_type, "external_id": external_id,

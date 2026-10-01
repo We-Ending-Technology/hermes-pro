@@ -16,6 +16,7 @@ from .queue import JobQueue
 from .schemas import *
 from .schemas_ext import ProductUpdateRequest
 from .services.analytics import analytics_service
+from .services.autonomy import AutonomyService
 from .services.integrations import integration_service
 from .services.persistence import PersistentStore
 from .services.quality import quality_service
@@ -29,6 +30,7 @@ db = SupabaseREST(settings)
 store = PersistentStore(db)
 sales_service = SalesService(db)
 queue = JobQueue(settings.redis_url)
+autonomy = AutonomyService(settings, store)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -66,6 +68,32 @@ async def health(): return HealthResponse(status="ok", service="hermes-pro-api",
 
 @app.get("/api/v1/agents")
 async def list_agents(): return {"agents": registry.names()}
+
+@app.get("/api/v1/agents/status")
+async def agents_status():
+    ready = bool(settings.openai_api_key)
+    return {
+        "chief": "ready" if ready else "blocked_missing_OPENAI_API_KEY",
+        "agents": [
+            {"name": "Hermes Chefe", "role": "orchestrator", "status": "ready" if ready else "blocked"},
+            {"name": "Hermes Radar", "role": "research", "status": "ready" if ready else "blocked"},
+            {"name": "Hermes Factory", "role": "product", "status": "ready" if ready else "blocked"},
+            {"name": "Hermes Dev", "role": "engineering", "status": "ready" if ready else "blocked"},
+            {"name": "Hermes Analyst", "role": "analysis", "status": "ready" if ready else "blocked"},
+        ],
+        "autonomy_enabled": settings.autonomy_enabled,
+    }
+
+@app.get("/api/v1/agents/runs")
+async def agent_runs():
+    return {"runs": await store.list_agent_runs()}
+
+@app.post("/api/v1/agents/dispatch")
+async def dispatch_agent(request: AgentRunRequest):
+    prompt = str(request.input.get("prompt", request.input))
+    job = await autonomy.create_job(f"Execute this Hermes task autonomously: {prompt}", source="api")
+    await queue.enqueue_agent(str(job["id"]))
+    return {"run_id": str(job["id"]), "agent": "Hermes Chefe", "status": "queued", "output": {}}
 
 @app.post("/api/v1/agents/run", response_model=AgentRunResponse)
 async def run_agent(request: AgentRunRequest):
