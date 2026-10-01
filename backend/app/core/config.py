@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     gemini_model: str = Field(default="gemini-2.5-flash", validation_alias="GEMINI_MODEL")
     openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-5.6-luna", validation_alias="OPENAI_MODEL")
+    openai_agent_model: str = Field(default="gpt-6-astra", validation_alias="OPENAI_AGENT_MODEL")
+    autonomy_interval_seconds: int = Field(default=900, validation_alias="AUTONOMY_INTERVAL_SECONDS")
     supabase_url: str | None = Field(default=None, validation_alias="SUPABASE_URL")
     supabase_secret_key: str | None = Field(default=None, validation_alias="SUPABASE_SECRET_KEY")
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")

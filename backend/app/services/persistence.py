@@ -42,6 +42,26 @@ class PersistentStore:
             "payload": payload, "idempotency_key": idempotency_key, "created_at": now, "updated_at": now,
         })
 
+    async def create_agent_job(self, instruction: str, source: str, now: str):
+        job = await self.create_job_if_absent(
+            "agent_run",
+            {"instruction": instruction, "source": source},
+            f"agent:{source}:{now}",
+        )
+        await self.db.insert("hermes_agent_runs", {
+            "job_id": job["id"],
+            "agent": "Hermes Chefe",
+            "source": source,
+            "status": "pending",
+            "instruction": instruction,
+            "output": {},
+            "created_at": now,
+        })
+        return job
+
+    async def list_agent_runs(self):
+        return await self.db.select("hermes_agent_runs", params={"select": "*", "order": "created_at.desc"})
+
     async def get_product(self, product_id: str):
         rows = await self.db.select("hermes_products", params={"select": "*", "id": f"eq.{product_id}", "limit": "1"})
         return rows[0] if rows else None
