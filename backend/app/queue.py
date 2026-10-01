@@ -6,6 +6,7 @@ from redis.asyncio import Redis
 
 
 QUEUE_NAME = "hermes:jobs:product_generation"
+AGENT_QUEUE_NAME = "hermes:jobs:agent_run"
 
 
 class JobQueue:
@@ -14,6 +15,16 @@ class JobQueue:
 
     async def enqueue(self, job_id: str) -> None:
         await self.redis.lpush(QUEUE_NAME, json.dumps({"job_id": job_id}))
+
+    async def enqueue_agent(self, job_id: str) -> None:
+        await self.redis.lpush(AGENT_QUEUE_NAME, json.dumps({"job_id": job_id}))
+
+    async def dequeue_agent(self, timeout: int = 1) -> str | None:
+        item = await self.redis.brpop(AGENT_QUEUE_NAME, timeout=timeout)
+        if not item:
+            return None
+        payload = json.loads(item[1])
+        return payload["job_id"]
 
     async def dequeue(self, timeout: int = 10) -> str | None:
         item = await self.redis.brpop(QUEUE_NAME, timeout=timeout)
