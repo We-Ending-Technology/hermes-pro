@@ -20,8 +20,6 @@ services:
         value: gpt-5.6-luna
       - key: OPENAI_AGENT_MODEL
         value: gpt-6-astra
-      - key: OPENAI_AGENT_MODEL
-        value: gpt-6-astra
       - key: DATABASE_URL
         sync: false
       - key: SUPABASE_URL
@@ -53,6 +51,12 @@ services:
       - key: FREELANCER_BIDDER_ID
         sync: false
       - key: FREELANCER_PROFILE_ID
+        sync: false
+      - key: CANVA_CLIENT_ID
+        sync: false
+      - key: CANVA_CLIENT_SECRET
+        sync: false
+      - key: CANVA_REDIRECT_URI
         sync: false
       - key: AUTONOMY_ENABLED
         value: "true"

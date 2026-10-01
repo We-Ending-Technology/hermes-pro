@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     freelancer_auto_apply: bool = Field(default=False, validation_alias="FREELANCER_AUTO_APPLY")
     freelancer_bidder_id: int | None = Field(default=None, validation_alias="FREELANCER_BIDDER_ID")
     freelancer_profile_id: int | None = Field(default=None, validation_alias="FREELANCER_PROFILE_ID")
+    canva_client_id: str | None = Field(default=None, validation_alias="CANVA_CLIENT_ID")
+    canva_client_secret: str | None = Field(default=None, validation_alias="CANVA_CLIENT_SECRET")
+    canva_redirect_uri: str | None = Field(default=None, validation_alias="CANVA_REDIRECT_URI")
     autonomy_enabled: bool = Field(default=True, validation_alias="AUTONOMY_ENABLED")
     autonomy_min_score: int = Field(default=55, validation_alias="AUTONOMY_MIN_SCORE")
 
