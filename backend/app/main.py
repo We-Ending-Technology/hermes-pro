@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .ai_gateway.factory import build_ai_gateway
 from .agents.diagnostic import DiagnosticAgent
+from .agents.agents_sdk import run_chief
 from .agents.registry import AgentRegistry
 from .agents.stubs import AGENT_NAMES, PassThroughAgent
 from .agents.operational import (RadarAgent, ResearcherAgent, AnalystAgent, ExecutorAgent, QAAgent, CommercialAgent, FinanceAgent, RecoveryAgent, GuardianAgent, WatchtowerAgent, SupervisorAgent)
@@ -105,11 +106,11 @@ async def agent_runs():
 
 @app.post("/api/v1/agents/dispatch")
 async def dispatch_agent(request: AgentRunRequest):
+    if not settings.openai_api_key:
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY not configured")
     prompt = str(request.input.get("prompt", request.input))
-    now = datetime.now().astimezone().isoformat()
-    job = await store.create_agent_job(prompt, "api", now)
-    await queue.enqueue_agent(str(job["id"]))
-    return {"run_id": str(job["id"]), "agent": "Hermes Chefe", "status": "queued", "output": {}}
+    result = await run_chief(prompt, request.input)
+    return {"run_id": str(uuid4()), "agent": result["last_agent"], "status": "completed", "output": result}
 
 @app.post("/api/v1/agents/run", response_model=AgentRunResponse)
 async def run_agent(request: AgentRunRequest):
