@@ -12,6 +12,7 @@ from backend.app.services.artifacts import build_artifacts
 from backend.app.services.persistence import PersistentStore
 from backend.app.services.storage import SupabaseStorage
 from worker.agent_jobs import process_agent
+from worker.autonomy_scheduler import autonomy_tick
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hermes.worker")
@@ -128,10 +129,14 @@ async def run() -> None:
     settings = get_settings()
     store = PersistentStore(SupabaseREST(settings))
     queue = JobQueue(settings.redis_url)
-    logger.info("Hermes Pro worker started; queue=hermes:jobs:product_generation")
+    logger.info("Hermes Pro worker started; autonomous=%s", settings.autonomy_enabled)
+    last_autonomy_tick = 0.0
     try:
         await recover_pending(store, queue)
         while True:
+            if settings.autonomy_enabled and (asyncio.get_running_loop().time() - last_autonomy_tick) >= settings.autonomy_interval_seconds:
+                await autonomy_tick(settings, store, queue)
+                last_autonomy_tick = asyncio.get_running_loop().time()
             agent_job_id = await queue.dequeue_agent(timeout=1)
             if agent_job_id:
                 await process_agent(agent_job_id, store, settings, queue)
