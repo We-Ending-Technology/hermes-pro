@@ -150,8 +150,57 @@ function ChatView({ chat, input, setInput, send }) { return <Page title="Hermes"
 function DiagnosticsPanel({ data }) { if (!data) return <Empty text="Diagnóstico ainda não executado." />; return <div className="panel diagnostics-grid">{data.checks.map((x, i) => <div className="diag-row" key={`${x.name}-${i}`}><i className={x.status === "online" || x.status === "ready" ? "online" : "offline"}></i><strong>{x.name}</strong><span>{x.status}</span><small>{x.message || ""}</small></div>)}</div>; }
 function Integrations({ items, diagnostics, runDiagnostics }) { return <Page title="Integrações" sub="Estado das conexões sem expor segredos."><Button primary onClick={runDiagnostics}>Testar conexões</Button><DiagnosticsPanel data={diagnostics} /><div className="integration-list">{items.length ? items.map(x => <div className="panel" key={x.name}><strong>{x.name}</strong><p>{x.status}</p><small>{x.message}</small></div>) : <Empty text="Nenhuma integração retornada pelo backend." />}</div></Page>; }
 function Experiments({ products, radar }) { return <Page title="Experimentos" sub="Área para comparar temas e resultados reais."><div className="metric-grid"><Metric label="Produtos" value={products.length}/><Metric label="Radar disponível" value={radar ? "sim" : "não"}/></div><Empty text="Os experimentos usam somente produtos e análises persistidos; não há conversões inventadas." /></Page>; }
-function Agents() { return <Page title="Agentes" sub="Agentes operacionais registrados no backend."><AgentList /></Page>; }
-function AgentList() { const [items, setItems] = useState([]); const [result, setResult] = useState(null); useEffect(() => { call("/api/v1/agents").then(x => setItems(x?.agents || [])).catch(() => setItems([])); }, []); const run = async agent => { try { setResult(await call("/api/v1/agents/run", { method: "POST", body: JSON.stringify({ agent, input: "diagnóstico operacional do Hermes Pro" }) })); } catch (e) { setResult({ error: e.message }); } }; return <div className="product-grid">{items.map(agent => <div className="panel" key={agent}><h3>{agent}</h3><Button onClick={() => run(agent)}>Executar</Button></div>)}{result && <div className="panel"><pre>{JSON.stringify(result, null, 2)}</pre></div>}</div>; }
+function Agents() {
+  const [status, setStatus] = useState(null);
+  const [runs, setRuns] = useState([]);
+  const [prompt, setPrompt] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    try {
+      const [s, r] = await Promise.all([call("/api/v1/agents/status"), call("/api/v1/agents/runs")]);
+      setStatus(s); setRuns(r?.runs || []);
+    } catch (_) {}
+  };
+
+  useEffect(() => { load(); const timer = setInterval(load, 5000); return () => clearInterval(timer); }, []);
+
+  const dispatch = async (event) => {
+    event.preventDefault();
+    if (!prompt.trim()) return;
+    setBusy(true);
+    try {
+      await call("/api/v1/agents/dispatch", {
+        method: "POST",
+        body: JSON.stringify({ agent: "Hermes Chefe", input: { prompt } })
+      });
+      setPrompt("");
+      await load();
+    } catch (_) {
+    } finally { setBusy(false); }
+  };
+
+  return <Page title="Agentes" sub="Hermes Chefe + equipe operacional trabalhando em background.">
+    <div className="metric-grid">
+      <Metric label="Chefe" value={status?.chief || "carregando"} />
+      <Metric label="Autonomia" value={status?.autonomy_enabled ? "ON" : "OFF"} />
+      <Metric label="Execuções" value={runs.length} />
+      <Metric label="Em fila" value={runs.filter(r => ["pending","running","retrying"].includes(r.status)).length} />
+    </div>
+    <div className="panel">
+      <div className="section-heading"><div><K>EQUIPE</K><h3>Agentes</h3></div></div>
+      <div className="product-row">{(status?.agents || []).map(a => <article className="metric" key={a.name}><span>{a.role}</span><strong>{a.name}</strong><small>{a.status}</small></article>)}</div>
+    </div>
+    <form className="factory-form" onSubmit={dispatch}>
+      <label>Missão para o Hermes Chefe<textarea value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Ex.: investigar jobs falhos e me entregar causa, evidências e próxima ação." /></label>
+      <div className="form-footer"><span>Chefe → especialistas → Worker → Supabase</span><Button primary type="submit" disabled={busy}>{busy ? "Enviando…" : "Executar missão ↗"}</Button></div>
+    </form>
+    <div className="panel">
+      <div className="section-heading"><div><K>HISTÓRICO</K><h3>Execuções recentes</h3></div></div>
+      {runs.length ? runs.slice(0,10).map(r => <div className="list-row" key={r.id}><strong>{r.status}</strong><span>{r.instruction}</span><small>{r.agent}</small></div>) : <Empty text="Nenhuma execução do Chefe ainda." />}
+    </div>
+  </Page>;
+}
 function Automation({ jobs }) { const active = useMemo(() => jobs.filter(j => ["pending", "running", "retrying"].includes(j.status)).length, [jobs]); return <Page title="Automação" sub="Visão operacional da fila e do worker."><div className="metric-grid"><Metric label="Jobs ativos" value={active}/><Metric label="Jobs totais" value={jobs.length}/></div><Empty text="A execução automática ocorre no worker; este painel não finge agendamentos que ainda não existem no backend." /></Page>; }
 function Logs({ jobs }) { return <Page title="Logs" sub="Eventos de jobs retornados pelo backend."><div className="job-list">{jobs.map(j => <div className="panel" key={j.id}><strong>{j.status}</strong><p>{j.id}</p><small>{j.error_message || "sem erro"}</small></div>)}</div></Page>; }
 function Guides() { return <Page title="Guias" sub="Operação do Hermes Pro."><div className="two-col"><div className="panel"><h3>1. Conexão</h3><p>Vercel hospeda a interface. O backend fica no Render. O cliente usa o proxy Vercel e cai para o Render diretamente quando o proxy falhar.</p></div><div className="panel"><h3>2. Produção</h3><p>Fábrica cria produto e job. Redis entrega ao worker. Gemini produz e revisa conteúdo. Supabase persiste estado e artefatos.</p></div><div className="panel"><h3>3. Hotmart</h3><p>O Hermes consulta o catálogo disponível e recebe vendas por webhook. A criação inicial do produto continua no painel Hotmart.</p></div><div className="panel"><h3>4. Se estiver offline</h3><p>Abra Integrações e execute o diagnóstico. Se Render estiver offline, o painel mostrará a conexão necessária em vez de um erro NOT_FOUND genérico.</p></div></div></Page>; }
