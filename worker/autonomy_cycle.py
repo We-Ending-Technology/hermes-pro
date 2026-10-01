@@ -19,6 +19,14 @@ async def main() -> None:
     queue = JobQueue(settings.redis_url)
     try:
         result = await AutonomyService(store, queue).cycle(settings.autonomy_min_score)
+        if settings.openai_api_key:
+            now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+            agent_job = await store.create_agent_job(
+                "Run the Hermes autonomous supervisor pass. Inspect the latest opportunity/job state, identify failures, useful next actions and blocked approvals. Do not perform irreversible external actions.",
+                "scheduler",
+                now,
+            )
+            await queue.enqueue_agent(str(agent_job["id"]))
         logger.info("autonomy cycle: scanned=%s queued=%s", result["scanned"], result["queued"])
     finally:
         await queue.close()
