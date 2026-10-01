@@ -170,7 +170,11 @@ async def process_opportunity(job_id: str, store: PersistentStore, queue: JobQue
 
 async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
     for job in await store.list_jobs():
-        if job["job_type"] in {"product_generation", "opportunity_pipeline"} and job["status"] in {"pending", "retrying", "running"}:
+        if job["status"] not in {"pending", "retrying", "running"}:
+            continue
+        if job["job_type"] == "agent_run":
+            await queue.enqueue_agent(str(job["id"]))
+        elif job["job_type"] in {"product_generation", "opportunity_pipeline"}:
             # A running job may have died with its worker. Requeue it; the attempt counter prevents infinite retries.
             await queue.enqueue(str(job["id"]))
 
