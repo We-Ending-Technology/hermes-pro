@@ -3,10 +3,11 @@ import { createRoot } from "react-dom/client";
 import { call, diagnose } from "./api.js";
 import "./style.css";
 import "./diagnostics.css";
+import LowTicketFactory from "./views/LowTicketFactory.jsx";
 
 const NAV = [
   ["⌂", "Início"], ["✦", "Hermes"], ["⌁", "Radar"], ["⚗", "Fábrica"], ["◈", "Produtos"],
-  ["▣", "Studio"], ["↗", "Publicação"], ["$", "Vendas"], ["◌", "Analytics"], ["◇", "Experimentos"],
+  ["▣", "Studio"], ["↗", "Publicação"], ["$", "Vendas"], ["◌", "Analytics"], ["◇", "Experimentos"], ["$", "Low-Ticket"],
   ["◎", "Agentes"], ["⟳", "Automação"], ["⌘", "Integrações"], ["≡", "Logs"], ["?", "Guias"], ["▤", "Jobs"]
 ];
 
@@ -110,6 +111,7 @@ function App() {
       {view === "Vendas" && <SalesView data={sales} load={loadSales} />}
       {view === "Analytics" && <AnalyticsView data={analytics} load={loadAnalytics} />}
       {view === "Experimentos" && <Experiments products={products} radar={radar} />}
+      {view === "Low-Ticket" && <LowTicketFactory />}
       {view === "Agentes" && <Agents />}
       {view === "Automação" && <Automation jobs={jobs} />}
       {view === "Integrações" && <Integrations items={integrations} diagnostics={diagnostics} runDiagnostics={runDiagnostics} />}
