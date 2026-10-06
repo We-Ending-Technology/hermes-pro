@@ -13,6 +13,22 @@ class ConfiguredProviderAdapter(AIGateway):
 class OpenAIAdapter(ConfiguredProviderAdapter):
     provider = "openai"
 
+    async def complete(self, prompt: str, *, system: str | None = None) -> AIResponse:
+        if not self.api_key:
+            raise RuntimeError("OPENAI_API_KEY is not configured")
+        payload = {"model": self.model, "input": prompt}
+        if system:
+            payload["instructions"] = system
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post("https://api.openai.com/v1/responses", headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+        text = data.get("output_text")
+        if not isinstance(text, str) or not text.strip():
+            raise RuntimeError("OpenAI returned no output_text")
+        return AIResponse(content=text, provider=self.provider, model=self.model)
+
 class GeminiAdapter(ConfiguredProviderAdapter):
     provider = "gemini"
     async def complete(self, prompt: str, *, system: str | None = None) -> AIResponse:

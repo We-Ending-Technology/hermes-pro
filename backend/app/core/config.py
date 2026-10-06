@@ -10,8 +10,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     database_url: str = Field(default="", validation_alias="DATABASE_URL")
     ai_provider: str = Field(default="stub", validation_alias="AI_PROVIDER")
+    ai_fallback_provider: str = Field(default="openai", validation_alias="AI_FALLBACK_PROVIDER")
     ai_api_key: str | None = Field(default=None, validation_alias="AI_API_KEY")
     openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
+    openai_chat_model: str = Field(default="gpt-6-luna", validation_alias="OPENAI_CHAT_MODEL")
     openai_agent_model: str = Field(default="gpt-6-astra", validation_alias="OPENAI_AGENT_MODEL")
     autonomy_enabled: bool = Field(default=False, validation_alias="AUTONOMY_ENABLED")
     autonomy_interval_seconds: int = Field(default=900, validation_alias="AUTONOMY_INTERVAL_SECONDS")

@@ -10,12 +10,16 @@ services:
         value: production
       - key: AI_PROVIDER
         value: gemini
+      - key: AI_FALLBACK_PROVIDER
+        value: openai
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
       - key: OPENAI_API_KEY
         sync: false
+      - key: OPENAI_CHAT_MODEL
+        value: gpt-6-luna
       - key: OPENAI_AGENT_MODEL
         value: gpt-6-astra
       - key: AUTONOMY_ENABLED
@@ -53,12 +57,16 @@ services:
         value: production
       - key: AI_PROVIDER
         value: gemini
+      - key: AI_FALLBACK_PROVIDER
+        value: openai
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
       - key: OPENAI_API_KEY
         sync: false
+      - key: OPENAI_CHAT_MODEL
+        value: gpt-6-luna
       - key: OPENAI_AGENT_MODEL
         value: gpt-6-astra
       - key: AUTONOMY_ENABLED
