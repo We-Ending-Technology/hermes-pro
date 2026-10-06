@@ -7,8 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .ai_gateway.factory import build_ai_gateway
 from .agents.diagnostic import DiagnosticAgent
+from .agents.orchestrator import build_agents
 from .agents.registry import AgentRegistry
-from .agents.stubs import AGENT_NAMES, PassThroughAgent
+from .agents.stubs import AGENT_NAMES, PassThroughAgent, SDKBackedAgent
 from .api_commercial import router as commercial_router
 from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
@@ -35,8 +36,21 @@ autonomy = AutonomyService(settings, store)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     registry.register(DiagnosticAgent(ai_gateway))
-    for agent_name in AGENT_NAMES:
-        registry.register(PassThroughAgent(agent_name))
+    if settings.openai_api_key:
+        _, sdk_agents = build_agents(settings)
+        aliases = {
+            "writer": "factory",
+            "reviewer": "analyst",
+            "publisher": "factory",
+            "supervisor": "chief",
+            "diagnostics": "analyst",
+            "evolution": "dev",
+        }
+        for agent_name in AGENT_NAMES:
+            registry.register(SDKBackedAgent(agent_name, sdk_agents[aliases[agent_name]]))
+    else:
+        for agent_name in AGENT_NAMES:
+            registry.register(PassThroughAgent(agent_name))
     yield
     await queue.close()
 
