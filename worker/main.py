@@ -89,6 +89,42 @@ async def _make_cover(title: str, topic: str) -> bytes:
         return response.content
 
 
+async def process_opportunity_preflight(job_id: str, store: PersistentStore, queue: JobQueue) -> None:
+    job = await store.get_job(job_id)
+    if not job or job["job_type"] != "opportunity_preflight" or job["status"] == "completed":
+        return
+    attempts = int(job.get("attempts") or 0) + 1
+    if attempts > MAX_ATTEMPTS:
+        await store.update_job(job_id, "failed", attempts=attempts, error_message="maximum attempts reached")
+        return
+    opportunity_id = (job.get("payload") or {}).get("opportunity_id")
+    if not opportunity_id:
+        await store.update_job(job_id, "failed", attempts=attempts, error_message="invalid opportunity_preflight payload")
+        return
+    try:
+        await store.update_job(job_id, "running", attempts=attempts, error_message=None)
+        rows = await store.db.select("hermes_opportunities", params={"select":"*","id":f"eq.{opportunity_id}","limit":"1"})
+        if not rows:
+            raise RuntimeError("opportunity not found")
+        opportunity = rows[0]
+        source = str(opportunity.get("source") or "").lower()
+        settings = get_settings()
+        if source == "www.freelancer.com" and not settings.freelancer_access_token:
+            raise RuntimeError("Freelancer API ainda não está autenticada/validada")
+        if settings.auto_apply_enabled:
+            # No provider-specific submission is performed until the provider API contract is validated.
+            raise RuntimeError("AUTO_APPLY_ENABLED exige um executor de provedor validado; envio não foi executado")
+        now = datetime.now(timezone.utc).isoformat()
+        await store.db.update("hermes_opportunities", {
+            "status": "ready_to_apply", "application_status": "ready_to_apply", "updated_at": now,
+        }, where={"id":f"eq.{opportunity_id}"})
+        await store.update_job(job_id, "completed", attempts=attempts, error_message=None)
+        logger.info("opportunity preflight completed job=%s opportunity=%s source=%s", job_id, opportunity_id, source)
+    except Exception as exc:
+        message = str(exc)[:1000]
+        await store.update_job(job_id, "failed", attempts=attempts, error_message=message)
+        logger.exception("opportunity preflight failed job=%s", job_id)
+
 async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) -> None:
     job = await store.get_job(job_id)
     if not job or job["job_type"] != "product_generation" or job["status"] == "completed":
@@ -194,7 +230,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
 
 async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
     for job in await store.list_jobs():
-        if job["job_type"] == "product_generation" and job["status"] in {"pending", "retrying"}:
+        if job["job_type"] in {"product_generation", "opportunity_preflight"} and job["status"] in {"pending", "retrying"}:
             await queue.enqueue(str(job["id"]))
 
 
@@ -202,13 +238,17 @@ async def run() -> None:
     settings = get_settings()
     store = PersistentStore(SupabaseREST(settings))
     queue = JobQueue(settings.redis_url)
-    logger.info("Hermes Pro worker started; queue=hermes:jobs:product_generation")
+    logger.info("Hermes Pro worker started; queue=hermes:jobs")
     try:
         await recover_pending(store, queue)
         while True:
             job_id = await queue.dequeue(timeout=10)
             if job_id:
-                await process_product(job_id, store, queue)
+                job = await store.get_job(job_id)
+                if job and job.get("job_type") == "opportunity_preflight":
+                    await process_opportunity_preflight(job_id, store, queue)
+                else:
+                    await process_product(job_id, store, queue)
             else:
                 await recover_pending(store, queue)
     finally:
