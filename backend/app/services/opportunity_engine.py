@@ -236,7 +236,7 @@ class OpportunityEngine:
                     issues = []
                     if response.status_code >= 400:
                         issues.append("site retorna erro HTTP")
-                    if "<meta name="viewport"" not in lower and "name='viewport'" not in lower:
+                    if '<meta name="viewport"' not in lower and "name='viewport'" not in lower:
                         issues.append("sem viewport responsivo detectável")
                     if "<title" not in lower or not parser.title.strip():
                         issues.append("sem título HTML detectável")
