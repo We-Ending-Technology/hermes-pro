@@ -23,7 +23,7 @@ from .services.radar import radar_service
 from .services.opportunity_engine import OpportunityEngine, OpportunityHunter
 from .services.sales import SalesService
 from .worker_runtime import run_worker_cycle
-from worker.main import process_product, recover_pending
+from worker.main import process_opportunity_preflight, process_product, recover_pending
 
 settings = get_settings()
 ai_gateway = build_ai_gateway(settings)
@@ -42,7 +42,13 @@ async def embedded_worker() -> None:
         try:
             await recover_pending(store, queue)
             while True:
-                await run_worker_cycle(store, queue, process_product)
+                job_id = await queue.dequeue(timeout=10)
+                if job_id:
+                    job = await store.get_job(job_id)
+                    if job and job.get("job_type") == "opportunity_preflight":
+                        await process_opportunity_preflight(job_id, store, queue)
+                    elif job:
+                        await process_product(job_id, store, queue)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -262,8 +268,13 @@ async def queue_opportunity(opportunity_id: str) -> dict:
     rows = await db.select("hermes_opportunities", params={"select":"*","id":f"eq.{opportunity_id}","limit":"1"})
     if not rows:
         raise HTTPException(status_code=404, detail="opportunity not found")
+    opportunity = rows[0]
+    if opportunity.get("status") not in {"approved", "ready_to_apply"}:
+        raise HTTPException(status_code=409, detail=f"opportunity status não permite fila: {opportunity.get('status')}")
+    job = await store.create_opportunity_job(opportunity_id)
+    await queue.enqueue(str(job["id"]))
     await db.update("hermes_opportunities", {"status":"ready_to_apply","application_status":"queued"}, where={"id":f"eq.{opportunity_id}"})
-    return {"status":"queued","message":"Fila criada. O envio só ocorre com integração/autorização válida."}
+    return {"status":"queued","job_id":str(job["id"]),"message":"Preflight entrou na fila. Nenhum envio externo é alegado até o provedor ser validado."}
 
 @app.post("/api/v1/products/{product_id}/quality", response_model=QualityResponse)
 async def quality(product_id: str, product: dict) -> QualityResponse:
