@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     hotmart_webhook_token: str | None = Field(default=None, validation_alias="HOTMART_WEBHOOK_TOKEN")
     telegram_bot_token: str | None = Field(default=None, validation_alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: str | None = Field(default=None, validation_alias="TELEGRAM_CHAT_ID")
+    freelancer_client_id: str | None = Field(default=None, validation_alias="FREELANCER_CLIENT_ID")
+    freelancer_client_secret: str | None = Field(default=None, validation_alias="FREELANCER_CLIENT_SECRET")
+    freelancer_access_token: str | None = Field(default=None, validation_alias="FREELANCER_ACCESS_TOKEN")
+    radar_source_urls: str = Field(default="", validation_alias="RADAR_SOURCE_URLS")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
