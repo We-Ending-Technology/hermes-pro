@@ -34,6 +34,7 @@ queue = JobQueue(settings.redis_url)
 sales_service = SalesService(db)
 analytics_service = AnalyticsService(db)
 opportunity_engine = OpportunityEngine(db, settings)
+opportunity_hunter = OpportunityHunter(db, settings)
 
 
 async def embedded_worker() -> None:
