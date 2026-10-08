@@ -27,7 +27,17 @@ class Settings(BaseSettings):
     freelancer_client_id: str | None = Field(default=None, validation_alias="FREELANCER_CLIENT_ID")
     freelancer_client_secret: str | None = Field(default=None, validation_alias="FREELANCER_CLIENT_SECRET")
     freelancer_access_token: str | None = Field(default=None, validation_alias="FREELANCER_ACCESS_TOKEN")
+    canva_client_id: str | None = Field(default=None, validation_alias="CANVA_CLIENT_ID")
+    canva_client_secret: str | None = Field(default=None, validation_alias="CANVA_CLIENT_SECRET")
+    upwork_client_id: str | None = Field(default=None, validation_alias="UPWORK_CLIENT_ID")
+    upwork_client_secret: str | None = Field(default=None, validation_alias="UPWORK_CLIENT_SECRET")
+    upwork_access_token: str | None = Field(default=None, validation_alias="UPWORK_ACCESS_TOKEN")
+    pippit_api_key: str | None = Field(default=None, validation_alias="PIPPIT_API_KEY")
+    firecrawl_api_key: str | None = Field(default=None, validation_alias="FIRECRAWL_API_KEY")
     radar_source_urls: str = Field(default="", validation_alias="RADAR_SOURCE_URLS")
+    radar_min_score: int = Field(default=65, validation_alias="RADAR_MIN_SCORE")
+    auto_apply_enabled: bool = Field(default=False, validation_alias="AUTO_APPLY_ENABLED")
+    max_applications_per_day: int = Field(default=5, validation_alias="MAX_APPLICATIONS_PER_DAY")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
