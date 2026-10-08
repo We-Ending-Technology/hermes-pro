@@ -68,7 +68,7 @@ class OpportunityEngine:
         now=datetime.now(timezone.utc).isoformat()
         for x in top:
             try:
-                await self.db.insert("hermes_opportunities",{"source":x.source,"title":x.title,"url":x.url,"summary":x.summary,"score":x.score,"difficulty":x.difficulty,"suggested_price":x.suggested_price,"currency":"BRL","proposal":x.proposal,"status":"approved","application_status":"not_attempted","created_at":now,"updated_at":now})
+                await self.db.insert("hermes_opportunities",{"type":"service","source":x.source,"source_url":x.url,"title":x.title,"description":x.summary,"url":x.url,"summary":x.summary,"signals":{"python":100},"score":x.score,"confidence":90,"difficulty":x.difficulty,"suggested_price":x.suggested_price,"currency":"BRL","proposal":x.proposal,"status":"approved","application_status":"not_attempted","idempotency_key":x.source+":"+x.url,"metadata":{"radar":"autonomous"},"created_at":now,"updated_at":now})
             except Exception:
                 pass
         return {"collected":len(items),"approved":len([x for x in items if not x.rejection_reason]),"top":[x.__dict__ for x in top],"ran_at":now}
