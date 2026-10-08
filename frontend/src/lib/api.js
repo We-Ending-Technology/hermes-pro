@@ -21,6 +21,8 @@ export const api = {
   product: (id) => request(`/api/v1/products/${id}`),
   job: (id) => request(`/api/v1/jobs/${id}`),
   radar: (payload) => request("/api/v1/radar", payload ? { method: "POST", body: JSON.stringify(payload) } : {}),
+  runRadar: (limit = 1000) => request(`/api/v1/radar/run?limit=${limit}`, { method: "POST" }),
+  opportunities: (limit = 10) => request(`/api/v1/opportunities?limit=${limit}`),
   sales: () => request("/api/v1/sales"),
   analytics: () => request("/api/v1/analytics"),
   agents: () => request("/api/v1/agents"),

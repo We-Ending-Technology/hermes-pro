@@ -14,8 +14,10 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
-      - key: DATABASE_URL
+      - key: OPENAI_API_KEY
         sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5.6-luna
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SECRET_KEY
@@ -24,17 +26,18 @@ services:
         sync: false
       - key: CORS_ORIGINS
         sync: false
-      - key: HOTMART_CLIENT_ID
-        sync: false
-      - key: HOTMART_CLIENT_SECRET
-        sync: false
-      - key: HOTMART_WEBHOOK_TOKEN
-        sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
-
+      - key: FREELANCER_CLIENT_ID
+        sync: false
+      - key: FREELANCER_CLIENT_SECRET
+        sync: false
+      - key: FREELANCER_ACCESS_TOKEN
+        sync: false
+      - key: RADAR_SOURCE_URLS
+        sync: false
   - type: worker
     name: hermes-pro-worker
     runtime: python
@@ -49,21 +52,24 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
-      - key: DATABASE_URL
+      - key: OPENAI_API_KEY
         sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5.6-luna
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SECRET_KEY
         sync: false
       - key: REDIS_URL
         sync: false
-
+      - key: RADAR_SOURCE_URLS
+        sync: false
   - type: cron
-    name: hermes-pro-maintenance
+    name: hermes-pro-radar
     runtime: python
-    schedule: "0 3 * * *"
+    schedule: "0 12 * * *"
     buildCommand: pip install .
-    startCommand: python -c "print('maintenance placeholder: no production automation enabled')"
+    startCommand: python -c "import httpx; httpx.post('https://hermes-pro-api-commercial.onrender.com/api/v1/radar/run?limit=1000', timeout=120)"
     envVars:
       - key: APP_ENV
         value: production

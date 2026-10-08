@@ -20,6 +20,7 @@ from .services.integrations import integration_service
 from .services.persistence import PersistentStore
 from .services.quality import quality_service
 from .services.radar import radar_service
+from .services.opportunity_engine import OpportunityEngine
 from .services.sales import SalesService
 from .worker_runtime import run_worker_cycle
 from worker.main import process_product, recover_pending
@@ -32,6 +33,7 @@ store = PersistentStore(db)
 queue = JobQueue(settings.redis_url)
 sales_service = SalesService(db)
 analytics_service = AnalyticsService(db)
+opportunity_engine = OpportunityEngine(db, settings)
 
 
 async def embedded_worker() -> None:
@@ -216,6 +218,31 @@ async def radar_default() -> RadarResponse:
     result = radar_service.score({})
     return RadarResponse(score=result.score, confidence=result.confidence, dimensions=result.dimensions, findings=result.findings)
 
+
+@app.post("/api/v1/radar/run", response_model=RadarRunResponse)
+async def radar_run(limit: int = 1000) -> RadarRunResponse:
+    if limit < 1 or limit > 1000:
+        raise HTTPException(status_code=400, detail="limit deve estar entre 1 e 1000")
+    try:
+        return RadarRunResponse(**await opportunity_engine.run(limit=limit))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Radar não conseguiu concluir a coleta: {exc}") from exc
+
+@app.get("/api/v1/opportunities", response_model=list[OpportunityResponse])
+async def opportunities(limit: int = 10) -> list[OpportunityResponse]:
+    try:
+        rows = await db.select("hermes_opportunities", params={"select": "*", "status": "eq.approved", "order": "score.desc,created_at.desc", "limit": str(min(max(limit, 1), 100))})
+    except SupabaseError:
+        return []
+    return [OpportunityResponse(id=str(x["id"]), source=x["source"], title=x["title"], url=x["url"], summary=x.get("summary",""), score=x["score"], difficulty=x["difficulty"], suggested_price=x.get("suggested_price"), currency=x.get("currency","BRL"), proposal=x.get("proposal",""), status=x.get("status","approved"), application_status=x.get("application_status","not_attempted"), created_at=x.get("created_at")) for x in rows]
+
+@app.post("/api/v1/opportunities/{opportunity_id}/queue")
+async def queue_opportunity(opportunity_id: str) -> dict:
+    rows = await db.select("hermes_opportunities", params={"select":"*","id":f"eq.{opportunity_id}","limit":"1"})
+    if not rows:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+    await db.update("hermes_opportunities", {"status":"ready_to_apply","application_status":"queued"}, where={"id":f"eq.{opportunity_id}"})
+    return {"status":"queued","message":"Fila criada. O envio só ocorre com integração/autorização válida."}
 
 @app.post("/api/v1/products/{product_id}/quality", response_model=QualityResponse)
 async def quality(product_id: str, product: dict) -> QualityResponse:

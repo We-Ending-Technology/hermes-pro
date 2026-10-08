@@ -64,6 +64,27 @@ class RadarResponse(BaseModel):
     dimensions: dict[str, int]
     findings: list[str]
 
+class OpportunityResponse(BaseModel):
+    id: str | None = None
+    source: str
+    title: str
+    url: str
+    summary: str = ""
+    score: int
+    difficulty: str
+    suggested_price: float | None = None
+    currency: str = "BRL"
+    proposal: str = ""
+    status: str = "approved"
+    application_status: str = "not_attempted"
+    created_at: datetime | None = None
+
+class RadarRunResponse(BaseModel):
+    collected: int
+    approved: int
+    top: list[dict[str, Any]]
+    ran_at: str
+
 class QualityResponse(BaseModel):
     score: int
     decision: str
