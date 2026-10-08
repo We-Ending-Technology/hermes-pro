@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
+import Radar from "./views/Radar";
 
 const API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-m7wd.onrender.com";
-const nav = ["Início", "Hermes", "Fábrica", "Produtos", "Jobs", "Agentes"];
+const nav = ["Início", "Hermes", "Radar", "Fábrica", "Produtos", "Jobs", "Agentes"];
 
 function App() {
   const [view, setView] = useState("Início");
@@ -63,6 +64,7 @@ function App() {
       <header className="topbar"><div><span className="kicker">HERMES PRO</span><h1>{view}</h1></div><span className="api-label"><i className={online ? "online" : "offline"}></i>{online ? "API conectada" : "Aguardando API"}</span></header>
       {notice && <div className="notice">{notice}<button onClick={() => setNotice("")}>×</button></div>}
       {view === "Início" && <Home products={products} jobs={jobs} go={setView} />}
+      {view === "Radar" && <Radar />}
       {view === "Hermes" && <Chat chat={chat} input={chatInput} setInput={setChatInput} send={sendChat} />}
       {view === "Fábrica" && <Factory topic={topic} setTopic={setTopic} submit={createProduct} />}
       {view === "Produtos" && <Products items={products} />}
