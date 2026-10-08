@@ -1,0 +1,26 @@
+name: Hermes Radar
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  radar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Health check
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 30 \
+            https://hermes-pro-api-m7wd.onrender.com/health
+      - name: Run Radar
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 180 \
+            -X POST \
+            "https://hermes-pro-api-m7wd.onrender.com/api/v1/radar/run?limit=1000"
