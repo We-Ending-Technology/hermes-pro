@@ -8,6 +8,12 @@ services:
     envVars:
       - key: APP_ENV
         value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: RADAR_SOURCE_URLS
+        sync: false
       - key: AI_PROVIDER
         value: gemini
       - key: GEMINI_API_KEY
@@ -69,7 +75,7 @@ services:
     runtime: python
     schedule: "0 12 * * *"
     buildCommand: pip install .
-    startCommand: python -c "import httpx; httpx.post('https://hermes-pro-api-commercial.onrender.com/api/v1/radar/run?limit=1000', timeout=120)"
+    startCommand: python -c "import asyncio; from backend.app.core.config import get_settings; from backend.app.db.supabase import SupabaseREST; from backend.app.services.opportunity_engine import OpportunityEngine; s=get_settings(); asyncio.run(OpportunityEngine(SupabaseREST(s),s).run(1000))"
     envVars:
       - key: APP_ENV
         value: production
