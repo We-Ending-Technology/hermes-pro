@@ -91,7 +91,7 @@ services:
     runtime: python
     schedule: "0 12 * * *"
     buildCommand: pip install .
-    startCommand: python -c "import asyncio; from backend.app.core.config import get_settings; from backend.app.db.supabase import SupabaseREST; from backend.app.services.opportunity_engine import OpportunityEngine; s=get_settings(); asyncio.run(OpportunityHunter(SupabaseREST(s),s).cycle(1000))"
+    startCommand: python -c "import asyncio; from backend.app.core.config import get_settings; from backend.app.db.supabase import SupabaseREST; from backend.app.services.opportunity_engine import OpportunityHunter; s=get_settings(); asyncio.run(OpportunityHunter(SupabaseREST(s),s).cycle(1000))"
     envVars:
       - key: APP_ENV
         value: production
