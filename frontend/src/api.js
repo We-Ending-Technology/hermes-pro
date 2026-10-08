@@ -19,7 +19,7 @@ async function request(base, path, options = {}) {
 }
 
 export async function call(path, options = {}) {
-  const bases = import.meta.env.DEV ? [DIRECT_API] : [PROXY_API, DIRECT_API];
+  const bases = import.meta.env.DEV ? [DIRECT_API] : [PROXY_API, DIRECT_API].filter(Boolean);
   let lastError;
   for (const base of bases) {
     try { return await request(base, path, options); } catch (error) { lastError = error; }
