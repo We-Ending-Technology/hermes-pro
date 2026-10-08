@@ -70,6 +70,44 @@ class _Parser(HTMLParser):
             self.text = []
 
 
+class OpportunityHunter:
+    """Controls recurring acquisition cycles and prevents rediscovery of the same work."""
+    def __init__(self, db, settings):
+        self.db, self.settings = db, settings
+
+    async def _seen_keys(self) -> set[str]:
+        try:
+            rows = await self.db.select("hermes_opportunities", params={"select":"idempotency_key", "limit":"5000"})
+            return {r.get("idempotency_key") for r in (rows or []) if r.get("idempotency_key")}
+        except Exception:
+            return set()
+
+    def rank(self, items: list[Opportunity]) -> list[Opportunity]:
+        # Expected-return heuristic: value x fit x confidence, penalized by difficulty.
+        for item in items:
+            price = item.suggested_price or 0
+            difficulty_penalty = {"baixa": 1.0, "média": .82, "alta": .62, "unknown": .70}.get(item.difficulty, .70)
+            recurring = 1.15 if item.opportunity_type in {"local_service", "affiliate"} else 1.0
+            item.metadata["expected_return"] = round(price * (item.score / 100) * difficulty_penalty * recurring, 2)
+        return sorted(items, key=lambda x: (x.metadata.get("expected_return", 0), x.score), reverse=True)
+
+    async def cycle(self, limit: int = 1000):
+        seen = await self._seen_keys()
+        engine = OpportunityEngine(self.db, self.settings)
+        result = await engine.run(limit)
+        fresh = [x for x in result.get("top", []) if engine.canonical(x["url"]) not in seen]
+        ranked = self.rank([Opportunity(**{k:v for k,v in x.items() if k in Opportunity.__dataclass_fields__}) for x in fresh])
+        return {
+            **result,
+            "hunter": {
+                "new": len(ranked),
+                "duplicates_skipped": max(0, len(result.get("top", [])) - len(ranked)),
+                "ranking": [x.__dict__ for x in ranked[:50]],
+                "policy": "expected_return",
+            },
+        }
+
+
 class OpportunityEngine:
     """Multi-channel acquisition radar.
 
