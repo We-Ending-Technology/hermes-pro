@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { call, diagnose } from "./api.js";
 import "./style.css";
@@ -28,20 +28,26 @@ function App() {
   const [chatInput, setChatInput] = useState("");
   const [radar, setRadar] = useState(null);
   const [sales, setSales] = useState(null);
-  const [analytics, setAnalytics] = useState(null);
+  const [analytics, setAnalytics] = useState(null);\n  const refreshing = useRef(false);
 
   const refresh = async () => {
+    if (refreshing.current) return;
+    refreshing.current = true;
     setBusy(true);
-    const health = await safeCall("/health");
-    setOnline(Boolean(health?.status === "ok"));
-    const results = await Promise.all([
-      safeCall("/api/v1/dashboard"), safeCall("/api/v1/products"), safeCall("/api/v1/jobs"), safeCall("/api/v1/integrations")
-    ]);
-    if (results[0]) setDashboard(results[0]);
-    if (Array.isArray(results[1])) setProducts(results[1]);
-    if (Array.isArray(results[2])) setJobs(results[2]);
-    if (Array.isArray(results[3])) setIntegrations(results[3]);
-    setBusy(false);
+    try {
+      const health = await safeCall("/health");
+      setOnline(Boolean(health?.status === "ok"));
+      const results = await Promise.all([
+        safeCall("/api/v1/dashboard"), safeCall("/api/v1/products"), safeCall("/api/v1/jobs"), safeCall("/api/v1/integrations")
+      ]);
+      if (results[0]) setDashboard(results[0]);
+      if (Array.isArray(results[1])) setProducts(results[1]);
+      if (Array.isArray(results[2])) setJobs(results[2]);
+      if (Array.isArray(results[3])) setIntegrations(results[3]);
+    } finally {
+      refreshing.current = false;
+      setBusy(false);
+    }
   };
 
   const safeCall = async (path, options) => {
@@ -51,7 +57,7 @@ function App() {
 
   useEffect(() => {
     refresh();
-    const timer = setInterval(refresh, 10000);
+    const timer = setInterval(refresh, 30000);
     return () => clearInterval(timer);
   }, []);
 
