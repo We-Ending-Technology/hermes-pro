@@ -8,12 +8,6 @@ services:
     envVars:
       - key: APP_ENV
         value: production
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SECRET_KEY
-        sync: false
-      - key: RADAR_SOURCE_URLS
-        sync: false
       - key: AI_PROVIDER
         value: gemini
       - key: GEMINI_API_KEY
@@ -44,6 +38,7 @@ services:
         sync: false
       - key: RADAR_SOURCE_URLS
         sync: false
+
   - type: worker
     name: hermes-pro-worker
     runtime: python
@@ -70,6 +65,7 @@ services:
         sync: false
       - key: RADAR_SOURCE_URLS
         sync: false
+
   - type: cron
     name: hermes-pro-radar
     runtime: python
@@ -79,3 +75,9 @@ services:
     envVars:
       - key: APP_ENV
         value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: RADAR_SOURCE_URLS
+        sync: false
