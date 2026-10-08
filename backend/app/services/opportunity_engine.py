@@ -92,16 +92,14 @@ class OpportunityHunter:
         return sorted(items, key=lambda x: (x.metadata.get("expected_return", 0), x.score), reverse=True)
 
     async def cycle(self, limit: int = 1000):
-        seen = await self._seen_keys()
         engine = OpportunityEngine(self.db, self.settings)
         result = await engine.run(limit)
-        fresh = [x for x in result.get("top", []) if engine.canonical(x["url"]) not in seen]
-        ranked = self.rank([Opportunity(**{k:v for k,v in x.items() if k in Opportunity.__dataclass_fields__}) for x in fresh])
+        ranked = self.rank([Opportunity(**{k:v for k,v in x.items() if k in Opportunity.__dataclass_fields__}) for x in result.get("top", [])])
         return {
             **result,
             "hunter": {
-                "new": len(ranked),
-                "duplicates_skipped": max(0, len(result.get("top", [])) - len(ranked)),
+                "new": result.get("new", len(ranked)),
+                "duplicates_skipped": result.get("duplicates_skipped", 0),
                 "ranking": [x.__dict__ for x in ranked[:50]],
                 "policy": "expected_return",
             },
@@ -352,8 +350,19 @@ class OpportunityEngine:
         top = sorted([x for x in items if not x.rejection_reason and x.score >= minimum], key=lambda x: x.score, reverse=True)[:50]
         now = datetime.now(timezone.utc).isoformat()
         persisted = 0
+        try:
+            existing_rows = await self.db.select("hermes_opportunities", params={"select":"idempotency_key", "limit":"5000"})
+            existing_keys = {r.get("idempotency_key") for r in (existing_rows or []) if r.get("idempotency_key")}
+        except Exception:
+            existing_keys = set()
 
+        fresh = []
         for item in top:
+            key = item.opportunity_type + ":" + self.canonical(item.url)
+            if key not in existing_keys:
+                fresh.append(item)
+
+        for item in fresh:
             try:
                 await self.db.insert("hermes_opportunities", {
                     "type": item.opportunity_type,
@@ -384,6 +393,8 @@ class OpportunityEngine:
         return {
             "collected": len(items),
             "approved": len(top),
+            "new": len(fresh),
+            "duplicates_skipped": max(0, len(top) - len(fresh)),
             "persisted": persisted,
             "channels": {
                 "internet_jobs": len(jobs),
