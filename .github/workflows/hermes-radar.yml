@@ -1,0 +1,27 @@
+name: Hermes Autonomous Radar
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/hermes-foundation
+  schedule:
+    - cron: "*/15 * * * *"
+
+jobs:
+  radar:
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - name: Wake Hermes and run Radar
+        env:
+          HERMES_API: https://hermes-pro-api-m7wd.onrender.com
+        run: |
+          set -e
+          echo "Waking Hermes API..."
+          curl --fail --silent --show-error --max-time 90 "$HERMES_API/health"
+          echo
+          echo "Running autonomous Radar..."
+          curl --fail --silent --show-error --max-time 240 -X POST "$HERMES_API/api/v1/radar/run?limit=1000"             -H "Accept: application/json"
+          echo
+          echo "Radar cycle completed."
