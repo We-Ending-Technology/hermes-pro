@@ -164,6 +164,77 @@ class OpportunityEngine:
                         break
         return list(results.values())
 
+    async def collect_osm_local(self, limit: int = 100) -> list[Opportunity]:
+        """Credential-free local discovery fallback using OpenStreetMap/Overpass."""
+        if os.getenv("RADAR_USE_OSM_LOCAL", "true").lower() not in {"1", "true", "yes", "on"}:
+            return []
+        city = os.getenv("RADAR_LOCAL_CITY", "Arcos, MG, Brasil")
+        try:
+            async with httpx.AsyncClient(timeout=20, follow_redirects=True, headers={
+                **self.http_headers,
+                "User-Agent": "Hermes-Pro-Radar/2.0 (local-business-discovery)",
+            }) as client:
+                geo = await client.get(
+                    "https://nominatim.openstreetmap.org/search",
+                    params={"q": city, "format": "jsonv2", "limit": 1},
+                )
+                geo.raise_for_status()
+                places = geo.json()
+                if not places:
+                    return []
+                lat, lon = places[0]["lat"], places[0]["lon"]
+                query = f"""[out:json][timeout:20];
+(
+  nwr["name"]["shop"](around:10000,{lat},{lon});
+  nwr["name"]["amenity"~"restaurant|cafe|clinic|dentist|gym|bar"](around:10000,{lat},{lon});
+  nwr["name"]["office"](around:10000,{lat},{lon});
+  nwr["name"]["craft"](around:10000,{lat},{lon});
+  nwr["name"]["tourism"~"hotel|guest_house"](around:10000,{lat},{lon});
+);
+out center tags;"""
+                response = await client.post(
+                    "https://overpass-api.de/api/interpreter",
+                    data=query,
+                )
+                response.raise_for_status()
+                elements = response.json().get("elements", [])
+        except Exception:
+            return []
+
+        results: dict[str, Opportunity] = {}
+        for element in elements:
+            tags = element.get("tags") or {}
+            name = tags.get("name")
+            if not name:
+                continue
+            website = tags.get("website") or tags.get("contact:website")
+            maps_url = f"https://www.openstreetmap.org/{element.get('type')}/{element.get('id')}"
+            key = f"osm:{element.get('type')}:{element.get('id')}"
+            if key in results:
+                continue
+            results[key] = Opportunity(
+                title=f"Oportunidade digital: {name}",
+                url=website or maps_url,
+                source="openstreetmap",
+                summary=f"{name} — negócio/local identificado em {city} por dados públicos do OpenStreetMap."
+                         + (" Não há website informado no registro público." if not website else " Website informado no registro público; será auditado."),
+                opportunity_type="local_service",
+                signals={
+                    "website_missing": not bool(website),
+                    "osm_type": element.get("type"),
+                    "osm_id": element.get("id"),
+                },
+                metadata={
+                    "city": city,
+                    "website": website,
+                    "maps_url": maps_url,
+                    "channel": "local_public_data",
+                },
+            )
+            if len(results) >= limit:
+                break
+        return list(results.values())
+
     async def collect_google_places(self, limit: int = 100) -> list[Opportunity]:
         api_key = os.getenv("GOOGLE_MAPS_API_KEY", "").strip()
         if not api_key:
@@ -342,7 +413,11 @@ class OpportunityEngine:
         return f"{p.scheme}://{p.netloc}{p.path}".rstrip("/")
 
     async def run(self, limit: int = 1000):
-        jobs, locals_, affiliates = await self.collect_jobs(limit), await self.collect_google_places(min(limit, 100)), await self.collect_affiliates(min(limit, 100))
+        jobs = await self.collect_jobs(limit)
+        google_locals = await self.collect_google_places(min(limit, 100))
+        osm_locals = await self.collect_osm_local(min(limit, 100)) if not google_locals else []
+        locals_ = google_locals + osm_locals
+        affiliates = await self.collect_affiliates(min(limit, 100))
         await self.audit_local_websites(locals_)
         items = jobs + locals_ + affiliates
         items = [self.score(x) for x in items]
@@ -399,6 +474,8 @@ class OpportunityEngine:
             "channels": {
                 "internet_jobs": len(jobs),
                 "local_business": len(locals_),
+                "local_google": len(google_locals),
+                "local_osm": len(osm_locals),
                 "affiliate": len(affiliates),
             },
             "top": [x.__dict__ for x in top],
