@@ -38,6 +38,26 @@ services:
         sync: false
       - key: RADAR_SOURCE_URLS
         sync: false
+      - key: RADAR_MIN_SCORE
+        value: "65"
+      - key: AUTO_APPLY_ENABLED
+        value: "false"
+      - key: MAX_APPLICATIONS_PER_DAY
+        value: "5"
+      - key: CANVA_CLIENT_ID
+        sync: false
+      - key: CANVA_CLIENT_SECRET
+        sync: false
+      - key: UPWORK_CLIENT_ID
+        sync: false
+      - key: UPWORK_CLIENT_SECRET
+        sync: false
+      - key: UPWORK_ACCESS_TOKEN
+        sync: false
+      - key: PIPPIT_API_KEY
+        sync: false
+      - key: FIRECRAWL_API_KEY
+        sync: false
 
   - type: worker
     name: hermes-pro-worker

@@ -45,4 +45,4 @@ O arquivo `render.yaml` descreve o serviço web, o worker e as variáveis de amb
 
 ## Escopo desta etapa
 
-A fundação inclui health checks, configuração por ambiente, um endpoint de exemplo, abstração do gateway de IA, registro de agentes, fila em memória para desenvolvimento, worker executável, migration inicial, testes e documentação. Integrações de marketplaces e automação de produção ficam explicitamente fora do escopo.
+A fundação inclui health checks, gateway de IA, agentes, fila/worker, persistência Supabase, fábrica de produtos, Studio, Radar de oportunidades, preparação de propostas, cron diário, dashboard e contratos de integração. Credenciais de serviços externos permanecem fora do Git e entram somente como variáveis de ambiente. O envio automático em marketplaces fica desabilitado por padrão e só pode ser ativado quando houver API/OAuth válido e compatível com as regras da plataforma.

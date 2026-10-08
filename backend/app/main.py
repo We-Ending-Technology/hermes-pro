@@ -155,6 +155,26 @@ async def chat(request: ChatRequest) -> ChatResponse:
 async def integrations() -> list[IntegrationStatus]:
     return [IntegrationStatus(**item) for item in integration_service.status()]
 
+@app.get("/api/v1/readiness")
+async def readiness() -> dict:
+    items = integration_service.status()
+    blocking = [
+        item["name"] for item in items
+        if item["status"] == "not_configured"
+        and item["name"] in {"OpenAI", "Supabase", "Freelancer API"}
+    ]
+    return {
+        "status": "ready_with_credentials" if not blocking else "waiting_for_credentials",
+        "blocking_integrations": blocking,
+        "integrations": items,
+        "automation": {
+            "auto_apply_enabled": settings.auto_apply_enabled,
+            "max_applications_per_day": settings.max_applications_per_day,
+            "radar_min_score": settings.radar_min_score,
+        },
+        "next_step": "Add the missing environment variables in Render and redeploy." if blocking else "Run an end-to-end acquisition test before enabling automatic applications.",
+    }
+
 
 @app.get("/api/v1/jobs", response_model=list[JobResponse])
 async def jobs() -> list[JobResponse]:
