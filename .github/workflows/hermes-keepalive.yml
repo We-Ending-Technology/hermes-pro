@@ -1,0 +1,23 @@
+name: Hermes Keepalive
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "2,12,22,32,42,52 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hermes-keepalive
+  cancel-in-progress: true
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Wake and verify Hermes API
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 60             https://hermes-pro-api-m7wd.onrender.com/health
