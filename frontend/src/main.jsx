@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
-import Radar from "./views/Radar";
 
 const API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-m7wd.onrender.com";
 const nav = ["Início", "Hermes", "Radar", "Fábrica", "Produtos", "Jobs", "Agentes"];
@@ -82,5 +81,67 @@ function Products({ items }) { return <section className="page"><span className=
 function ProductCard({ product }) { const m = product.metadata || {}; const title = product.title || product.topic; return <article className="product-card detailed"><div className="cover-box">{m.cover_url ? <img src={m.cover_url} alt={`Capa de ${title}`} /> : <div><b>H</b><small>{product.current_stage || product.status}</small></div>}</div><div className="product-info"><span className="tag">EBOOK</span><h4>{title}</h4><p>{product.topic}</p><p>Etapa: <strong>{product.current_stage}</strong> · Status: <strong>{product.status}</strong></p>{m.quality_score && <p>Qualidade: {m.quality_score}/100</p>}<div className="asset-actions">{m.pdf_url && <a href={m.pdf_url} target="_blank" rel="noreferrer">Ler PDF</a>}{m.document_url && <a href={m.document_url} target="_blank" rel="noreferrer">Abrir DOCX</a>}{m.cover_url && <a href={m.cover_url} target="_blank" rel="noreferrer">Ver capa</a>}</div></div></article> }
 function Jobs({ items }) { return <section className="page"><span className="kicker violet">ORCHESTRATION</span><h2>Jobs</h2>{items.map(j => <article className="job" key={j.id}><strong>{j.job_type}</strong><span>{j.status}</span><small>{j.attempts}/{j.max_attempts}</small>{j.error_message && <p>{j.error_message}</p>}</article>)}</section> }
 function Agents() { return <section className="page"><span className="kicker violet">AGENT SYSTEM</span><h2>Agentes</h2><div className="agent-grid">{["RADAR","STRATEGIST","WRITER","EDITOR","DESIGNER","PUBLISHER","GUARDIAN"].map(x => <article className="agent" key={x}><strong>{x}</strong><span>standby até existir execução real</span></article>)}</div></section> }
+
+function Radar() {
+  const [items,setItems]=useState([]);
+  const [busy,setBusy]=useState(false);
+  const [notice,setNotice]=useState("");
+
+  async function load() {
+    try {
+      const r=await fetch(API+"/api/v1/opportunities?limit=20");
+      if(!r.ok) throw new Error("Falha ao carregar oportunidades");
+      setItems(await r.json());
+    } catch(e) { setNotice(e.message); }
+  }
+
+  useEffect(()=>{ load(); },[]);
+
+  async function run() {
+    setBusy(true); setNotice("");
+    try {
+      const r=await fetch(API+"/api/v1/radar/run?limit=1000",{method:"POST"});
+      const body=await r.json();
+      if(!r.ok) throw new Error(body.detail || "Falha no Radar");
+      setNotice("Radar concluído: "+(body.opportunities_found ?? 0)+" oportunidades encontradas.");
+      await load();
+    } catch(e) { setNotice(e.message); }
+    finally { setBusy(false); }
+  }
+
+  async function queue(id) {
+    try {
+      const r=await fetch(API+"/api/v1/opportunities/"+id+"/queue",{method:"POST"});
+      const body=await r.json();
+      if(!r.ok) throw new Error(body.detail || "Falha ao preparar oportunidade");
+      setNotice(body.message || "Oportunidade preparada.");
+      await load();
+    } catch(e) { setNotice(e.message); }
+  }
+
+  return <section className="page">
+    <span className="kicker violet">OPPORTUNITY RADAR</span>
+    <h2>Radar de oportunidades</h2>
+    <p>Coleta oportunidades públicas e prepara o próximo passo sem burlar login, CAPTCHA, 2FA ou regras da plataforma.</p>
+    {notice && <div className="notice">{notice}</div>}
+    <button className="primary" onClick={run} disabled={busy}>{busy ? "Executando..." : "↻ Rodar Radar agora"}</button>
+    {items.length===0 ? <p>Nenhuma oportunidade persistida ainda.</p> :
+      <div className="product-grid">{items.map(x=>
+        <article className="product-card detailed" key={x.id}>
+          <div className="product-info">
+            <span className="tag">{x.source}</span>
+            <h4>{x.title}</h4>
+            <p>{x.summary || "Sem resumo disponível."}</p>
+            <p>Score: <strong>{Math.round(Number(x.score||0))}</strong> · {x.difficulty || "—"} · {x.suggested_price ? (x.currency||"BRL")+" "+x.suggested_price : "preço pendente"}</p>
+            <div className="asset-actions">
+              {x.url && <a href={x.url} target="_blank" rel="noreferrer">Abrir projeto</a>}
+              <button onClick={()=>queue(x.id)}>Preparar fila</button>
+            </div>
+          </div>
+        </article>
+      )}</div>
+    }
+  </section>;
+}
 
 createRoot(document.getElementById("root")).render(<App />);
