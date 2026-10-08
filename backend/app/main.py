@@ -20,7 +20,7 @@ from .services.integrations import integration_service
 from .services.persistence import PersistentStore
 from .services.quality import quality_service
 from .services.radar import radar_service
-from .services.opportunity_engine import OpportunityEngine
+from .services.opportunity_engine import OpportunityEngine, OpportunityHunter
 from .services.sales import SalesService
 from .worker_runtime import run_worker_cycle
 from worker.main import process_product, recover_pending
