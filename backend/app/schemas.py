@@ -84,6 +84,11 @@ class RadarRunResponse(BaseModel):
     approved: int
     top: list[dict[str, Any]]
     ran_at: str
+    new: int = 0
+    duplicates_skipped: int = 0
+    persisted: int = 0
+    channels: dict[str, int] = Field(default_factory=dict)
+    hunter: dict[str, Any] = Field(default_factory=dict)
 
 class QualityResponse(BaseModel):
     score: int
