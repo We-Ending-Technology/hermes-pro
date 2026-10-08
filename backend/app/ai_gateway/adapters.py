@@ -15,6 +15,35 @@ class ConfiguredProviderAdapter(AIGateway):
 
 class OpenAIAdapter(ConfiguredProviderAdapter):
     provider = "openai"
+    api_base = "https://api.openai.com/v1"
+
+    async def _available_models(self, client: httpx.AsyncClient) -> list[str]:
+        response = await client.get(
+            f"{self.api_base}/models",
+            headers={"Authorization": f"Bearer {self.api_key or ''}"},
+        )
+        response.raise_for_status()
+        data = response.json()
+        return [str(item.get("id")) for item in data.get("data", []) if item.get("id")]
+
+    async def _resolve_model(self, client: httpx.AsyncClient, exclude: set[str] | None = None) -> str:
+        models = await self._available_models(client)
+        excluded = exclude or set()
+        candidates = [m for m in models if m not in excluded]
+        preferred = (
+            self.model,
+            "gpt-6-luna",
+            "gpt-6.1-luna",
+            "gpt-5.6-sol",
+            "gpt-5.3-codex",
+            "gpt-4.1-mini",
+        )
+        for candidate in preferred:
+            if candidate in candidates:
+                return candidate
+        if candidates:
+            return candidates[0]
+        raise RuntimeError("Nenhum modelo OpenAI disponível para esta chave/projeto")
 
     async def complete(self, prompt: str, *, system: str | None = None) -> AIResponse:
         if not self.api_key:
@@ -24,11 +53,19 @@ class OpenAIAdapter(ConfiguredProviderAdapter):
             input_items.append({"role": "system", "content": system})
         input_items.append({"role": "user", "content": prompt})
         async with httpx.AsyncClient(timeout=90) as client:
+            model = self.model
             response = await client.post(
-                "https://api.openai.com/v1/responses",
+                f"{self.api_base}/responses",
                 headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-                json={"model": self.model, "input": input_items},
+                json={"model": model, "input": input_items},
             )
+            if response.status_code in {400, 404}:
+                model = await self._resolve_model(client, exclude={model})
+                response = await client.post(
+                    f"{self.api_base}/responses",
+                    headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+                    json={"model": model, "input": input_items},
+                )
             response.raise_for_status()
             data = response.json()
         text = data.get("output_text")
@@ -41,7 +78,7 @@ class OpenAIAdapter(ConfiguredProviderAdapter):
             text = "".join(parts) or None
         if not text:
             raise RuntimeError("OpenAI returned an unexpected response")
-        return AIResponse(content=text, provider=self.provider, model=self.model)
+        return AIResponse(content=text, provider=self.provider, model=model)
 
 
 class GeminiAdapter(ConfiguredProviderAdapter):
