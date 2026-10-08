@@ -36,6 +36,19 @@ class PersistentStore:
         product = await self.db.update("hermes_products", {"job_id": job["id"], "updated_at": now}, where={"id": f"eq.{product['id']}"})
         return product, job
 
+    async def create_opportunity_job(self, opportunity_id: str) -> dict[str, Any]:
+        now = datetime.now(timezone.utc).isoformat()
+        existing = await self.db.select("hermes_jobs", params={"select": "*", "job_type": "eq.opportunity_preflight", "payload->>opportunity_id": f"eq.{opportunity_id}", "status": "in.(pending,running,retrying)", "limit": "1"})
+        if existing:
+            return existing[0]
+        return await self.db.insert("hermes_jobs", {
+            "job_type": "opportunity_preflight", "status": JobStatus.PENDING.value,
+            "attempts": 0, "max_attempts": 3,
+            "payload": {"opportunity_id": opportunity_id},
+            "idempotency_key": f"opportunity-preflight:{opportunity_id}",
+            "created_at": now, "updated_at": now,
+        })
+
     async def get_product(self, product_id: str) -> dict[str, Any] | None:
         rows = await self.db.select("hermes_products", params={"select": "*", "id": f"eq.{product_id}", "limit": "1"})
         return rows[0] if rows else None
