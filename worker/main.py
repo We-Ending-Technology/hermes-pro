@@ -249,8 +249,28 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
 
 
 async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
+    """
+    Requeue durable work after a process restart.
+
+    Pending/retrying jobs are always safe to recover. A running job is only
+    recovered when its persisted updated_at timestamp is stale, which prevents
+    a crash/restart from leaving work permanently stuck in "running".
+    """
+    now = datetime.now(timezone.utc)
     for job in await store.list_jobs():
-        if job["job_type"] in {"product_generation", "opportunity_preflight"} and job["status"] in {"pending", "retrying"}:
+        if job["job_type"] not in {"product_generation", "opportunity_preflight"}:
+            continue
+        status = job.get("status")
+        should_recover = status in {"pending", "retrying"}
+        if status == "running":
+            raw_updated = job.get("updated_at") or job.get("created_at")
+            try:
+                updated = datetime.fromisoformat(str(raw_updated).replace("Z", "+00:00"))
+                should_recover = (now - updated).total_seconds() >= 20 * 60
+            except (TypeError, ValueError):
+                should_recover = True
+        if should_recover:
+            await store.update_job(str(job["id"]), "pending", error_message=None)
             await queue.enqueue(str(job["id"]))
 
 
