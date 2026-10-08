@@ -64,11 +64,13 @@ class OpportunityEngine:
         p=urlparse(url); return f"{p.scheme}://{p.netloc}{p.path}".rstrip("/")
     async def run(self,limit=1000):
         items=[self.score(x) for x in await self.collect(limit)]
-        top=sorted([x for x in items if not x.rejection_reason],key=lambda x:x.score,reverse=True)[:10]
+        minimum = max(0, min(100, self.settings.radar_min_score))
+        top=sorted([x for x in items if not x.rejection_reason and x.score >= minimum],key=lambda x:x.score,reverse=True)[:10]
         now=datetime.now(timezone.utc).isoformat()
         for x in top:
             try:
                 await self.db.insert("hermes_opportunities",{"type":"service","source":x.source,"source_url":x.url,"title":x.title,"description":x.summary,"url":x.url,"summary":x.summary,"signals":{"python":100},"score":x.score,"confidence":90,"difficulty":x.difficulty,"suggested_price":x.suggested_price,"currency":"BRL","proposal":x.proposal,"status":"approved","application_status":"not_attempted","idempotency_key":x.source+":"+x.url,"metadata":{"radar":"autonomous"},"created_at":now,"updated_at":now})
             except Exception:
                 pass
-        return {"collected":len(items),"approved":len([x for x in items if not x.rejection_reason]),"top":[x.__dict__ for x in top],"ran_at":now}
+        approved = [x for x in items if not x.rejection_reason and x.score >= minimum]
+        return {"collected":len(items),"approved":len(approved),"top":[x.__dict__ for x in top],"ran_at":now}
