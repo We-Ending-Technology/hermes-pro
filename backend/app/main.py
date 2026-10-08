@@ -245,7 +245,7 @@ async def radar_run(limit: int = 1000) -> RadarRunResponse:
     if limit < 1 or limit > 1000:
         raise HTTPException(status_code=400, detail="limit deve estar entre 1 e 1000")
     try:
-        return RadarRunResponse(**await opportunity_engine.run(limit=limit))
+        return RadarRunResponse(**await opportunity_hunter.cycle(limit=limit))
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Radar não conseguiu concluir a coleta: {exc}") from exc
 
