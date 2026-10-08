@@ -6,33 +6,3 @@
 .themed-scroll{scrollbar-color:#6e60d9 transparent;scrollbar-width:thin}
 ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#2d3560;border-radius:99px}::-webkit-scrollbar-thumb:hover{background:#6558bd}
 :focus-visible{outline:2px solid #a798ff;outline-offset:3px}
-\n
-/* Production polish for the current Command Center markup */
-.cover-box{height:205px;width:100%;display:grid;place-items:center;overflow:hidden;margin-bottom:15px;border:1px solid rgba(155,131,255,.22);border-radius:11px;background:radial-gradient(circle at 50% 35%,rgba(139,116,255,.28),transparent 42%),linear-gradient(145deg,#17143b,#30235f 58%,#102b50);box-shadow:inset 0 1px rgba(255,255,255,.08)}
-.cover-box img{width:100%;height:100%;object-fit:cover;display:block}
-.cover-box b{font:800 58px 'Plus Jakarta Sans';color:#c9c0ff;filter:drop-shadow(0 10px 25px rgba(121,101,255,.4))}
-.cover-box small{display:block;margin-top:5px;color:#77e0dc;font:8px 'DM Mono';letter-spacing:.12em;text-transform:uppercase}
-.asset-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:14px}
-.asset-actions a,.asset-actions button{display:inline-flex;align-items:center;justify-content:center;padding:8px 10px;border:1px solid var(--line);border-radius:8px;color:#b9b0ff;background:rgba(132,111,255,.07);font-size:10px;text-decoration:none}
-.asset-actions a:hover,.asset-actions button:hover{border-color:var(--line-hi);background:rgba(132,111,255,.14)}
-.asset-actions button{cursor:pointer}
-.product-card.detailed{min-height:0}
-.product-card.detailed .product-info h4{font-size:14px}
-.page>h2{margin:10px 0 10px;font:700 39px 'Plus Jakarta Sans';letter-spacing:-.07em}
-.page>p{color:var(--muted);font-size:13px;line-height:1.75;max-width:760px}
-.page>h3{margin:42px 0 16px;font:700 19px 'Plus Jakarta Sans';letter-spacing:-.05em}
-.agent span{margin-left:auto;color:#687493;font:9px 'DM Mono';text-align:right}
-.agent strong{font:700 12px 'Plus Jakarta Sans'}
-.job{grid-template-columns:1.4fr auto auto;gap:16px}
-.job span{color:#b6a9ff;font:9px 'DM Mono';text-transform:uppercase}
-.job p{grid-column:1/-1;color:#ff9ab0;font-size:10px;margin:0}
-.sidebar>button:last-child{margin-top:auto;border:1px solid var(--line);border-radius:9px;padding:10px;color:#8e99b6;background:rgba(255,255,255,.025);font-size:10px}
-.sidebar>button:last-child:hover{border-color:var(--line-hi);color:#d4d8ea;background:rgba(132,111,255,.08)}
-button:disabled{opacity:.55;cursor:wait;transform:none!important}
-@media(max-width:680px){
-  .page>h2{font-size:30px}
-  .cover-box{height:180px}
-  .agent span{text-align:left;margin-left:auto}
-  .job{grid-template-columns:1fr auto}
-  .job small{grid-column:1/-1}
-}
