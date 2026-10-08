@@ -110,8 +110,27 @@ async def process_opportunity_preflight(job_id: str, store: PersistentStore, que
         opportunity = rows[0]
         source = str(opportunity.get("source") or "").lower()
         settings = get_settings()
-        if source == "www.freelancer.com" and not settings.freelancer_access_token:
-            raise RuntimeError("Freelancer API ainda não está autenticada/validada")
+        if source == "www.freelancer.com":
+            if not settings.freelancer_access_token:
+                raise RuntimeError("Freelancer API ainda não está configurada")
+            async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+                response = await client.get(
+                    "https://www.freelancer.com/api/users/0.1/self/",
+                    headers={
+                        "Authorization": f"Bearer {settings.freelancer_access_token}",
+                        "freelancer-oauth-v1": settings.freelancer_access_token,
+                    },
+                )
+            if response.status_code in {401, 403}:
+                raise RuntimeError(f"Freelancer API rejeitou a credencial (HTTP {response.status_code})")
+            if response.status_code >= 400:
+                raise RuntimeError(f"Freelancer API retornou HTTP {response.status_code}")
+            try:
+                profile = response.json()
+            except Exception as exc:
+                raise RuntimeError("Freelancer API respondeu fora do formato JSON esperado") from exc
+            if not profile:
+                raise RuntimeError("Freelancer API respondeu sem perfil autenticado")
         if settings.auto_apply_enabled:
             # No provider-specific submission is performed until the provider API contract is validated.
             raise RuntimeError("AUTO_APPLY_ENABLED exige um executor de provedor validado; envio não foi executado")
