@@ -17,6 +17,7 @@ async function request(base, path, options = {}) {
   }
   return body;
 }
+
 export async function call(path, options = {}) {
   const bases = import.meta.env.DEV ? [DIRECT_API] : [PROXY_API, DIRECT_API];
   let lastError;
@@ -25,6 +26,7 @@ export async function call(path, options = {}) {
   }
   throw new Error("Backend indisponível: " + (lastError?.message || "falha de conexão"));
 }
+
 export async function diagnose() {
   const checks = [];
   const started = Date.now();
