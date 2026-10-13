@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "Hermes Pro API"
     app_env: str = "development"
+    hermes_api_token: str | None = Field(default=None, validation_alias="HERMES_API_TOKEN")
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     log_level: str = "INFO"
