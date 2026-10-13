@@ -1,8 +1,10 @@
 from contextlib import asynccontextmanager
+import secrets
 from datetime import date, datetime
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from .ai_gateway.factory import build_ai_gateway
@@ -63,6 +65,19 @@ app.add_middleware(
 )
 app.include_router(commercial_router)
 app.include_router(autonomy_router)
+
+@app.middleware("http")
+async def require_admin_api_token(request: Request, call_next):
+    path = request.url.path
+    # Health/readiness stay public for hosting probes. Hotmart webhooks use their own token.
+    if path.startswith("/api/v1/") and path != "/api/v1/webhooks/hotmart":
+        expected = settings.hermes_api_token
+        supplied = request.headers.get("X-Hermes-API-Key", "")
+        if not expected:
+            return JSONResponse(status_code=503, content={"detail": "API authentication is not configured"})
+        if not supplied or not secrets.compare_digest(supplied, expected):
+            return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+    return await call_next(request)
 
 def product_response(row: dict) -> ProductResponse:
     metadata = dict(row.get("metadata") or {})
