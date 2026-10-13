@@ -1,10 +1,28 @@
 const DIRECT_API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-commercial.onrender.com";
 const PROXY_API = "";
 
+function getAdminToken() {
+  try {
+    const saved = sessionStorage.getItem("hermes_admin_api_token");
+    if (saved) return saved;
+    const entered = window.prompt("Hermes protegido. Cole o valor de HERMES_API_TOKEN nas variáveis do serviço hermes-pro-api-commercial no Render.");
+    if (!entered || !entered.trim()) return "";
+    sessionStorage.setItem("hermes_admin_api_token", entered.trim());
+    return entered.trim();
+  } catch {
+    return "";
+  }
+}
+
 async function request(base, path, options = {}) {
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  if (path.startsWith("/api/v1/") && path !== "/api/v1/webhooks/hotmart") {
+    const token = getAdminToken();
+    if (token) headers["X-Hermes-API-Key"] = token;
+  }
   const response = await fetch(base + path, {
     ...options,
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    headers,
   });
   const text = await response.text();
   let body = {};
