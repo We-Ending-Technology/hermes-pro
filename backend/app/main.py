@@ -1,9 +1,10 @@
 from contextlib import asynccontextmanager
+import asyncio
 import secrets
 from datetime import date, datetime
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -257,11 +258,26 @@ async def cancel_job(job_id: str):
 @app.get("/api/v1/products", response_model=list[ProductResponse])
 async def products(): return [product_response(row) for row in await store.list_products()]
 
+async def _run_inline_product(job_id: str) -> None:
+    """Process product jobs in the API process so generation works before a separate worker is provisioned."""
+    from worker.main import process_product
+
+    class InlineRetryQueue:
+        async def enqueue(self, retry_job_id: str) -> None:
+            asyncio.create_task(_run_inline_product(retry_job_id))
+
+    try:
+        await process_product(job_id, store, InlineRetryQueue())
+    except Exception:
+        import logging
+        logging.getLogger("hermes.inline_worker").exception("inline product job failed: %s", job_id)
+
+
 @app.post("/api/v1/products", response_model=ProductResponse, status_code=202)
-async def create_product(request: ProductCreateRequest):
+async def create_product(request: ProductCreateRequest, background_tasks: BackgroundTasks):
     try:
         product, job = await store.create_product_and_job(request.topic, request.metadata, request.idempotency_key)
-        await queue.enqueue(str(job["id"]))
+        background_tasks.add_task(_run_inline_product, str(job["id"]))
     except SupabaseError as exc: raise HTTPException(status_code=503, detail=str(exc)) from exc
     return product_response(product)
 
