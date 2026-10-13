@@ -160,9 +160,77 @@ async def autonomy_status():
     return {"enabled": settings.autonomy_enabled, "minimum_score": settings.autonomy_min_score, "agents": registry.names()}
 
 @app.get("/api/v1/opportunities")
-async def opportunities():
-    jobs = await store.list_jobs()
-    return [row for row in jobs if row.get("job_type") == "opportunity_pipeline"]
+async def opportunities(limit: int = 20):
+    """Return saved freelance opportunities, not internal queue jobs."""
+    safe_limit = min(max(limit, 1), 100)
+    freelancer_rows = await db.select(
+        "hermes_opportunities",
+        params={"select": "*", "source": "ilike.*freelancer*", "order": "score.desc,created_at.desc", "limit": str(safe_limit)},
+    )
+    local_rows = await db.select(
+        "hermes_opportunities",
+        params={"select": "*", "source": "ilike.*99freelas*", "order": "score.desc,created_at.desc", "limit": str(safe_limit)},
+    )
+    rows = {str(row.get("id")): row for row in [*freelancer_rows, *local_rows]}
+    relevant_terms = ("python", "api", "automation", "automação", "scrap", "excel", "csv", "pdf", "data", "dados", "backend", "integração", "integration", "bot")
+    ranked = []
+    for row in rows.values():
+        text = " ".join(str(row.get(key) or "") for key in ("title", "description", "summary", "proposal")).lower()
+        if not any(term in text for term in relevant_terms):
+            continue
+        row["_relevance"] = sum(1 for term in relevant_terms if term in text)
+        ranked.append(row)
+    ranked.sort(key=lambda row: (row["_relevance"], float(row.get("score") or 0)), reverse=True)
+    for row in ranked:
+        row.pop("_relevance", None)
+    return ranked[:safe_limit]
+
+
+@app.post("/api/v1/opportunities/{opportunity_id}/queue")
+async def queue_opportunity(opportunity_id: str):
+    """Create an honest proposal draft for review; never submits it automatically."""
+    rows = await db.select(
+        "hermes_opportunities",
+        params={"select": "*", "id": f"eq.{opportunity_id}", "limit": "1"},
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+    opportunity = rows[0]
+    title = str(opportunity.get("title") or "").strip()
+    description = str(opportunity.get("description") or opportunity.get("summary") or "").strip()
+    url = str(opportunity.get("url") or opportunity.get("source_url") or "").strip()
+    if not title or not url:
+        raise HTTPException(status_code=422, detail="opportunity is missing a title or source URL")
+    prompt = (
+        "Prepare a truthful Portuguese freelance proposal draft for human review. "
+        "Do not claim experience, credentials, completed work, or facts not provided. "
+        "If the brief is too vague, explicitly ask concise clarification questions and do not invent scope. "
+        "Return only the proposal text.\n"
+        f"Title: {title}\nBrief: {description or '[No detailed brief was captured; ask for requirements.]'}\n"
+        f"Source: {opportunity.get('source') or 'unknown'}\nURL: {url}\n"
+        f"Suggested budget, if any: {opportunity.get('suggested_price') or 'not provided'} {opportunity.get('currency') or 'BRL'}"
+    )
+    draft = await ai_gateway.complete(
+        prompt,
+        system="You draft honest freelance proposals in Brazilian Portuguese. Never say an application was submitted. Keep the draft concise and tailored only to supplied facts.",
+    )
+    metadata = dict(opportunity.get("metadata") or {})
+    metadata["proposal_draft_status"] = "needs_human_review"
+    metadata["proposal_draft_model"] = draft.model
+    metadata["proposal_draft_provider"] = draft.provider
+    await db.update(
+        "hermes_opportunities",
+        {"proposal": draft.content, "status": "proposal_ready", "application_status": "draft_ready", "metadata": metadata},
+        where={"id": f"eq.{opportunity_id}"},
+    )
+    return {
+        "id": opportunity_id,
+        "status": "proposal_ready",
+        "application_status": "draft_ready",
+        "message": "Rascunho preparado. Revise e envie manualmente pela plataforma; nada foi submetido.",
+        "proposal": draft.content,
+        "url": url,
+    }
 
 @app.get("/api/v1/integrations", response_model=list[IntegrationStatus])
 async def integrations(): return [IntegrationStatus(**item) for item in integration_service.status()]
