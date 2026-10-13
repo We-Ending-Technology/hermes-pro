@@ -8,6 +8,8 @@ services:
     envVars:
       - key: APP_ENV
         value: production
+      - key: HERMES_API_TOKEN
+        sync: false
       - key: AI_PROVIDER
         value: gemini
       - key: GEMINI_API_KEY
