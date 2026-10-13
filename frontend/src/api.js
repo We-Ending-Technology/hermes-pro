@@ -1,11 +1,14 @@
 const DIRECT_API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-commercial.onrender.com";
 const PROXY_API = "";
+let rejectedToken = false;
 
 function getAdminToken() {
   try {
     const saved = sessionStorage.getItem("hermes_admin_api_token");
-    if (saved) return saved;
-    const entered = window.prompt("Hermes protegido. Cole o valor de HERMES_API_TOKEN nas variáveis do serviço hermes-pro-api-commercial no Render.");
+    if (saved && !rejectedToken) return saved;
+    if (rejectedToken && saved) sessionStorage.removeItem("hermes_admin_api_token");
+    rejectedToken = false;
+    const entered = window.prompt("Acesso privado do Hermes: cole o HERMES_API_TOKEN já configurado no Render. Isso não é uma nova chave de IA nem do Supabase.");
     if (!entered || !entered.trim()) return "";
     sessionStorage.setItem("hermes_admin_api_token", entered.trim());
     return entered.trim();
@@ -14,19 +17,22 @@ function getAdminToken() {
   }
 }
 
-async function request(base, path, options = {}) {
+async function request(base, path, options = {}, authRetry = true) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (path.startsWith("/api/v1/") && path !== "/api/v1/webhooks/hotmart") {
     const token = getAdminToken();
-    if (token) headers["X-Hermes-API-Key"] = token;
+    if (!token) throw new Error("Acesso privado não informado. Atualize a página e cole o HERMES_API_TOKEN já configurado no Render.");
+    headers["X-Hermes-API-Key"] = token;
   }
-  const response = await fetch(base + path, {
-    ...options,
-    headers,
-  });
+  const response = await fetch(base + path, { ...options, headers });
   const text = await response.text();
   let body = {};
   try { body = text ? JSON.parse(text) : {}; } catch { body = { detail: text }; }
+  if (response.status === 401 && path.startsWith("/api/v1/") && path !== "/api/v1/webhooks/hotmart" && authRetry) {
+    try { sessionStorage.removeItem("hermes_admin_api_token"); } catch {}
+    rejectedToken = true;
+    return request(base, path, options, false);
+  }
   if (!response.ok) {
     const error = new Error(body.detail || ("HTTP " + response.status));
     error.status = response.status;
