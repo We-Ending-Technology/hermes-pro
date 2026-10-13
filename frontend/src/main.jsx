@@ -28,7 +28,8 @@ function App() {
   const [chatInput, setChatInput] = useState("");
   const [radar, setRadar] = useState(null);
   const [sales, setSales] = useState(null);
-  const [analytics, setAnalytics] = useState(null);\n  const refreshing = useRef(false);
+  const [analytics, setAnalytics] = useState(null);
+  const refreshing = useRef(false);
 
   const refresh = async () => {
     if (refreshing.current) return;
