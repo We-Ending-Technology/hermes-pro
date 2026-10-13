@@ -55,7 +55,10 @@ async def hotmart_offers(ucode: str) -> dict[str, Any]:
 @router.post("/api/v1/webhooks/hotmart")
 async def hotmart_webhook(request: Request, x_hotmart_hottok: str | None = Header(default=None)) -> dict[str, Any]:
     expected = settings.hotmart_webhook_token
-    if expected and x_hotmart_hottok != expected:
+    # Fail closed: never accept unsigned webhook events when the secret is missing.
+    if not expected:
+        raise HTTPException(status_code=503, detail="Hotmart webhook authentication is not configured")
+    if not x_hotmart_hottok or x_hotmart_hottok != expected:
         raise HTTPException(status_code=401, detail="invalid Hotmart webhook token")
     payload = await request.json()
     event_type = str(payload.get("event") or payload.get("event_type") or "UNKNOWN")
