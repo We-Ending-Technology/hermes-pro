@@ -36,7 +36,7 @@ function App() {
     refreshing.current = true;
     setBusy(true);
     try {
-      const health = await safeCall("/health");
+      const health = await safeCall("/");
       setOnline(Boolean(health?.status === "ok"));
       const results = await Promise.all([
         safeCall("/api/v1/dashboard"), safeCall("/api/v1/products"), safeCall("/api/v1/jobs"), safeCall("/api/v1/integrations")
