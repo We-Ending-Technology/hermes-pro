@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 import asyncio
+import logging
 import secrets
 from datetime import date, datetime
 from uuid import uuid4
@@ -37,6 +38,61 @@ store = PersistentStore(db)
 sales_service = SalesService(db)
 queue = JobQueue(settings.redis_url)
 autonomy_service = AutonomyService(store, queue)
+autonomy_lock = asyncio.Lock()
+logger = logging.getLogger("hermes.api.autonomy")
+
+
+class InlineOpportunityQueue:
+    async def enqueue(self, job_id: str) -> None:
+        # Retries are driven by the bounded inline loop, not a missing worker.
+        return None
+
+
+async def _process_pending_opportunities() -> list[dict]:
+    from worker.main import MAX_ATTEMPTS, process_opportunity
+
+    processed = []
+    jobs = await store.list_jobs()
+    for job in jobs:
+        if job.get("job_type") != "opportunity_pipeline" or job.get("status") not in {"pending", "retrying"}:
+            continue
+        job_id = str(job["id"])
+        for _ in range(MAX_ATTEMPTS):
+            current = await store.get_job(job_id)
+            if not current or current.get("status") not in {"pending", "retrying"}:
+                break
+            await process_opportunity(job_id, store, InlineOpportunityQueue())
+            current = await store.get_job(job_id)
+            if not current or current.get("status") != "retrying":
+                break
+        final = await store.get_job(job_id)
+        processed.append({"job_id": job_id, "status": final.get("status") if final else "missing"})
+    return processed
+
+
+async def _run_autonomy_once() -> dict:
+    async with autonomy_lock:
+        cycle = await autonomy_service.cycle(settings.autonomy_min_score, enqueue_jobs=False)
+        processed = await _process_pending_opportunities()
+        return {**cycle, "processed_jobs": processed, "scheduler_mode": "inline_api_process"}
+
+
+async def _autonomy_loop() -> None:
+    interval = max(60, int(settings.autonomy_interval_seconds))
+    while True:
+        try:
+            if settings.autonomy_enabled:
+                result = await _run_autonomy_once()
+                logger.info(
+                    "autonomy cycle completed scanned=%s queued=%s processed=%s",
+                    result.get("scanned", 0), result.get("queued", 0), len(result.get("processed_jobs", [])),
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("autonomy cycle failed; will retry next interval")
+        await asyncio.sleep(interval)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -52,8 +108,18 @@ async def lifespan(app: FastAPI):
     for agent_name in AGENT_NAMES:
         if agent_name not in mapped:
             registry.register(PassThroughAgent(agent_name))
-    yield
-    await queue.close()
+    scheduler_task = asyncio.create_task(_autonomy_loop(), name="hermes-autonomy-loop") if settings.autonomy_enabled else None
+    app.state.autonomy_scheduler_mode = "inline_api_process" if scheduler_task else "disabled"
+    try:
+        yield
+    finally:
+        if scheduler_task:
+            scheduler_task.cancel()
+            try:
+                await scheduler_task
+            except asyncio.CancelledError:
+                pass
+        await queue.close()
 
 app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
 app.include_router(commercial_router)
@@ -187,7 +253,7 @@ async def chat(request: ChatRequest):
 async def autonomy_cycle():
     if not settings.autonomy_enabled:
         raise HTTPException(status_code=409, detail="autonomy disabled")
-    return await autonomy_service.cycle(settings.autonomy_min_score)
+    return await _run_autonomy_once()
 
 @app.get("/api/v1/autonomy/status")
 async def autonomy_status():
