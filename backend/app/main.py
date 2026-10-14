@@ -248,6 +248,50 @@ async def run_agent(request: AgentRunRequest):
     output = await agent.run(request.input)
     return AgentRunResponse(run_id=str(uuid4()), agent=request.agent, status="completed", output=output)
 
+@app.post("/api/v1/content/video-package")
+async def create_video_package(request: dict):
+    """Generate an original video content package; does not upload or publish anything."""
+    topic = str(request.get("topic") or "").strip()
+    channel = str(request.get("channel") or "youtube_shorts").strip().lower()
+    allowed_channels = {
+        "youtube_shorts": "YouTube Shorts (vertical, up to 60 seconds)",
+        "youtube_long": "YouTube long-form video (6-10 minutes)",
+        "tiktok": "TikTok vertical video (30-90 seconds)",
+        "instagram_reels": "Instagram Reels (vertical, up to 90 seconds)",
+    }
+    if len(topic) < 5:
+        raise HTTPException(status_code=422, detail="Informe um tema com pelo menos 5 caracteres.")
+    if channel not in allowed_channels:
+        raise HTTPException(status_code=422, detail="Canal não suportado para este fluxo.")
+    prompt = (
+        "Crie um pacote de produção original para um canal sem rosto (faceless/dark), em português brasileiro. "
+        "Não copie roteiros, letras, personagens protegidos, vídeos de terceiros nem alegue fatos sem base. "
+        "Não sugira reuploads de clipes protegidos. Use imagens próprias, licenciadas ou geradas. "
+        "Entregue: 3 títulos, promessa/ângulo, gancho de 0-3s, roteiro com timestamps, narração completa, "
+        "lista de cenas/B-roll com prompts visuais originais, texto na tela, legenda, 8-12 hashtags relevantes, "
+        "CTA, thumbnail/capa, fontes a pesquisar quando houver alegações factuais, e checklist de revisão. "
+        "Marque qualquer afirmação que precise de checagem. Seja específico e evite enchimento.\n"
+        f"Canal e formato: {allowed_channels[channel]}\nTema: {topic}"
+    )
+    result = await ai_gateway.complete(
+        prompt,
+        system=(
+            "Você é produtor executivo de conteúdo curto e educativo. Entregue um pacote de produção prático, "
+            "original e pronto para revisão humana. Não afirme que o vídeo foi renderizado, enviado ou publicado."
+        ),
+    )
+    return {
+        "status": "draft_ready",
+        "channel": channel,
+        "topic": topic,
+        "package": result.content,
+        "provider": result.provider,
+        "model": result.model,
+        "published": False,
+        "message": "Pacote de conteúdo gerado para revisão. Nenhum vídeo foi renderizado, enviado ou publicado.",
+    }
+
+
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     now = datetime.now().astimezone()
