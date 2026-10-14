@@ -71,7 +71,14 @@ app.include_router(autonomy_router)
 async def require_admin_api_token(request: Request, call_next):
     path = request.url.path
     # Health/readiness stay public for hosting probes. Hotmart webhooks use their own token.
-    if path.startswith("/api/v1/") and path != "/api/v1/webhooks/hotmart":
+    # These scheduler-only routes validate X-Hermes-Scheduler themselves.
+    # Do not force the browser/admin token on machine-to-machine scheduler calls.
+    scheduler_route = (
+        path == "/api/v1/autonomy/freelancer/sync"
+        or path.startswith("/api/v1/autonomy/freelancer/apply/")
+        or (path.startswith("/api/v1/autonomy/jobs/") and path.endswith("/execute"))
+    )
+    if path.startswith("/api/v1/") and path != "/api/v1/webhooks/hotmart" and not scheduler_route:
         expected = settings.hermes_api_token
         supplied = request.headers.get("X-Hermes-API-Key", "")
         if not expected:
