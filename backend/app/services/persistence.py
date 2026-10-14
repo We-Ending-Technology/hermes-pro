@@ -32,6 +32,31 @@ class PersistentStore:
         product = await self.db.update("hermes_products", {"job_id": job["id"], "updated_at": now}, {"id": f"eq.{product['id']}"})
         return product, job
 
+    async def create_opportunity_if_absent(self, values: dict[str, Any]) -> dict[str, Any]:
+        """Persist a discovered opportunity once without overwriting a reviewed proposal."""
+        key = str(values.get("idempotency_key") or "").strip()
+        if not key:
+            raise ValueError("opportunity idempotency_key is required")
+        existing = await self.db.select(
+            "hermes_opportunities",
+            params={"select": "*", "idempotency_key": f"eq.{key}", "limit": "1"},
+        )
+        if existing:
+            return existing[0]
+        try:
+            return await self.db.insert("hermes_opportunities", values)
+        except Exception as exc:
+            # A concurrent scan may have inserted the unique key between SELECT and INSERT.
+            if "duplicate" not in str(exc).lower() and "unique" not in str(exc).lower():
+                raise
+            existing = await self.db.select(
+                "hermes_opportunities",
+                params={"select": "*", "idempotency_key": f"eq.{key}", "limit": "1"},
+            )
+            if existing:
+                return existing[0]
+            raise
+
     async def create_job_if_absent(self, job_type: str, payload: dict[str, Any], idempotency_key: str):
         existing = await self.db.select("hermes_jobs", params={"select": "*", "idempotency_key": f"eq.{idempotency_key}", "limit": "1"})
         if existing:
