@@ -109,20 +109,44 @@ async def list_agents(): return {"agents": registry.names()}
 
 @app.get("/api/v1/agents/status")
 async def agents_status():
-    ready = bool(settings.openai_api_key)
+    # A configured key or a registered class is not proof that an agent has
+    # completed a successful real-world run. Report configuration and handler
+    # presence separately so the dashboard cannot label placeholders as ready.
+    provider = (settings.ai_provider or "").strip().lower()
+    if provider == "openai":
+        ai_configured = bool(settings.openai_api_key)
+    elif provider == "gemini":
+        ai_configured = bool(settings.gemini_api_key)
+    elif provider in {"stub", "mock"}:
+        ai_configured = False
+    else:
+        ai_configured = bool(settings.ai_api_key or settings.openai_api_key or settings.gemini_api_key)
+
+    agents = []
+    for name in registry.names():
+        agent = registry.get(name)
+        placeholder = isinstance(agent, PassThroughAgent)
+        agents.append({
+            "name": name,
+            "handler": type(agent).__name__,
+            "status": "placeholder" if placeholder else "registered_unverified",
+            "execution_verified": False,
+        })
+
     return {
-        "chief": "ready" if ready else "blocked_missing_OPENAI_API_KEY",
+        "chief": "configured_unverified" if ai_configured else "blocked_missing_provider_credentials",
         "autonomy_enabled": settings.autonomy_enabled,
-        "agents": [
-            {"name": "Hermes Chefe", "role": "orchestrator", "status": "ready" if ready else "blocked"},
-            {"name": "Radar", "role": "opportunity discovery", "status": "ready"},
-            {"name": "Researcher", "role": "research", "status": "ready"},
-            {"name": "Analyst", "role": "analysis", "status": "ready"},
-            {"name": "Executor", "role": "execution planning", "status": "ready"},
-            {"name": "Guardian", "role": "safety/approval", "status": "ready"},
-            {"name": "Recovery", "role": "failure recovery", "status": "ready"},
-            {"name": "Watchtower", "role": "monitoring", "status": "ready"},
-        ],
+        "overall": "configuration_incomplete" if not (ai_configured and settings.supabase_url and settings.supabase_secret_key) else "configured_unverified",
+        "dependencies": {
+            "ai_provider": provider or "unset",
+            "ai_credentials_configured": ai_configured,
+            "supabase_configured": bool(settings.supabase_url and settings.supabase_secret_key),
+            "redis_url_configured": bool(settings.redis_url),
+            "freelancer_enabled": settings.freelancer_enabled,
+            "freelancer_auto_apply_enabled": settings.freelancer_auto_apply,
+        },
+        "agents": agents,
+        "note": "Registered/configured does not mean a successful execution was verified. Run a real test job to establish execution evidence.",
     }
 
 @app.get("/api/v1/agents/runs")
