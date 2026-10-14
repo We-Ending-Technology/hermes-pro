@@ -19,9 +19,14 @@ class SupabaseREST:
         self.secret_key = settings.supabase_secret_key
         self.headers = {
             "apikey": settings.supabase_secret_key or "",
-            "Authorization": f"Bearer {settings.supabase_secret_key or ''}",
             "Content-Type": "application/json",
         }
+        # Supabase's newer sb_secret_* API keys are opaque API keys, not JWTs.
+        # They must be sent via apikey only; using them as a Bearer token can
+        # cause PostgREST to evaluate requests as anon and enforce RLS.
+        # Legacy service_role/anon keys are JWTs and still need Authorization.
+        if settings.supabase_secret_key and settings.supabase_secret_key.startswith("eyJ"):
+            self.headers["Authorization"] = f"Bearer {settings.supabase_secret_key}"
 
     def _ensure_configured(self) -> None:
         if not self.secret_key or not self.base_url.startswith("http"):
