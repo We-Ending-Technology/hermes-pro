@@ -19,8 +19,9 @@ gateway = build_ai_gateway(settings)
 
 
 async def _require_scheduler(value: str | None) -> None:
-    expected = await db.rpc("get_hermes_scheduler_secret")
-    if not expected or value != expected:
+    # Reuse the already-configured server-side Hermes token; no extra Supabase secret/RPC needed.
+    expected = settings.hermes_api_token
+    if not expected or not value or not __import__("secrets").compare_digest(value, expected):
         raise HTTPException(status_code=401, detail="invalid scheduler credential")
 
 
