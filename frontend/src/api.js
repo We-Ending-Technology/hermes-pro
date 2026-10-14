@@ -62,7 +62,7 @@ export async function diagnose() {
   for (const candidate of candidates) {
     const t = Date.now();
     try {
-      const health = await request(candidate.base, "/health");
+      const health = await request(candidate.base, "/");
       checks.push({ name: candidate.label, status: "online", latency_ms: Date.now() - t, message: health.service || "API online" });
       try {
         const ready = await request(candidate.base, "/ready");
