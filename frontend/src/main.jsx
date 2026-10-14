@@ -7,7 +7,7 @@ import "./diagnostics.css";
 const NAV = [
   ["⌂", "Início"], ["✦", "Hermes"], ["⌁", "Radar"], ["⚗", "Fábrica"], ["◈", "Produtos"],
   ["▣", "Studio"], ["↗", "Publicação"], ["$", "Vendas"], ["◌", "Analytics"], ["◇", "Experimentos"],
-  ["◎", "Agentes"], ["⟳", "Automação"], ["⌘", "Integrações"], ["≡", "Logs"], ["?", "Guias"], ["▤", "Jobs"]
+  ["▶", "Vídeos"], ["◎", "Agentes"], ["⟳", "Automação"], ["⌘", "Integrações"], ["≡", "Logs"], ["?", "Guias"], ["▤", "Jobs"]
 ];
 
 const DEFAULT_RADAR = { demand: 80, competition: 45, differentiation: 75, production_difficulty: 35, pricing_potential: 70, audience_clarity: 85 };
@@ -29,6 +29,9 @@ function App() {
   const [radar, setRadar] = useState(null);
   const [sales, setSales] = useState(null);
   const [analytics, setAnalytics] = useState(null);
+  const [videoChannel, setVideoChannel] = useState("youtube_shorts");
+  const [videoTopic, setVideoTopic] = useState("");
+  const [videoPackage, setVideoPackage] = useState(null);
   const refreshing = useRef(false);
 
   const refresh = async () => {
@@ -90,6 +93,17 @@ function App() {
     if (result) setChat(items => [...items, { role: "assistant", text: result.response, meta: `${result.provider || "AI"} · ${result.model || "modelo"}` }]);
   };
 
+  const generateVideoPackage = async (event) => {
+    event.preventDefault();
+    const topic = videoTopic.trim();
+    if (topic.length < 5) { setNotice("Informe um tema com pelo menos 5 caracteres."); return; }
+    const result = await action(() => call("/api/v1/content/video-package", {
+      method: "POST",
+      body: JSON.stringify({ topic, channel: videoChannel })
+    }), "Pacote de vídeo gerado para revisão; nada foi publicado.");
+    if (result) setVideoPackage(result);
+  };
+
   const runDiagnostics = async () => setDiagnostics(await diagnose());
   const selectProduct = product => { setSelected(product); setView("Studio"); };
   const loadSales = () => action(() => call("/api/v1/sales"), "Vendas atualizadas.").then(setSales);
@@ -108,6 +122,7 @@ function App() {
       {busy && <div className="loading-line"><i /> sincronizando dados reais…</div>}
       {view === "Início" && <Home dashboard={dashboard} products={products} jobs={jobs} go={setView} select={selectProduct} diagnostics={diagnostics} runDiagnostics={runDiagnostics} />}
       {view === "Hermes" && <ChatView chat={chat} input={chatInput} setInput={setChatInput} send={sendChat} />}
+      {view === "Vídeos" && <VideoFactory channel={videoChannel} setChannel={setVideoChannel} topic={videoTopic} setTopic={setVideoTopic} result={videoPackage} submit={generateVideoPackage} busy={busy} />}
       {view === "Radar" && <RadarView />}
       {view === "Fábrica" && <Factory topic={topic} setTopic={setTopic} submit={createProduct} />}
       {view === "Produtos" && <Products items={products} select={selectProduct} />}
@@ -168,6 +183,35 @@ function RadarView() {
 function Publish({ product, integrations }) { const hotmart = integrations.find(x => x.name?.toLowerCase().includes("hotmart")); return <Page title="Publicação" sub="Preparação comercial e sincronização do catálogo Hotmart."><div className="panel"><h3>{product?.title || product?.topic || "Nenhum produto selecionado"}</h3><p>Hotmart: <b>{hotmart?.status || "não verificada"}</b></p><p>Artefatos: <b>{Object.keys(product?.metadata?.artifacts || {}).length ? "gerados" : "pendentes"}</b></p><p>A API pública da Hotmart permite consultar/sincronizar produtos e ofertas e receber webhooks. A criação de um novo produto digital continua no painel da Hotmart; o Hermes não simula uma publicação que a API não documenta.</p></div></Page>; }
 function SalesView({ data, load }) { return <Page title="Vendas" sub="Dados vindos de eventos reais persistidos."><Button primary onClick={load}>Atualizar vendas</Button>{data ? <div className="metric-grid"><Metric label="Receita" value={data.revenue ?? 0}/><Metric label="Pedidos" value={data.orders ?? 0}/><Metric label="Aprovados" value={data.approved ?? 0}/><Metric label="Reembolsos" value={data.refunds ?? 0}/></div> : <Empty text="Clique em atualizar para consultar as vendas reais." />}</Page>; }
 function AnalyticsView({ data, load }) { return <Page title="Analytics" sub="Insights calculados a partir dos dados persistidos."><Button primary onClick={load}>Atualizar analytics</Button>{data ? <div className="two-col"><div className="panel"><pre>{JSON.stringify(data, null, 2)}</pre></div></div> : <Empty text="Nenhuma leitura carregada." />}</Page>; }
+function VideoFactory({ channel, setChannel, topic, setTopic, result, submit, busy }) {
+  return <Page title="Fábrica de Vídeos" sub="Crie roteiros originais para YouTube e canais verticais. Gera o pacote de produção; renderização e publicação são etapas separadas.">
+    <div className="two-col">
+      <form className="panel factory-form" onSubmit={submit}>
+        <label>Canal de destino
+          <select value={channel} onChange={e => setChannel(e.target.value)}>
+            <option value="youtube_shorts">YouTube Shorts</option>
+            <option value="youtube_long">YouTube — vídeo longo</option>
+            <option value="tiktok">TikTok</option>
+            <option value="instagram_reels">Instagram Reels</option>
+          </select>
+        </label>
+        <label>Tema / nicho do vídeo
+          <textarea value={topic} onChange={e => setTopic(e.target.value)} minLength={5} required placeholder="Ex.: curiosidades históricas brasileiras com fontes verificáveis" />
+        </label>
+        <div className="form-footer"><span>Roteiro · narração · cenas · legenda · hashtags</span><Button primary type="submit" disabled={busy}>Gerar pacote ↗</Button></div>
+        <p className="panel-note">Usa o modelo de IA já configurado. Pode consumir a franquia/cota da chave existente; não compra ferramentas nem publica automaticamente.</p>
+      </form>
+      <div className="panel">
+        <K>FLUXO DE PRODUÇÃO</K><h3>Da ideia ao canal</h3>
+        <div className="pipeline"><span>IDEIA</span><span>→ ROTEIRO</span><span>→ CENAS</span><span>→ REVISÃO</span><span>→ RENDER</span><span>→ PUBLICAÇÃO</span></div>
+        <p>O pacote inclui títulos, gancho, roteiro com timestamps, narração, prompts visuais, texto na tela, legenda, hashtags, CTA e pontos factuais que precisam de checagem.</p>
+        <p><b>Monetização:</b> respeitar as regras de conteúdo original, direitos autorais e elegibilidade de cada plataforma. Um roteiro gerado não é uma venda nem um vídeo publicado.</p>
+      </div>
+    </div>
+    {result && <div className="panel"><div className="section-heading"><div><K>PACOTE GERADO</K><h3>{result.topic}</h3></div><span className="tag">{result.provider} · {result.model}</span></div><pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere",fontFamily:"inherit",lineHeight:1.65}}>{result.package}</pre><p className="panel-note">{result.message}</p></div>}
+  </Page>;
+}
+
 function ChatView({ chat, input, setInput, send }) { return <Page title="Hermes" sub="Assistente operacional conectado ao AI Gateway."><div className="panel chat-panel"><div className="chat-history">{chat.length ? chat.map((m, i) => <div className={`bubble ${m.role}`} key={i}><span>{m.role === "user" ? "Você" : "Hermes"}</span><p>{m.text}</p>{m.meta && <small>{m.meta}</small>}</div>) : <p>Envie uma instrução. Se o Gemini estiver indisponível, o erro será mostrado claramente.</p>}</div><form className="chat-form" onSubmit={send}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Fale com Hermes…"/><Button primary type="submit">Enviar ↗</Button></form></div></Page>; }
 function DiagnosticsPanel({ data }) { if (!data) return <Empty text="Diagnóstico ainda não executado." />; return <div className="panel diagnostics-grid">{data.checks.map((x, i) => <div className="diag-row" key={`${x.name}-${i}`}><i className={x.status === "online" || x.status === "ready" ? "online" : "offline"}></i><strong>{x.name}</strong><span>{x.status}</span><small>{x.message || ""}</small></div>)}</div>; }
 function Integrations({ items, diagnostics, runDiagnostics }) { return <Page title="Integrações" sub="Estado das conexões sem expor segredos."><Button primary onClick={runDiagnostics}>Testar conexões</Button><DiagnosticsPanel data={diagnostics} /><div className="integration-list">{items.length ? items.map(x => <div className="panel" key={x.name}><strong>{x.name}</strong><p>{x.status}</p><small>{x.message}</small></div>) : <Empty text="Nenhuma integração retornada pelo backend." />}</div></Page>; }
