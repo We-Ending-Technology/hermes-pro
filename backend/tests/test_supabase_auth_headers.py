@@ -15,15 +15,20 @@ def test_new_supabase_secret_key_uses_apikey_without_bearer():
 
 
 def test_legacy_service_role_keeps_bearer_auth():
+    import base64
+    import json
+
+    payload = base64.urlsafe_b64encode(json.dumps({"role": "service_role"}).encode()).decode().rstrip("=")
+    service_role = f"eyJheader.{payload}.signature"
     settings = Settings(
         SUPABASE_URL="https://example.supabase.co",
-        SUPABASE_SERVICE_ROLE_KEY="eyJlegacy",
+        SUPABASE_SERVICE_ROLE_KEY=service_role,
     )
 
     client = SupabaseREST(settings)
 
-    assert client.headers["apikey"] == "eyJlegacy"
-    assert client.headers["Authorization"] == "Bearer eyJlegacy"
+    assert client.headers["apikey"] == service_role
+    assert client.headers["Authorization"] == f"Bearer {service_role}"
 
 
 def test_service_role_key_takes_precedence_over_publishable_secret_alias():
