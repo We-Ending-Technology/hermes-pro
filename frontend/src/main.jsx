@@ -7,7 +7,7 @@ import "./diagnostics.css";
 const NAV = [
   ["⌂", "Início"], ["✦", "Hermes"], ["⌁", "Radar"], ["⚗", "Fábrica"], ["◈", "Produtos"],
   ["▣", "Studio"], ["↗", "Publicação"], ["$", "Vendas"], ["◌", "Analytics"], ["◇", "Experimentos"],
-  ["▶", "Vídeos"], ["◎", "Agentes"], ["⟳", "Automação"], ["⌘", "Integrações"], ["≡", "Logs"], ["?", "Guias"], ["▤", "Jobs"]
+  ["▶", "Vídeos"], ["◉", "Canais"], ["◎", "Agentes"], ["⟳", "Automação"], ["⌘", "Integrações"], ["≡", "Logs"], ["?", "Guias"], ["▤", "Jobs"]
 ];
 
 const DEFAULT_RADAR = { demand: 80, competition: 45, differentiation: 75, production_difficulty: 35, pricing_potential: 70, audience_clarity: 85 };
@@ -123,6 +123,7 @@ function App() {
       {view === "Início" && <Home dashboard={dashboard} products={products} jobs={jobs} go={setView} select={selectProduct} diagnostics={diagnostics} runDiagnostics={runDiagnostics} />}
       {view === "Hermes" && <ChatView chat={chat} input={chatInput} setInput={setChatInput} send={sendChat} />}
       {view === "Vídeos" && <VideoFactory channel={videoChannel} setChannel={setVideoChannel} topic={videoTopic} setTopic={setVideoTopic} result={videoPackage} submit={generateVideoPackage} busy={busy} />}
+      {view === "Canais" && <RevenueChannels integrations={integrations} />}
       {view === "Radar" && <RadarView />}
       {view === "Fábrica" && <Factory topic={topic} setTopic={setTopic} submit={createProduct} />}
       {view === "Produtos" && <Products items={products} select={selectProduct} />}
@@ -183,6 +184,26 @@ function RadarView() {
 function Publish({ product, integrations }) { const hotmart = integrations.find(x => x.name?.toLowerCase().includes("hotmart")); return <Page title="Publicação" sub="Preparação comercial e sincronização do catálogo Hotmart."><div className="panel"><h3>{product?.title || product?.topic || "Nenhum produto selecionado"}</h3><p>Hotmart: <b>{hotmart?.status || "não verificada"}</b></p><p>Artefatos: <b>{Object.keys(product?.metadata?.artifacts || {}).length ? "gerados" : "pendentes"}</b></p><p>A API pública da Hotmart permite consultar/sincronizar produtos e ofertas e receber webhooks. A criação de um novo produto digital continua no painel da Hotmart; o Hermes não simula uma publicação que a API não documenta.</p></div></Page>; }
 function SalesView({ data, load }) { return <Page title="Vendas" sub="Dados vindos de eventos reais persistidos."><Button primary onClick={load}>Atualizar vendas</Button>{data ? <div className="metric-grid"><Metric label="Receita" value={data.revenue ?? 0}/><Metric label="Pedidos" value={data.orders ?? 0}/><Metric label="Aprovados" value={data.approved ?? 0}/><Metric label="Reembolsos" value={data.refunds ?? 0}/></div> : <Empty text="Clique em atualizar para consultar as vendas reais." />}</Page>; }
 function AnalyticsView({ data, load }) { return <Page title="Analytics" sub="Insights calculados a partir dos dados persistidos."><Button primary onClick={load}>Atualizar analytics</Button>{data ? <div className="two-col"><div className="panel"><pre>{JSON.stringify(data, null, 2)}</pre></div></div> : <Empty text="Nenhuma leitura carregada." />}</Page>; }
+function RevenueChannels({ integrations }) {
+  const getStatus = name => integrations.find(x => String(x.name || "").toLowerCase() === name.toLowerCase());
+  const hotmart = getStatus("Hotmart");
+  const supabase = getStatus("Supabase");
+  const channels = [
+    { name: "Hotmart", type: "Produtos digitais", status: hotmart?.status || "não verificado", detail: hotmart?.message || "A API ainda não confirmou a conexão.", action: "Abrir painel Hotmart", url: "https://app.hotmart.com/", next: "Conectar credenciais oficiais e configurar webhook; publicar o produto no painel até existir fluxo de criação aprovado." },
+    { name: "YouTube", type: "Vídeos e canal dark", status: "roteiros disponíveis", detail: "A Fábrica de Vídeos gera pacotes originais; upload e monetização do canal não estão conectados.", action: "Abrir YouTube Studio", url: "https://studio.youtube.com/", next: "Criar/vincular canal, revisar conteúdo e configurar OAuth oficial antes de automatizar uploads." },
+    { name: "TikTok Shop", type: "Afiliados e comércio", status: "cadastro da conta necessário", detail: "O Hermes prepara roteiros para TikTok; não publica vídeos compráveis nem acessa a conta Shop.", action: "Abrir TikTok Shop Brasil", url: "https://seller.tiktok.com/br", next: "Verificar elegibilidade de vendedor/criador, aprovação e permissões no próprio TikTok Shop." },
+    { name: "99Freelas", type: "Serviços", status: "revisão manual", detail: "O Radar pode preparar rascunhos; envio automático não está habilitado.", action: "Abrir 99Freelas", url: "https://www.99freelas.com.br/", next: "Revisar o escopo e enviar pela plataforma. Freelancer.com continua pausado." },
+    { name: "Workana", type: "Serviços", status: "revisão manual", detail: "Sem integração oficial ativa nesta versão.", action: "Abrir Workana", url: "https://www.workana.com/", next: "Usar somente oportunidades reais, com proposta revisada e sem automatizar candidatura por scraping." },
+    { name: "Jobicy", type: "Radar gratuito", status: "API pública", detail: "Fonte pública de vagas remotas; os anúncios podem ser emprego e não necessariamente freela.", action: "Ver documentação", url: "https://jobicy.com/jobs-rss-feed", next: "O Radar captura links de origem; conferir localização, tipo de contrato e elegibilidade." },
+    { name: "Himalayas", type: "Radar gratuito", status: "API pública", detail: "Feed público de vagas remotas sem chave de API; manter atribuição e link para o anúncio original.", action: "Ver documentação", url: "https://himalayas.app/docs/remote-jobs-api", next: "Conferir país, contrato, salário e se a vaga aceita candidatos do Brasil." },
+  ];
+  return <Page title="Canais de Receita" sub="Visão honesta de onde o Hermes pode criar, vender ou encontrar trabalho. Conexão real, cadastro e publicação são estados diferentes.">
+    <div className="panel"><K>REGRA OPERACIONAL</K><h3>Nenhuma plataforma será marcada como conectada só porque existe um link ou uma chave.</h3><p>O Hermes deve guardar a evidência da última verificação, mostrar o que falta e pedir aprovação antes de ações financeiras, publicações ou envio de propostas.</p></div>
+    <div className="product-grid">{channels.map(channel => <article className="product-card detailed" key={channel.name}><div className="cover-placeholder"><span>{channel.name.slice(0,1)}</span><small>{channel.status}</small></div><div className="product-info"><span className="tag">{channel.type}</span><h4>{channel.name}</h4><p>{channel.detail}</p><div className="panel-note"><b>Próximo passo:</b> {channel.next}</div><div className="asset-actions"><a href={channel.url} target="_blank" rel="noreferrer">{channel.action} ↗</a></div></div></article>)}</div>
+    <div className="panel"><h3>Dependência central</h3><p><b>Supabase:</b> {supabase?.status || "não verificado"} — {supabase?.message || "A API não confirmou conexão."}</p><p>Sem persistência funcional, o Hermes não consegue manter fila, memória, produtos e evidências de venda de forma confiável.</p></div>
+  </Page>;
+}
+
 function VideoFactory({ channel, setChannel, topic, setTopic, result, submit, busy }) {
   return <Page title="Fábrica de Vídeos" sub="Crie roteiros originais para YouTube e canais verticais. Gera o pacote de produção; renderização e publicação são etapas separadas.">
     <div className="two-col">
