@@ -120,9 +120,19 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
 
 async def process_opportunity(job_id: str, store: PersistentStore, queue: JobQueue) -> None:
     job = await store.get_job(job_id)
-    if not job or job.get("job_type") != "opportunity_pipeline" or job.get("status") in {"completed", "cancelled"}:
+    if not job or job.get("job_type") != "opportunity_pipeline" or job.get("status") in {"completed", "cancelled", "failed"}:
         return
-    attempts = int(job.get("attempts", 0)) + 1
+    current_attempts = int(job.get("attempts", 0))
+    max_attempts = min(int(job.get("max_attempts", MAX_ATTEMPTS) or MAX_ATTEMPTS), MAX_ATTEMPTS)
+    if current_attempts >= max_attempts:
+        payload = dict(job.get("payload") or {})
+        await store.update_job(
+            job_id, "failed", attempts=current_attempts,
+            error_message="maximum attempts reached during opportunity processing",
+            payload=payload,
+        )
+        return
+    attempts = current_attempts + 1
     payload = dict(job.get("payload") or {})
     try:
         await store.update_job(job_id, "running", attempts=attempts, error_message=None)
@@ -169,14 +179,33 @@ async def process_opportunity(job_id: str, store: PersistentStore, queue: JobQue
             await store.update_job(job_id, "failed", attempts=attempts, error_message=message, payload=payload)
 
 async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
+    """Recover interrupted jobs once at worker startup, respecting retry budgets."""
     for job in await store.list_jobs():
         if job["status"] not in {"pending", "retrying", "running"}:
             continue
+        job_id = str(job["id"])
+        attempts = int(job.get("attempts", 0))
+        max_attempts = min(int(job.get("max_attempts", MAX_ATTEMPTS) or MAX_ATTEMPTS), MAX_ATTEMPTS)
+        if attempts >= max_attempts:
+            await store.update_job(
+                job_id, "failed", attempts=attempts,
+                error_message="maximum attempts reached during worker recovery",
+            )
+            if job.get("job_type") == "product_generation":
+                product_id = (job.get("payload") or {}).get("product_id")
+                if product_id:
+                    await store.update_product(str(product_id), status="failed")
+            continue
+        if job["status"] == "running":
+            # Record the interruption before putting the job back in the queue.
+            await store.update_job(
+                job_id, "retrying", attempts=attempts,
+                error_message="worker restarted while job was running; recovered at startup",
+            )
         if job["job_type"] == "agent_run":
-            await queue.enqueue_agent(str(job["id"]))
+            await queue.enqueue_agent(job_id)
         elif job["job_type"] in {"product_generation", "opportunity_pipeline"}:
-            # A running job may have died with its worker. Requeue it; the attempt counter prevents infinite retries.
-            await queue.enqueue(str(job["id"]))
+            await queue.enqueue(job_id)
 
 async def run() -> None:
     settings = get_settings()
@@ -197,8 +226,8 @@ async def run() -> None:
                     await process_opportunity(job_id, store, queue)
                 else:
                     await process_product(job_id, store, queue)
-            else:
-                await recover_pending(store, queue)
+            # Recovery is performed at startup only. Re-enqueueing every idle
+            # loop creates duplicate queue entries for the same persistent job.
     finally:
         await queue.close()
 
