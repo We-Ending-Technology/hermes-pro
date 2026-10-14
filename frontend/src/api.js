@@ -17,20 +17,36 @@ function getAdminToken() {
   }
 }
 
+const PUBLIC_READ_ROUTES = new Set([
+  "/api/v1/dashboard",
+  "/api/v1/jobs",
+  "/api/v1/products",
+  "/api/v1/integrations",
+  "/api/v1/agents",
+  "/api/v1/agents/status",
+  "/api/v1/agents/runs",
+  "/ready",
+]);
+
 async function request(base, path, options = {}, authRetry = true) {
   const headers = { ...(options.headers || {}) };
-  // Avoid unnecessary CORS preflights on GET/HEAD health and read-only calls.
+  const method = String(options.method || "GET").toUpperCase();
+  // Keep read-only dashboard views usable without a browser-held server secret.
+  // All writes, AI execution, and financial/admin actions still require the server token.
+  const needsAdminToken = path.startsWith("/api/v1/")
+    && path !== "/api/v1/webhooks/hotmart"
+    && !(method === "GET" && PUBLIC_READ_ROUTES.has(path));
   if (options.body !== undefined && options.body !== null && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-  if (path.startsWith("/api/v1/") && path !== "/api/v1/webhooks/hotmart") {
+  if (needsAdminToken) {
     const token = getAdminToken();
-    if (!token) throw new Error("Acesso privado não informado. Atualize a página e cole o HERMES_API_TOKEN já configurado no Render.");
+    if (!token) throw new Error("Acesso privado não informado. Para executar ações, informe o HERMES_API_TOKEN já configurado no Render.");
     headers["X-Hermes-API-Key"] = token;
   }
   const response = await fetch(base + path, { ...options, headers });
   const text = await response.text();
   let body = {};
   try { body = text ? JSON.parse(text) : {}; } catch { body = { detail: text }; }
-  if (response.status === 401 && path.startsWith("/api/v1/") && path !== "/api/v1/webhooks/hotmart" && authRetry) {
+  if (response.status === 401 && needsAdminToken && authRetry) {
     try { sessionStorage.removeItem("hermes_admin_api_token"); } catch {}
     rejectedToken = true;
     return request(base, path, options, false);
