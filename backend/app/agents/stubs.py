@@ -17,8 +17,9 @@ class PassThroughAgent(Agent):
     async def run(self, input_data: dict[str, Any]) -> dict[str, Any]:
         return {
             "stage": self.name,
-            "status": "ready",
-            "message": "Agent role registered; no specialized execution handler is configured for this role yet.",
+            "status": "placeholder",
+            "execution_verified": False,
+            "message": "Placeholder only: no specialized execution handler is configured for this role.",
             "input_received": bool(input_data),
         }
 
