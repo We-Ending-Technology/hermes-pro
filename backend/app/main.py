@@ -6,7 +6,7 @@ from datetime import date, datetime
 from uuid import uuid4
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from .ai_gateway.factory import build_ai_gateway
@@ -185,6 +185,11 @@ def job_response(row: dict) -> JobResponse:
 
 @app.get("/")
 async def root(): return {"status":"ok","service":"hermes-pro-api","version":"0.5.0"}
+
+@app.head("/")
+async def root_head():
+    """Render's default HEAD / health probe must receive a 200 response."""
+    return Response(status_code=200)
 
 @app.get("/health", response_model=HealthResponse)
 async def health(): return HealthResponse(status="ok", service="hermes-pro-api", environment=settings.app_env)
