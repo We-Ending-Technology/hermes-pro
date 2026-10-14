@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     openai_agent_model: str = Field(default="gpt-6-astra", validation_alias="OPENAI_AGENT_MODEL")
     autonomy_interval_seconds: int = Field(default=900, validation_alias="AUTONOMY_INTERVAL_SECONDS")
     supabase_url: str | None = Field(default=None, validation_alias="SUPABASE_URL")
-    supabase_secret_key: str | None = Field(default=None, validation_alias=AliasChoices("SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY"))
+    supabase_secret_key: str | None = Field(default=None, validation_alias=AliasChoices("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY", "SUPABASE_SECRET_KEY"))
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
     cors_origins: str = Field(default="http://localhost:5173", validation_alias="CORS_ORIGINS")
     hotmart_client_id: str | None = Field(default=None, validation_alias="HOTMART_CLIENT_ID")
