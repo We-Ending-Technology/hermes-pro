@@ -108,7 +108,8 @@ async def lifespan(app: FastAPI):
     for agent_name in AGENT_NAMES:
         if agent_name not in mapped:
             registry.register(PassThroughAgent(agent_name))
-    scheduler_task = asyncio.create_task(_autonomy_loop(), name="hermes-autonomy-loop") if settings.autonomy_enabled else None
+    scheduler_enabled = settings.autonomy_enabled and settings.app_env.strip().lower() == "production"
+    scheduler_task = asyncio.create_task(_autonomy_loop(), name="hermes-autonomy-loop") if scheduler_enabled else None
     app.state.autonomy_scheduler_mode = "inline_api_process" if scheduler_task else "disabled"
     try:
         yield
