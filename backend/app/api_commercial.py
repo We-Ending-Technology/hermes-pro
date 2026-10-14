@@ -21,19 +21,29 @@ telegram = TelegramNotifier(settings)
 
 @router.get("/ready")
 async def ready() -> dict[str, Any]:
-    """Readiness/configuration diagnostics without exposing secret values."""
+    """Report configuration separately from a real read-only dependency probe."""
     statuses = {x["name"].lower(): x for x in integration_service.status()}
     checks: list[dict[str, Any]] = []
     for name in ("Gemini", "Supabase", "Redis", "Hotmart", "Telegram"):
         item = statuses[name.lower()]
-        is_ready = item["status"] not in {"not_configured", "error", "offline"}
+        configured = item["status"] not in {"not_configured", "error", "offline"}
+        status = "configured" if configured else "not_configured"
+        message = item["message"]
+        if name == "Supabase" and configured:
+            connected = await db.health()
+            status = "connected" if connected else "error"
+            message = "Leitura de teste em hermes_products funcionou." if connected else "Chave reconhecida, mas a leitura de teste no Supabase falhou. Verifique URL, permissões e chave de servidor."
         checks.append({
             "name": name,
-            "status": "ready" if is_ready else "not_configured",
-            "configured": is_ready,
-            "message": item["message"],
+            "status": status,
+            "configured": configured,
+            "connected": status == "connected" if name == "Supabase" else None,
+            "message": message,
         })
-    return {"status": "ready" if all(x["configured"] for x in checks) else "degraded", "service": "hermes-pro-api", "checks": checks}
+    required_ok = all(x["configured"] for x in checks if x["name"] in {"Gemini", "Supabase"})
+    supabase_connected = next((x.get("connected") for x in checks if x["name"] == "Supabase"), False)
+    status = "ready" if required_ok and supabase_connected else "degraded"
+    return {"status": status, "service": "hermes-pro-api", "checks": checks}
 
 
 @router.get("/api/v1/hotmart/products")
