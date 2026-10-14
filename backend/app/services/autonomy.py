@@ -12,7 +12,7 @@ class AutonomyService:
         self.store = store
         self.queue = queue
 
-    async def cycle(self, minimum_score: int = 55) -> dict[str, Any]:
+    async def cycle(self, minimum_score: int = 55, *, enqueue_jobs: bool = True) -> dict[str, Any]:
         opportunities = await fetch_opportunities(limit=40)
         selected = []
         for item in opportunities:
@@ -36,9 +36,10 @@ class AutonomyService:
             }
             key = f"opportunity:{item.fingerprint}"
             existing = await self.store.create_job_if_absent("opportunity_pipeline", payload, key)
-            if existing:
-                await self.queue.enqueue(str(existing["id"]))
-                selected.append(payload)
+            if existing and existing.get("status") in {"pending", "retrying"}:
+                if enqueue_jobs:
+                    await self.queue.enqueue(str(existing["id"]))
+                selected.append({**payload, "job_id": str(existing["id"])})
         return {
             "status": "completed",
             "scanned": len(opportunities),

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from backend.app.agents.orchestrator import run_chief
+from backend.app.agents.agents_sdk import run_chief
 from backend.app.core.config import Settings
 from backend.app.services.persistence import PersistentStore
 
@@ -21,7 +21,8 @@ async def process_agent(job_id: str, store: PersistentStore, settings: Settings,
         return
     try:
         await store.update_job(job_id, "running", attempts=attempts, error_message=None)
-        result = await run_chief(instruction, settings)
+        context = payload.get("context")
+        result = await run_chief(instruction, context if isinstance(context, dict) else None)
         await store.db.update("hermes_agent_runs", {
             "status": "completed",
             "output": result,

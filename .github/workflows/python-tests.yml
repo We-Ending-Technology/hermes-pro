@@ -1,0 +1,32 @@
+name: Hermes Python tests
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feat/hermes-commercial-engine
+  push:
+    branches:
+      - main
+      - feat/hermes-commercial-engine
+      - feat/hermes-self-healing-truthful-status
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install project and test dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Run tests
+        run: python -m pytest -q

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
+from datetime import datetime, timezone
 
 from backend.app.ai_gateway.factory import build_ai_gateway
 from backend.app.core.config import get_settings
@@ -120,9 +122,19 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
 
 async def process_opportunity(job_id: str, store: PersistentStore, queue: JobQueue) -> None:
     job = await store.get_job(job_id)
-    if not job or job.get("job_type") != "opportunity_pipeline" or job.get("status") in {"completed", "cancelled"}:
+    if not job or job.get("job_type") != "opportunity_pipeline" or job.get("status") in {"completed", "cancelled", "failed"}:
         return
-    attempts = int(job.get("attempts", 0)) + 1
+    current_attempts = int(job.get("attempts", 0))
+    max_attempts = min(int(job.get("max_attempts", MAX_ATTEMPTS) or MAX_ATTEMPTS), MAX_ATTEMPTS)
+    if current_attempts >= max_attempts:
+        payload = dict(job.get("payload") or {})
+        await store.update_job(
+            job_id, "failed", attempts=current_attempts,
+            error_message="maximum attempts reached during opportunity processing",
+            payload=payload,
+        )
+        return
+    attempts = current_attempts + 1
     payload = dict(job.get("payload") or {})
     try:
         await store.update_job(job_id, "running", attempts=attempts, error_message=None)
@@ -135,7 +147,43 @@ async def process_opportunity(job_id: str, store: PersistentStore, queue: JobQue
             await store.update_job(job_id, "completed", attempts=attempts, payload=payload)
             return
         executor = await ExecutorAgent().run({"opportunity": opportunity})
-        payload["pipeline"] = {"guardian": guardian, "analysis": analysis, "qa": qa, "executor": executor}
+        artifact_content = "\n".join([
+            f"# Opportunity brief: {opportunity.get('title', 'Untitled opportunity')}",
+            "",
+            f"- Source: {opportunity.get('source', 'unknown')}",
+            f"- URL: {opportunity.get('url', 'not provided')}",
+            f"- Score: {opportunity.get('score', 'not scored')}",
+            f"- Generated at: {datetime.now(timezone.utc).isoformat()}",
+            "",
+            "## Scope from source",
+            str(opportunity.get("description") or "No description supplied by source."),
+            "",
+            "## Analysis",
+            json.dumps(analysis, ensure_ascii=False, indent=2),
+            "",
+            "## Execution checklist",
+            "- [ ] Confirm requirements and acceptance criteria",
+            "- [ ] Confirm required access, inputs and deadline",
+            "- [ ] Estimate effort and delivery format",
+            "- [ ] Complete work only after the client/platform engagement is valid",
+            "",
+            "## QA",
+            json.dumps(qa, ensure_ascii=False, indent=2),
+            "",
+            "## Prepared work package",
+            json.dumps(executor, ensure_ascii=False, indent=2),
+            "",
+            "## Submission policy",
+            "Draft/preparation only. Hermes did not submit a proposal or contact the client.",
+        ])
+        artifact = {
+            "filename": f"opportunity-{opportunity.get('opportunity_id') or job_id}.md",
+            "format": "text/markdown",
+            "content": artifact_content,
+            "sha256": hashlib.sha256(artifact_content.encode("utf-8")).hexdigest(),
+            "produced_at": datetime.now(timezone.utc).isoformat(),
+        }
+        payload["pipeline"] = {"guardian": guardian, "analysis": analysis, "qa": qa, "executor": executor, "artifact": artifact}
         if opportunity.get("application_automation_allowed"):
             commercial = await CommercialAgent(build_ai_gateway(get_settings())).run({"opportunity": opportunity})
             payload["pipeline"]["commercial"] = commercial
@@ -169,14 +217,33 @@ async def process_opportunity(job_id: str, store: PersistentStore, queue: JobQue
             await store.update_job(job_id, "failed", attempts=attempts, error_message=message, payload=payload)
 
 async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
+    """Recover interrupted jobs once at worker startup, respecting retry budgets."""
     for job in await store.list_jobs():
         if job["status"] not in {"pending", "retrying", "running"}:
             continue
+        job_id = str(job["id"])
+        attempts = int(job.get("attempts", 0))
+        max_attempts = min(int(job.get("max_attempts", MAX_ATTEMPTS) or MAX_ATTEMPTS), MAX_ATTEMPTS)
+        if attempts >= max_attempts:
+            await store.update_job(
+                job_id, "failed", attempts=attempts,
+                error_message="maximum attempts reached during worker recovery",
+            )
+            if job.get("job_type") == "product_generation":
+                product_id = (job.get("payload") or {}).get("product_id")
+                if product_id:
+                    await store.update_product(str(product_id), status="failed")
+            continue
+        if job["status"] == "running":
+            # Record the interruption before putting the job back in the queue.
+            await store.update_job(
+                job_id, "retrying", attempts=attempts,
+                error_message="worker restarted while job was running; recovered at startup",
+            )
         if job["job_type"] == "agent_run":
-            await queue.enqueue_agent(str(job["id"]))
+            await queue.enqueue_agent(job_id)
         elif job["job_type"] in {"product_generation", "opportunity_pipeline"}:
-            # A running job may have died with its worker. Requeue it; the attempt counter prevents infinite retries.
-            await queue.enqueue(str(job["id"]))
+            await queue.enqueue(job_id)
 
 async def run() -> None:
     settings = get_settings()
@@ -197,8 +264,8 @@ async def run() -> None:
                     await process_opportunity(job_id, store, queue)
                 else:
                     await process_product(job_id, store, queue)
-            else:
-                await recover_pending(store, queue)
+            # Recovery is performed at startup only. Re-enqueueing every idle
+            # loop creates duplicate queue entries for the same persistent job.
     finally:
         await queue.close()
 
