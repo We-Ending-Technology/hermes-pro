@@ -10,14 +10,18 @@ def test_health() -> None:
     assert response.json()["status"] == "ok"
 
 
-def test_diagnostic_agent() -> None:
-    previous = app.state.test_ai_gateway if hasattr(app.state, "test_ai_gateway") else None
+def test_diagnostic_agent(monkeypatch) -> None:
     import backend.app.main as main_module
     original = main_module.ai_gateway
+    monkeypatch.setattr(main_module.settings, "hermes_api_token", "test-token")
     main_module.ai_gateway = StubAIGateway()
     try:
         with TestClient(app) as client:
-            response = client.post("/api/v1/agents/run", json={"agent": "diagnostic", "input": {"prompt": "hello"}})
+            response = client.post(
+                "/api/v1/agents/run",
+                headers={"X-Hermes-API-Key": "test-token"},
+                json={"agent": "diagnostic", "input": {"prompt": "hello"}},
+            )
         assert response.status_code == 200
         assert response.json()["status"] == "completed"
         assert response.json()["output"]["provider"] == "stub"
@@ -25,7 +29,13 @@ def test_diagnostic_agent() -> None:
         main_module.ai_gateway = original
 
 
-def test_unknown_agent() -> None:
+def test_unknown_agent(monkeypatch) -> None:
+    import backend.app.main as main_module
+    monkeypatch.setattr(main_module.settings, "hermes_api_token", "test-token")
     with TestClient(app) as client:
-        response = client.post("/api/v1/agents/run", json={"agent": "unknown", "input": {}})
+        response = client.post(
+            "/api/v1/agents/run",
+            headers={"X-Hermes-API-Key": "test-token"},
+            json={"agent": "unknown", "input": {}},
+        )
     assert response.status_code == 404
