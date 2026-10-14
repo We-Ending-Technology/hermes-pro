@@ -137,7 +137,20 @@ async def require_admin_api_token(request: Request, call_next):
         or path.startswith("/api/v1/autonomy/freelancer/apply/")
         or (path.startswith("/api/v1/autonomy/jobs/") and path.endswith("/execute"))
     )
-    if path.startswith("/api/v1/") and path != "/api/v1/webhooks/hotmart" and not scheduler_route:
+    # Public read-only dashboard endpoints do not need a browser-held secret.
+    # AI execution, chat, mutations, and financial actions remain protected.
+    public_read_routes = {
+        "/api/v1/dashboard",
+        "/api/v1/jobs",
+        "/api/v1/products",
+        "/api/v1/integrations",
+        "/api/v1/agents",
+        "/api/v1/agents/status",
+        "/api/v1/agents/runs",
+        "/ready",
+    }
+    public_read = request.method == "GET" and path in public_read_routes
+    if path.startswith("/api/v1/") and path != "/api/v1/webhooks/hotmart" and not scheduler_route and not public_read:
         expected = settings.hermes_api_token
         supplied = request.headers.get("X-Hermes-API-Key", "")
         if not expected:
