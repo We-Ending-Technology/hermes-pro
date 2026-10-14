@@ -123,6 +123,11 @@ async def lifespan(app: FastAPI):
         await queue.close()
 
 app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
+
+@app.exception_handler(SupabaseError)
+async def supabase_unavailable_handler(request: Request, exc: SupabaseError):
+    # Return an explicit dependency failure instead of an opaque HTTP 500.
+    return JSONResponse(status_code=503, content={"detail": str(exc), "code": "SUPABASE_UNAVAILABLE"})
 app.include_router(commercial_router)
 app.include_router(autonomy_router)
 
