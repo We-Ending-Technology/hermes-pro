@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
+from datetime import datetime, timezone
 
 from backend.app.ai_gateway.factory import build_ai_gateway
 from backend.app.core.config import get_settings
@@ -145,7 +147,43 @@ async def process_opportunity(job_id: str, store: PersistentStore, queue: JobQue
             await store.update_job(job_id, "completed", attempts=attempts, payload=payload)
             return
         executor = await ExecutorAgent().run({"opportunity": opportunity})
-        payload["pipeline"] = {"guardian": guardian, "analysis": analysis, "qa": qa, "executor": executor}
+        artifact_content = "\n".join([
+            f"# Opportunity brief: {opportunity.get('title', 'Untitled opportunity')}",
+            "",
+            f"- Source: {opportunity.get('source', 'unknown')}",
+            f"- URL: {opportunity.get('url', 'not provided')}",
+            f"- Score: {opportunity.get('score', 'not scored')}",
+            f"- Generated at: {datetime.now(timezone.utc).isoformat()}",
+            "",
+            "## Scope from source",
+            str(opportunity.get("description") or "No description supplied by source."),
+            "",
+            "## Analysis",
+            json.dumps(analysis, ensure_ascii=False, indent=2),
+            "",
+            "## Execution checklist",
+            "- [ ] Confirm requirements and acceptance criteria",
+            "- [ ] Confirm required access, inputs and deadline",
+            "- [ ] Estimate effort and delivery format",
+            "- [ ] Complete work only after the client/platform engagement is valid",
+            "",
+            "## QA",
+            json.dumps(qa, ensure_ascii=False, indent=2),
+            "",
+            "## Prepared work package",
+            json.dumps(executor, ensure_ascii=False, indent=2),
+            "",
+            "## Submission policy",
+            "Draft/preparation only. Hermes did not submit a proposal or contact the client.",
+        ])
+        artifact = {
+            "filename": f"opportunity-{opportunity.get('opportunity_id') or job_id}.md",
+            "format": "text/markdown",
+            "content": artifact_content,
+            "sha256": hashlib.sha256(artifact_content.encode("utf-8")).hexdigest(),
+            "produced_at": datetime.now(timezone.utc).isoformat(),
+        }
+        payload["pipeline"] = {"guardian": guardian, "analysis": analysis, "qa": qa, "executor": executor, "artifact": artifact}
         if opportunity.get("application_automation_allowed"):
             commercial = await CommercialAgent(build_ai_gateway(get_settings())).run({"opportunity": opportunity})
             payload["pipeline"]["commercial"] = commercial
