@@ -18,7 +18,6 @@ function getAdminToken() {
 }
 
 async function request(base, path, options = {}, authRetry = true) {
-  const method = String(options.method || "GET").toUpperCase();
   const headers = { ...(options.headers || {}) };
   // Avoid unnecessary CORS preflights on GET/HEAD health and read-only calls.
   if (options.body !== undefined && options.body !== null && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
