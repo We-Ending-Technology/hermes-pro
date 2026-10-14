@@ -123,6 +123,11 @@ async def lifespan(app: FastAPI):
         await queue.close()
 
 app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
+
+@app.exception_handler(SupabaseError)
+async def supabase_unavailable_handler(request: Request, exc: SupabaseError):
+    # Return an explicit dependency failure instead of an opaque HTTP 500.
+    return JSONResponse(status_code=503, content={"detail": str(exc), "code": "SUPABASE_UNAVAILABLE"})
 app.include_router(commercial_router)
 app.include_router(autonomy_router)
 
@@ -329,26 +334,47 @@ async def autonomy_status():
 
 @app.get("/api/v1/opportunities")
 async def opportunities(limit: int = 20):
-    """Return saved freelance opportunities, not internal queue jobs."""
+    """Return ranked saved opportunities from every enabled public source."""
     safe_limit = min(max(limit, 1), 100)
-    freelancer_rows = await db.select(
+    rows = await db.select(
         "hermes_opportunities",
-        params={"select": "*", "source": "ilike.*freelancer*", "order": "score.desc,created_at.desc", "limit": str(safe_limit)},
+        params={"select": "*", "order": "score.desc,created_at.desc", "limit": str(min(safe_limit * 10, 500))},
     )
-    local_rows = await db.select(
-        "hermes_opportunities",
-        params={"select": "*", "source": "ilike.*99freelas*", "order": "score.desc,created_at.desc", "limit": str(safe_limit)},
+    relevant_terms = (
+        "python", "api", "automation", "automação", "scrap", "excel", "csv", "pdf",
+        "data", "dados", "backend", "integração", "integration", "bot", "freelance",
+        "contract", "contractor", "remote", "remoto", "software", "developer", "ai",
+        "artificial intelligence", "machine learning", "content", "design", "video",
     )
-    rows = {str(row.get("id")): row for row in [*freelancer_rows, *local_rows]}
-    relevant_terms = ("python", "api", "automation", "automação", "scrap", "excel", "csv", "pdf", "data", "dados", "backend", "integração", "integration", "bot")
     ranked = []
-    for row in rows.values():
-        text = " ".join(str(row.get(key) or "") for key in ("title", "description", "summary", "proposal")).lower()
-        if not any(term in text for term in relevant_terms):
+    seen = set()
+    for row in rows:
+        url = str(row.get("url") or row.get("source_url") or "").strip()
+        title = str(row.get("title") or "").strip()
+        if not title or not url:
             continue
-        row["_relevance"] = sum(1 for term in relevant_terms if term in text)
+        identity = str(row.get("idempotency_key") or url)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        searchable = " ".join(
+            str(row.get(key) or "")
+            for key in ("title", "description", "summary", "source", "proposal")
+        ).lower()
+        relevance = sum(1 for term in relevant_terms if term in searchable)
+        if relevance == 0:
+            continue
+        row["url"] = url
+        row["_relevance"] = relevance
         ranked.append(row)
-    ranked.sort(key=lambda row: (row["_relevance"], float(row.get("score") or 0)), reverse=True)
+    ranked.sort(
+        key=lambda row: (
+            row["_relevance"],
+            float(row.get("score") or 0),
+            str(row.get("created_at") or ""),
+        ),
+        reverse=True,
+    )
     for row in ranked:
         row.pop("_relevance", None)
     return ranked[:safe_limit]

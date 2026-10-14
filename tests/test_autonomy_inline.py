@@ -7,6 +7,11 @@ from backend.app.services.opportunities import Opportunity
 class FakeStore:
     def __init__(self):
         self.jobs = []
+        self.opportunities = []
+
+    async def create_opportunity_if_absent(self, values):
+        self.opportunities.append(values)
+        return values
 
     async def create_job_if_absent(self, job_type, payload, key):
         job = {"id": "job-inline-1", "job_type": job_type, "status": "pending", "payload": payload, "idempotency_key": key}
@@ -51,4 +56,7 @@ async def test_inline_autonomy_cycle_persists_without_redis_enqueue(monkeypatch)
     assert result["queued"] == 1
     assert result["opportunities"][0]["job_id"] == "job-inline-1"
     assert store.jobs[0]["job_type"] == "opportunity_pipeline"
+    assert len(store.opportunities) == 1
+    assert store.opportunities[0]["source"] == "remotive"
+    assert store.opportunities[0]["url"] == "https://example.com/jobs/sample-job-1"
     assert queue.jobs == []

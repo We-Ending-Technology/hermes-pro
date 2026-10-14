@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     supabase_secret_key: str | None = Field(default=None, validation_alias="SUPABASE_SECRET_KEY")
     supabase_service_role_key: str | None = Field(default=None, validation_alias="SUPABASE_SERVICE_ROLE_KEY")
     supabase_service_key: str | None = Field(default=None, validation_alias="SUPABASE_SERVICE_KEY")
+    # Diagnostic-only aliases: these are never accepted for privileged writes.
+    supabase_key: str | None = Field(default=None, validation_alias="SUPABASE_KEY")
+    supabase_anon_key: str | None = Field(default=None, validation_alias="SUPABASE_ANON_KEY")
+    supabase_publishable_key: str | None = Field(default=None, validation_alias="SUPABASE_PUBLISHABLE_KEY")
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
     cors_origins: str = Field(default="http://localhost:5173", validation_alias="CORS_ORIGINS")
     hotmart_client_id: str | None = Field(default=None, validation_alias="HOTMART_CLIENT_ID")

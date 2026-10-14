@@ -44,6 +44,18 @@ SOURCES = {
         "url": "https://www.arbeitnow.com/api/job-board-api",
         "automation_allowed": True,
     },
+    "jobicy": {
+        "kind": "public_api",
+        "url": "https://jobicy.com/api/v2/remote-jobs?count=100",
+        "automation_allowed": True,
+        "attribution_required": True,
+    },
+    "himalayas": {
+        "kind": "public_api",
+        "url": "https://himalayas.app/jobs/api?limit=20",
+        "automation_allowed": True,
+        "attribution_required": True,
+    },
     "workana": {
         "kind": "manual_or_official_api_only",
         "url": "https://www.workana.com/",
@@ -107,11 +119,11 @@ async def fetch_opportunities(limit: int = 40) -> list[Opportunity]:
             for row in rows[:limit]:
                 if not isinstance(row, dict):
                     continue
-                title = _text(row.get("position") or row.get("title") or row.get("name"))
-                description = _text(row.get("description") or row.get("snippet"))
+                title = _text(row.get("jobTitle") or row.get("position") or row.get("title") or row.get("name"))
+                description = _text(row.get("jobDescription") or row.get("description") or row.get("snippet"))
                 tags = [str(x) for x in (row.get("tags") or row.get("skills") or []) if x]
-                external_id = _text(row.get("id") or row.get("slug") or row.get("url") or title)
-                url = _text(row.get("url") or row.get("job_url") or row.get("apply_url"))
+                external_id = _text(row.get("id") or row.get("jobSlug") or row.get("slug") or row.get("guid") or row.get("url") or title)
+                url = _text(row.get("url") or row.get("jobUrl") or row.get("job_url") or row.get("guid") or row.get("applicationLink") or row.get("apply_url"))
                 if not title or not url or not _match(title, description, tags):
                     continue
                 results.append(Opportunity(
@@ -121,8 +133,8 @@ async def fetch_opportunities(limit: int = 40) -> list[Opportunity]:
                     url=url,
                     description=description[:6000],
                     tags=tags[:30],
-                    budget=_money(row.get("salary") or row.get("salary_min")),
-                    currency=_text(row.get("currency") or "USD") or "USD",
+                    budget=_money(row.get("salary") or row.get("salary_min") or row.get("annualSalaryMin") or row.get("minSalary")),
+                    currency=_text(row.get("currency") or row.get("salaryCurrency") or "USD") or "USD",
                     discovery_automation_allowed=bool(cfg["automation_allowed"]),
                     raw=row,
                 ))
