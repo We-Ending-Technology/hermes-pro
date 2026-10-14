@@ -56,14 +56,6 @@ async def lifespan(app: FastAPI):
     await queue.close()
 
 app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_origin_regex=r"https://[a-zA-Z0-9-]+\.vercel\.app$",
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 app.include_router(commercial_router)
 app.include_router(autonomy_router)
 
@@ -86,6 +78,16 @@ async def require_admin_api_token(request: Request, call_next):
         if not supplied or not secrets.compare_digest(supplied, expected):
             return JSONResponse(status_code=401, content={"detail": "Authentication required"})
     return await call_next(request)
+
+# CORS must wrap authentication so browser clients receive CORS headers on 401/503 responses.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list,
+    allow_origin_regex=r"https://[a-zA-Z0-9-]+\.vercel\.app$",
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def product_response(row: dict) -> ProductResponse:
     metadata = dict(row.get("metadata") or {})
