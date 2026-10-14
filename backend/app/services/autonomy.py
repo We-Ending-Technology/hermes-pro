@@ -17,6 +17,24 @@ class AutonomyService:
         selected = []
         for item in opportunities:
             scored = score_opportunity(item)
+            await self.store.create_opportunity_if_absent({
+                "type": "service",
+                "title": item.title,
+                "description": item.description,
+                "source": item.source,
+                "source_url": item.url,
+                "signals": {"tags": item.tags, "budget": item.budget, "currency": item.currency, "score_components": scored},
+                "score": scored["score"],
+                "status": "discovered",
+                "idempotency_key": f"opportunity:{item.fingerprint}",
+                "metadata": {"external_id": item.external_id, "discovery_automation_allowed": item.discovery_automation_allowed, "source_policy": scored["source_policy"]},
+                "url": item.url,
+                "summary": item.description[:600],
+                "difficulty": "unknown",
+                "currency": item.currency,
+                "proposal": "",
+                "application_status": "not_attempted",
+            })
             if scored["score"] < minimum_score:
                 continue
             payload = {
