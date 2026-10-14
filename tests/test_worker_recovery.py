@@ -82,3 +82,34 @@ async def test_opportunity_processor_does_not_exceed_retry_budget():
     assert store.updated[0][1] == "failed"
     assert "maximum attempts reached" in store.updated[0][2]["error_message"]
     assert queue.jobs == []
+
+
+@pytest.mark.asyncio
+async def test_approved_opportunity_persists_hashed_markdown_artifact():
+    import hashlib
+
+    store = FakeStore([{
+        "id": "job-artifact", "job_type": "opportunity_pipeline",
+        "status": "pending", "attempts": 0, "max_attempts": 3,
+        "payload": {
+            "opportunity_id": "op-123",
+            "source": "remotive",
+            "external_id": "job-123",
+            "title": "Python API automation",
+            "url": "https://example.com/job-123",
+            "description": "Build a small Python API integration.",
+            "score": 80,
+            "application_automation_allowed": False,
+        },
+    }])
+    queue = FakeQueue()
+
+    await process_opportunity("job-artifact", store, queue)
+
+    job = store.jobs[0]
+    artifact = job["payload"]["pipeline"]["artifact"]
+    assert job["status"] == "completed"
+    assert artifact["format"] == "text/markdown"
+    assert "# Opportunity brief: Python API automation" in artifact["content"]
+    assert artifact["sha256"] == hashlib.sha256(artifact["content"].encode("utf-8")).hexdigest()
+    assert "did not submit" in artifact["content"]
