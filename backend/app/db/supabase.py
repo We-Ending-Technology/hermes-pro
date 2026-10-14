@@ -34,15 +34,15 @@ class SupabaseREST:
         import logging
         logging.getLogger("hermes.api.supabase").info("Supabase credential kind=%s", key_kind)
         self.headers = {
-            "apikey": settings.supabase_secret_key or "",
+            "apikey": self.secret_key or "",
             "Content-Type": "application/json",
         }
         # Supabase's newer sb_secret_* API keys are opaque API keys, not JWTs.
         # They must be sent via apikey only; using them as a Bearer token can
         # cause PostgREST to evaluate requests as anon and enforce RLS.
         # Legacy service_role/anon keys are JWTs and still need Authorization.
-        if settings.supabase_secret_key and settings.supabase_secret_key.startswith("eyJ"):
-            self.headers["Authorization"] = f"Bearer {settings.supabase_secret_key}"
+        if self.secret_key and self.secret_key.startswith("eyJ"):
+            self.headers["Authorization"] = f"Bearer {self.secret_key}"
 
     @staticmethod
     def _jwt_role(key: str) -> str | None:
