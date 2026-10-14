@@ -1,0 +1,41 @@
+name: Hermes scheduled opportunity radar
+
+on:
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: hermes-opportunity-radar
+  cancel-in-progress: false
+
+jobs:
+  radar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate existing API token is configured
+        env:
+          HERMES_API_TOKEN: ${{ secrets.HERMES_API_TOKEN }}
+        run: |
+          if [ -z "$HERMES_API_TOKEN" ]; then
+            echo "::error::Missing repository Actions secret HERMES_API_TOKEN. Copy the existing token from the Render API service; do not print it."
+            exit 1
+          fi
+
+      - name: Run one real discovery cycle
+        env:
+          HERMES_API_TOKEN: ${{ secrets.HERMES_API_TOKEN }}
+          HERMES_API_URL: https://hermes-pro-api-commercial.onrender.com
+        run: |
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error --max-time 180 --retry 2 --retry-delay 10 --output "$response_file" --write-out "%{http_code}" \
+            --request POST "$HERMES_API_URL/api/v1/autonomy/cycle" \
+            --header "X-Hermes-API-Key: $HERMES_API_TOKEN" \
+            --header "Content-Type: application/json")"
+          cat "$response_file"
+          rm -f "$response_file"
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "::error::Hermes radar cycle returned HTTP $status"
+            exit 1
+          fi
