@@ -36,9 +36,25 @@ async def ready() -> dict[str, Any]:
     }
     accepted_key = bool(db.secret_key)
     key_kind = "sb_secret" if (db.secret_key or "").startswith("sb_secret_") else "service_role_jwt" if db.secret_key else "missing_or_not_privileged"
+    provided_key = next((str(value).strip().strip('"').strip("'").strip() for value in (
+        settings.supabase_service_role_key, settings.supabase_service_key, settings.supabase_secret_key
+    ) if value), "")
+    if not provided_key:
+        provided_key_format = "missing"
+    elif provided_key.startswith("sb_secret_"):
+        provided_key_format = "sb_secret"
+    elif provided_key.startswith("sb_publishable_"):
+        provided_key_format = "sb_publishable_not_privileged"
+    elif provided_key.startswith("eyJ"):
+        jwt_role = SupabaseREST._jwt_role(provided_key)
+        provided_key_format = "legacy_jwt_service_role" if jwt_role == "service_role" else "legacy_jwt_anon" if jwt_role == "anon" else "legacy_jwt_other_or_invalid"
+    else:
+        provided_key_format = "unknown_format"
     if not accepted_key:
-        if any(supabase_key_vars.values()):
-            key_message = "Uma variável de chave do servidor existe, mas seu valor não foi reconhecido como service_role JWT ou sb_secret_*. Confira se não é uma chave anon/publishable."
+        if provided_key_format == "legacy_jwt_anon" or provided_key_format == "sb_publishable_not_privileged":
+            key_message = "A variável SUPABASE_SERVICE_ROLE_KEY contém uma chave anon/publishable, não uma chave de servidor. Substitua o VALOR pela service_role antiga ou por uma sb_secret_* do projeto."
+        elif any(supabase_key_vars.values()):
+            key_message = "A variável de chave do servidor existe, mas o formato/role não foi reconhecido. Confira se o valor é a service_role do projeto ou uma sb_secret_*; não use anon/publishable."
         elif any(non_privileged_key_vars.values()):
             key_message = "Foram detectadas apenas variáveis genéricas/anon/publishable. Elas não autorizam gravações do worker; configure SUPABASE_SERVICE_ROLE_KEY ou SUPABASE_SECRET_KEY com a chave privilegiada do projeto."
         else:
@@ -76,6 +92,7 @@ async def ready() -> dict[str, Any]:
             "non_privileged_key_variables_present": non_privileged_key_vars,
             "accepted_server_key": accepted_key,
             "accepted_server_key_type": key_kind,
+            "provided_server_key_format": provided_key_format,
             "secret_values_exposed": False,
         },
     }
