@@ -257,7 +257,17 @@ async def autonomy_cycle():
 
 @app.get("/api/v1/autonomy/status")
 async def autonomy_status():
-    return {"enabled": settings.autonomy_enabled, "minimum_score": settings.autonomy_min_score, "agents": registry.names()}
+    return {
+        "enabled": settings.autonomy_enabled,
+        "minimum_score": settings.autonomy_min_score,
+        "agents": registry.names(),
+        "runtime": {
+            "mode": getattr(app.state, "autonomy_scheduler_mode", "unknown"),
+            "interval_seconds": max(60, int(settings.autonomy_interval_seconds)),
+            "continuous_24_7_guaranteed": False,
+            "note": "Inline scheduling runs while this API process is awake; a free hosting instance may sleep while idle.",
+        },
+    }
 
 @app.get("/api/v1/opportunities")
 async def opportunities(limit: int = 20):
