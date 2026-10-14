@@ -18,7 +18,10 @@ function getAdminToken() {
 }
 
 async function request(base, path, options = {}, authRetry = true) {
-  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  const method = String(options.method || "GET").toUpperCase();
+  const headers = { ...(options.headers || {}) };
+  // Avoid unnecessary CORS preflights on GET/HEAD health and read-only calls.
+  if (options.body !== undefined && options.body !== null && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   if (path.startsWith("/api/v1/") && path !== "/api/v1/webhooks/hotmart") {
     const token = getAdminToken();
     if (!token) throw new Error("Acesso privado não informado. Atualize a página e cole o HERMES_API_TOKEN já configurado no Render.");
