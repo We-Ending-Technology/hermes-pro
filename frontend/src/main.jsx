@@ -168,11 +168,11 @@ function RadarView() {
   const [items,setItems]=useState([]); const [busy,setBusy]=useState(false); const [notice,setNotice]=useState(""); const [drafts,setDrafts]=useState({});
   const load=async()=>{try{const data=await call("/api/v1/opportunities?limit=20");setItems(Array.isArray(data)?data:[]);return Array.isArray(data)?data:null;}catch(e){setNotice(e.message);return null;}};
   useEffect(()=>{load();},[]);
-  const run=async()=>{setBusy(true);setNotice("");try{const data=await load();if(data) setNotice("Lista atualizada com "+data.length+" oportunidades freelance salvas. A atualização da lista não envia propostas.");}catch(e){setNotice(e.message);}finally{setBusy(false);}};
+  const run=async()=>{setBusy(true);setNotice("");try{const scan=await call("/api/v1/autonomy/cycle",{method:"POST",body:JSON.stringify({})});await load();setNotice("Varredura real concluída: "+Number(scan.scanned||0)+" oportunidades encontradas; "+Number(scan.queued||0)+" tarefas preparadas. Nenhuma proposta foi enviada.");}catch(e){setNotice("A varredura não foi concluída: "+e.message);}finally{setBusy(false);}};
   const queue=async(id)=>{try{const r=await call("/api/v1/opportunities/"+id+"/queue",{method:"POST"});setDrafts(old=>({...old,[id]:r.proposal||""}));setNotice(r.message||"Rascunho preparado para revisão.");await load();}catch(e){setNotice(e.message);}};
-  return <Page title="Radar" sub="Oportunidades freelance filtradas. O Hermes prepara rascunhos honestos para você revisar; o envio continua manual.">
+  return <Page title="Radar" sub="Busca oportunidades reais em APIs públicas gratuitas, salva os resultados e prepara rascunhos para revisão. O envio continua manual.">
     {notice&&<div className="notice">{notice}</div>}
-    <Button primary disabled={busy} onClick={run}>{busy?"Atualizando…":"↻ Atualizar oportunidades"}</Button>
+    <Button primary disabled={busy} onClick={run}>{busy?"Atualizando…":"↻ Varrer a internet agora"}</Button>
     <div className="section-heading"><div><K>OPPORTUNITIES</K><h3>Fila priorizada</h3></div><span className="kicker">{items.length} carregadas</span></div>
     <div className="product-grid">{items.length?items.map(x=><article className="product-card detailed" key={x.id}>
       <div className="cover-placeholder"><span>{String(x.source||"R").slice(0,1).toUpperCase()}</span><small>{"score "+Math.round(Number(x.score||0))}</small></div>
