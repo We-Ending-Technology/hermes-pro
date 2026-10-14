@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 from uuid import UUID
+import base64
+import json
 
 import httpx
 
@@ -16,7 +18,16 @@ class SupabaseError(RuntimeError):
 class SupabaseREST:
     def __init__(self, settings: Settings) -> None:
         self.base_url = (settings.supabase_url or "").rstrip("/") + "/rest/v1"
-        self.secret_key = settings.supabase_secret_key
+        # Prefer an explicitly named server-role key, but accept the newer sb_secret_* key.
+        # Never silently use a publishable/anon key for server-side writes.
+        candidates = [
+            settings.supabase_service_role_key,
+            settings.supabase_service_key,
+            settings.supabase_secret_key,
+        ]
+        self.secret_key = next((key for key in candidates if key and (
+            key.startswith("sb_secret_") or self._jwt_role(key) == "service_role"
+        )), None)
         # Safe diagnostic only: never log the secret value.
         key = self.secret_key or ""
         key_kind = "sb_secret" if key.startswith("sb_secret_") else ("legacy_jwt" if key.startswith("eyJ") else ("missing" if not key else "other"))
@@ -33,9 +44,27 @@ class SupabaseREST:
         if settings.supabase_secret_key and settings.supabase_secret_key.startswith("eyJ"):
             self.headers["Authorization"] = f"Bearer {settings.supabase_secret_key}"
 
+    @staticmethod
+    def _jwt_role(key: str) -> str | None:
+        try:
+            parts = key.split(".")
+            if len(parts) != 3:
+                return None
+            payload = parts[1] + "=" * (-len(parts[1]) % 4)
+            decoded = base64.urlsafe_b64decode(payload.encode("ascii"))
+            role = json.loads(decoded.decode("utf-8")).get("role")
+            return role if isinstance(role, str) else None
+        except Exception:
+            return None
+
     def _ensure_configured(self) -> None:
-        if not self.secret_key or not self.base_url.startswith("http"):
-            raise SupabaseError("SUPABASE_URL and SUPABASE_SECRET_KEY are required")
+        if not self.base_url.startswith("http"):
+            raise SupabaseError("SUPABASE_URL is required")
+        if not self.secret_key:
+            raise SupabaseError(
+                "A server-side Supabase key is required: use SUPABASE_SERVICE_ROLE_KEY "
+                "or a Supabase sb_secret_* key. Publishable/anon keys cannot authorize worker writes."
+            )
 
     @staticmethod
     def _json_value(value: Any) -> Any:
