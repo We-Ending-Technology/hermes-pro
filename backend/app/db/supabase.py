@@ -20,10 +20,16 @@ class SupabaseREST:
         self.base_url = (settings.supabase_url or "").rstrip("/") + "/rest/v1"
         # Prefer an explicitly named server-role key, but accept the newer sb_secret_* key.
         # Never silently use a publishable/anon key for server-side writes.
-        candidates = [
+        raw_candidates = [
             settings.supabase_service_role_key,
             settings.supabase_service_key,
             settings.supabase_secret_key,
+        ]
+        # Normalize common copy/paste whitespace or quote wrappers before checking
+        # the credential type; never promote anon/publishable keys to server keys.
+        candidates = [
+            str(key).strip().strip('"').strip("'").strip() if key else None
+            for key in raw_candidates
         ]
         self.secret_key = next((key for key in candidates if key and (
             key.startswith("sb_secret_") or self._jwt_role(key) == "service_role"
