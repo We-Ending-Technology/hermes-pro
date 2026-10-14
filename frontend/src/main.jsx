@@ -32,6 +32,8 @@ function App() {
   const [videoChannel, setVideoChannel] = useState("youtube_shorts");
   const [videoTopic, setVideoTopic] = useState("");
   const [videoPackage, setVideoPackage] = useState(null);
+  const [trendingTopics, setTrendingTopics] = useState([]);
+  const [trendsBusy, setTrendsBusy] = useState(false);
   const refreshing = useRef(false);
 
   const refresh = async () => {
@@ -93,6 +95,19 @@ function App() {
     if (result) setChat(items => [...items, { role: "assistant", text: result.response, meta: `${result.provider || "AI"} · ${result.model || "modelo"}` }]);
   };
 
+  const findTrendingTopics = async () => {
+    setTrendsBusy(true);
+    try {
+      const data = await call("/api/v1/content/trends?geo=BR&limit=15");
+      setTrendingTopics(Array.isArray(data.items) ? data.items : []);
+      setNotice("Temas carregados do Google Trends. Escolha um tema para preparar o vídeo; tendência não garante visualizações ou receita.");
+    } catch (e) {
+      setNotice("Não foi possível buscar tendências: " + e.message);
+    } finally {
+      setTrendsBusy(false);
+    }
+  };
+
   const generateVideoPackage = async (event) => {
     event.preventDefault();
     const topic = videoTopic.trim();
@@ -122,7 +137,7 @@ function App() {
       {busy && <div className="loading-line"><i /> sincronizando dados reais…</div>}
       {view === "Início" && <Home dashboard={dashboard} products={products} jobs={jobs} go={setView} select={selectProduct} diagnostics={diagnostics} runDiagnostics={runDiagnostics} />}
       {view === "Hermes" && <ChatView chat={chat} input={chatInput} setInput={setChatInput} send={sendChat} />}
-      {view === "Vídeos" && <VideoFactory channel={videoChannel} setChannel={setVideoChannel} topic={videoTopic} setTopic={setVideoTopic} result={videoPackage} submit={generateVideoPackage} busy={busy} />}
+      {view === "Vídeos" && <VideoFactory channel={videoChannel} setChannel={setVideoChannel} topic={videoTopic} setTopic={setVideoTopic} result={videoPackage} submit={generateVideoPackage} busy={busy} trends={trendingTopics} trendsBusy={trendsBusy} findTrends={findTrendingTopics} />}
       {view === "Canais" && <RevenueChannels integrations={integrations} />}
       {view === "Radar" && <RadarView />}
       {view === "Fábrica" && <Factory topic={topic} setTopic={setTopic} submit={createProduct} />}
@@ -204,7 +219,7 @@ function RevenueChannels({ integrations }) {
   </Page>;
 }
 
-function VideoFactory({ channel, setChannel, topic, setTopic, result, submit, busy }) {
+function VideoFactory({ channel, setChannel, topic, setTopic, result, submit, busy, trends, trendsBusy, findTrends }) {
   return <Page title="Fábrica de Vídeos" sub="Crie roteiros originais para YouTube e canais verticais. Gera o pacote de produção; renderização e publicação são etapas separadas.">
     <div className="two-col">
       <form className="panel factory-form" onSubmit={submit}>
@@ -218,6 +233,8 @@ function VideoFactory({ channel, setChannel, topic, setTopic, result, submit, bu
         </label>
         <label>Tema / nicho do vídeo
           <textarea value={topic} onChange={e => setTopic(e.target.value)} minLength={5} required placeholder="Ex.: curiosidades históricas brasileiras com fontes verificáveis" />
+        <div className="asset-actions"><button type="button" onClick={findTrends} disabled={trendsBusy}>{trendsBusy ? "Buscando tendências…" : "Buscar temas em alta (grátis)"}</button></div>
+        {trends.length > 0 && <div className="trend-list"><K>GOOGLE TRENDS · BRASIL</K>{trends.map((item, index) => <div className="trend-row" key={item.url || item.title + index}><button type="button" onClick={() => setTopic(item.title)}>{item.title}</button>{item.url && <a href={item.url} target="_blank" rel="noreferrer">Fonte ↗</a>}</div>)}</div>}
         </label>
         <div className="form-footer"><span>Roteiro · narração · cenas · legenda · hashtags</span><Button primary type="submit" disabled={busy}>Gerar pacote ↗</Button></div>
         <p className="panel-note">Usa o modelo de IA já configurado. Pode consumir a franquia/cota da chave existente; não compra ferramentas nem publica automaticamente.</p>
