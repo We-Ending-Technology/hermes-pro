@@ -17,6 +17,11 @@ class SupabaseREST:
     def __init__(self, settings: Settings) -> None:
         self.base_url = (settings.supabase_url or "").rstrip("/") + "/rest/v1"
         self.secret_key = settings.supabase_secret_key
+        # Safe diagnostic only: never log the secret value.
+        key = self.secret_key or ""
+        key_kind = "sb_secret" if key.startswith("sb_secret_") else ("legacy_jwt" if key.startswith("eyJ") else ("missing" if not key else "other"))
+        import logging
+        logging.getLogger("hermes.api.supabase").info("Supabase credential kind=%s", key_kind)
         self.headers = {
             "apikey": settings.supabase_secret_key or "",
             "Content-Type": "application/json",
