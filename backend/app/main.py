@@ -2,6 +2,9 @@ from contextlib import asynccontextmanager
 import asyncio
 import logging
 import secrets
+import xml.etree.ElementTree as ET
+
+import httpx
 from datetime import date, datetime
 from uuid import uuid4
 
@@ -257,6 +260,36 @@ async def run_agent(request: AgentRunRequest):
     except KeyError as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
     output = await agent.run(request.input)
     return AgentRunResponse(run_id=str(uuid4()), agent=request.agent, status="completed", output=output)
+
+@app.get("/api/v1/content/trends")
+async def content_trends(geo: str = "BR", limit: int = 15):
+    """Fetch a public Google Trends RSS feed without requiring an API key."""
+    region = geo.strip().upper()
+    if len(region) != 2 or not region.isalpha():
+        raise HTTPException(status_code=422, detail="Use a código de país de duas letras, por exemplo BR ou US.")
+    safe_limit = min(max(limit, 1), 30)
+    feed_url = f"https://trends.google.com/trending/rss?geo={region}"
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            response = await client.get(feed_url, headers={"Accept": "application/rss+xml, application/xml"})
+            response.raise_for_status()
+        root = ET.fromstring(response.content)
+    except (httpx.HTTPError, ET.ParseError) as exc:
+        raise HTTPException(status_code=502, detail=f"Google Trends RSS indisponível: {type(exc).__name__}") from exc
+    items = []
+    for item in root.findall(".//item")[:safe_limit]:
+        title = (item.findtext("title") or "").strip()
+        if not title:
+            continue
+        items.append({
+            "title": title,
+            "url": (item.findtext("link") or "").strip(),
+            "published_at": (item.findtext("pubDate") or "").strip(),
+            "summary": (item.findtext("description") or "").strip(),
+            "source": "Google Trends",
+        })
+    return {"source": "Google Trends RSS", "geo": region, "count": len(items), "items": items, "api_key_required": False}
+
 
 @app.post("/api/v1/content/video-package")
 async def create_video_package(request: dict):
