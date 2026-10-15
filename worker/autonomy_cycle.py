@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from backend.app.core.config import get_settings
-from backend.app.db.supabase import SupabaseREST
+from backend.app.db.postgres import PostgresStore
 from backend.app.queue import JobQueue
 from backend.app.services.autonomy import AutonomyService
 from backend.app.services.persistence import PersistentStore
@@ -15,7 +15,7 @@ async def main() -> None:
     if not settings.autonomy_enabled:
         logger.info("autonomy disabled")
         return
-    store = PersistentStore(SupabaseREST(settings))
+    store = PersistentStore(PostgresStore(settings))
     queue = JobQueue(settings.redis_url)
     try:
         result = await AutonomyService(store, queue).cycle(settings.autonomy_min_score)
