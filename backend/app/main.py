@@ -226,14 +226,17 @@ async def agents_status():
             "execution_verified": False,
         })
 
+    database_configured = bool(settings.database_url and "${{" not in settings.database_url)
+    database_connected = await db.health()
     return {
         "chief": "configured_unverified" if ai_configured else "blocked_missing_provider_credentials",
         "autonomy_enabled": settings.autonomy_enabled,
-        "overall": "configuration_incomplete" if not (ai_configured and settings.supabase_url and db.secret_key) else "configured_unverified",
+        "overall": "configuration_incomplete" if not (ai_configured and database_connected) else "configured_unverified",
         "dependencies": {
             "ai_provider": provider or "unset",
             "ai_credentials_configured": ai_configured,
-            "supabase_configured": bool(settings.supabase_url and db.secret_key),
+            "postgres_configured": database_configured,
+            "postgres_connected": database_connected,
             "redis_url_configured": bool(settings.redis_url),
             "freelancer_enabled": settings.freelancer_enabled,
             "freelancer_auto_apply_enabled": settings.freelancer_auto_apply,
