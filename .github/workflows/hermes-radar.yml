@@ -16,13 +16,20 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Health check
+        env:
+          HERMES_API_TOKEN: ${{ secrets.HERMES_API_TOKEN }}
         run: |
           set -euo pipefail
+          test -n "${HERMES_API_TOKEN}" || (echo "Missing GitHub Actions secret HERMES_API_TOKEN" >&2; exit 1)
           curl --fail --silent --show-error --max-time 30 \
-            https://hermes-pro-api-m7wd.onrender.com/health
+            https://hermes-pro-api-commercial.onrender.com/health
       - name: Run Radar
+        env:
+          HERMES_API_TOKEN: ${{ secrets.HERMES_API_TOKEN }}
         run: |
           set -euo pipefail
+          test -n "${HERMES_API_TOKEN}" || (echo "Missing GitHub Actions secret HERMES_API_TOKEN" >&2; exit 1)
           curl --fail --silent --show-error --max-time 180 \
             -X POST \
-            "https://hermes-pro-api-m7wd.onrender.com/api/v1/radar/run?limit=1000"
+            -H "X-Hermes-API-Key: ${HERMES_API_TOKEN}" \
+            "https://hermes-pro-api-commercial.onrender.com/api/v1/autonomy/cycle"

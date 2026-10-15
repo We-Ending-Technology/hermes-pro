@@ -20,4 +20,5 @@ jobs:
       - name: Wake and verify Hermes API
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --max-time 60             https://hermes-pro-api-m7wd.onrender.com/health
+          curl --fail --silent --show-error --max-time 60 \
+            https://hermes-pro-api-commercial.onrender.com/health
