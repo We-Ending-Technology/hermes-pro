@@ -3,12 +3,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from ..db.supabase import SupabaseREST
+from ..db.postgres import PostgresStore
 from ..models.jobs import JobStatus
 from ..product_factory import PIPELINE_STAGES
 
 class PersistentStore:
-    def __init__(self, db: SupabaseREST) -> None:
+    def __init__(self, db: PostgresStore) -> None:
         self.db = db
 
     async def create_product_and_job(self, topic: str, metadata: dict[str, Any], idempotency_key: str | None):
