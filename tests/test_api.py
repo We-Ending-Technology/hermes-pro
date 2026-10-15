@@ -39,3 +39,20 @@ def test_unknown_agent(monkeypatch) -> None:
             json={"agent": "unknown", "input": {}},
         )
     assert response.status_code == 404
+
+
+def test_postgres_driver_error_returns_503_without_exposing_details(monkeypatch) -> None:
+    import psycopg
+    import backend.app.main as main_module
+
+    async def broken_select(*args, **kwargs):
+        raise psycopg.ProgrammingError('missing "=" after "${{" in connection info string')
+
+    monkeypatch.setattr(main_module.db, "select", broken_select)
+    with TestClient(app) as client:
+        response = client.get("/api/v1/products")
+
+    assert response.status_code == 503
+    assert response.json()["code"] == "DATABASE_UNAVAILABLE"
+    assert "${{" not in response.text
+    assert "connection info string" not in response.text
