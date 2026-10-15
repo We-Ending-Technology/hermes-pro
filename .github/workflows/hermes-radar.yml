@@ -32,4 +32,4 @@ jobs:
           curl --fail --silent --show-error --max-time 180 \
             -X POST \
             -H "X-Hermes-API-Key: ${HERMES_API_TOKEN}" \
-            "https://hermes-pro-api-commercial.onrender.com/api/v1/radar/run?limit=1000"
+            "https://hermes-pro-api-commercial.onrender.com/api/v1/autonomy/cycle"
