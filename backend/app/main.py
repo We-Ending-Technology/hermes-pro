@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 import asyncio
+import psycopg
 import logging
 import secrets
 import xml.etree.ElementTree as ET
@@ -131,6 +132,22 @@ app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
 async def database_unavailable_handler(request: Request, exc: DatabaseError):
     # Return an explicit PostgreSQL dependency failure instead of an opaque HTTP 500.
     return JSONResponse(status_code=503, content={"detail": str(exc), "code": "DATABASE_UNAVAILABLE"})
+
+@app.exception_handler(psycopg.Error)
+async def postgres_driver_error_handler(request: Request, exc: psycopg.Error):
+    # Never echo driver messages: connection exceptions can contain sensitive connection details.
+    logger.error(
+        "PostgreSQL operation failed path=%s exception_type=%s",
+        request.url.path,
+        type(exc).__name__,
+    )
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "PostgreSQL indisponível ou DATABASE_URL inválida.",
+            "code": "DATABASE_UNAVAILABLE",
+        },
+    )
 app.include_router(commercial_router)
 app.include_router(autonomy_router)
 
