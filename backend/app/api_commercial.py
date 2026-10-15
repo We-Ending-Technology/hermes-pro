@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from .core.config import get_settings
-from .db.supabase import SupabaseREST, SupabaseError
+from .db.postgres import PostgresStore, DatabaseError
 from .services.hotmart import HotmartClient, HotmartError
 from .services.integrations import integration_service
 from .services.persistence import PersistentStore
@@ -13,7 +13,7 @@ from .services.telegram import TelegramNotifier
 
 router = APIRouter()
 settings = get_settings()
-db = SupabaseREST(settings)
+db = PostgresStore(settings)
 store = PersistentStore(db)
 hotmart = HotmartClient(settings)
 telegram = TelegramNotifier(settings)
@@ -21,78 +21,40 @@ telegram = TelegramNotifier(settings)
 
 @router.get("/ready")
 async def ready() -> dict[str, Any]:
-    """Report configuration separately from a real read-only dependency probe."""
+    """Check real PostgreSQL connectivity separately from optional integrations."""
     statuses = {x["name"].lower(): x for x in integration_service.status()}
-    checks: list[dict[str, Any]] = []
-    supabase_key_vars = {
-        "SUPABASE_SERVICE_ROLE_KEY": bool(settings.supabase_service_role_key),
-        "SUPABASE_SERVICE_KEY": bool(settings.supabase_service_key),
-        "SUPABASE_SECRET_KEY": bool(settings.supabase_secret_key),
-    }
-    non_privileged_key_vars = {
-        "SUPABASE_KEY": bool(settings.supabase_key),
-        "SUPABASE_ANON_KEY": bool(settings.supabase_anon_key),
-        "SUPABASE_PUBLISHABLE_KEY": bool(settings.supabase_publishable_key),
-    }
-    accepted_key = bool(db.secret_key)
-    key_kind = "sb_secret" if (db.secret_key or "").startswith("sb_secret_") else "service_role_jwt" if db.secret_key else "missing_or_not_privileged"
-    provided_key = next((str(value).strip().strip('"').strip("'").strip() for value in (
-        settings.supabase_service_role_key, settings.supabase_service_key, settings.supabase_secret_key
-    ) if value), "")
-    if not provided_key:
-        provided_key_format = "missing"
-    elif provided_key.startswith("sb_secret_"):
-        provided_key_format = "sb_secret"
-    elif provided_key.startswith("sb_publishable_"):
-        provided_key_format = "sb_publishable_not_privileged"
-    elif provided_key.startswith("eyJ"):
-        jwt_role = SupabaseREST._jwt_role(provided_key)
-        provided_key_format = "legacy_jwt_service_role" if jwt_role == "service_role" else "legacy_jwt_anon" if jwt_role == "anon" else "legacy_jwt_other_or_invalid"
-    else:
-        provided_key_format = "unknown_format"
-    if not accepted_key:
-        if provided_key_format == "legacy_jwt_anon" or provided_key_format == "sb_publishable_not_privileged":
-            key_message = "A variável SUPABASE_SERVICE_ROLE_KEY contém uma chave anon/publishable, não uma chave de servidor. Substitua o VALOR pela service_role antiga ou por uma sb_secret_* do projeto."
-        elif any(supabase_key_vars.values()):
-            key_message = "A variável de chave do servidor existe, mas o formato/role não foi reconhecido. Confira se o valor é a service_role do projeto ou uma sb_secret_*; não use anon/publishable."
-        elif any(non_privileged_key_vars.values()):
-            key_message = "Foram detectadas apenas variáveis genéricas/anon/publishable. Elas não autorizam gravações do worker; configure SUPABASE_SERVICE_ROLE_KEY ou SUPABASE_SECRET_KEY com a chave privilegiada do projeto."
-        else:
-            key_message = "Nenhuma chave privilegiada foi encontrada nos nomes aceitos. Configure SUPABASE_SERVICE_ROLE_KEY ou SUPABASE_SECRET_KEY com a chave de servidor do projeto."
-    else:
-        key_message = "Chave privilegiada reconhecida; testando leitura real no Supabase."
-    for name in ("Gemini", "Supabase", "Redis", "Hotmart", "Telegram"):
-        item = statuses[name.lower()]
-        configured = item["status"] not in {"not_configured", "error", "offline"}
-        status = "configured" if configured else "not_configured"
-        message = item["message"]
-        if name == "Supabase":
-            message = key_message
-            if configured:
-                connected = await db.health()
-                status = "connected" if connected else "error"
-                message = "Leitura de teste em hermes_products funcionou." if connected else "Chave reconhecida, mas a leitura de teste no Supabase falhou. Verifique URL, permissões e chave de servidor."
+    database_configured = bool(settings.database_url and "${{" not in settings.database_url)
+    database_connected = await db.health()
+    checks: list[dict[str, Any]] = [{
+        "name": "PostgreSQL",
+        "status": "connected" if database_connected else "error",
+        "configured": database_configured,
+        "connected": database_connected,
+        "message": "Conexão PostgreSQL verificada." if database_connected else (
+            "DATABASE_URL ausente ou ainda contém uma referência de template."
+            if not database_configured else
+            "A conexão PostgreSQL falhou; confira a URL interna e as permissões de rede."
+        ),
+    }]
+    for name in ("Gemini", "Redis", "Hotmart", "Telegram"):
+        item = statuses.get(name.lower(), {})
+        configured = item.get("status") not in {None, "not_configured", "error", "offline"}
         checks.append({
             "name": name,
-            "status": status,
+            "status": "configured" if configured else "not_configured",
             "configured": configured,
-            "connected": status == "connected" if name == "Supabase" else None,
-            "message": message,
+            "connected": None,
+            "message": item.get("message", "Estado da integração indisponível."),
         })
-    required_ok = all(x["configured"] for x in checks if x["name"] in {"Gemini", "Supabase"})
-    supabase_connected = next((x.get("connected") for x in checks if x["name"] == "Supabase"), False)
-    status = "ready" if required_ok and supabase_connected else "degraded"
+    gemini_configured = next((x["configured"] for x in checks if x["name"] == "Gemini"), False)
+    status = "ready" if database_connected and gemini_configured else "degraded"
     return {
         "status": status,
         "service": "hermes-pro-api",
         "checks": checks,
         "credential_diagnostics": {
-            "supabase_url_present": bool(settings.supabase_url),
-            "server_key_variables_present": supabase_key_vars,
-            "non_privileged_key_variables_present": non_privileged_key_vars,
-            "accepted_server_key": accepted_key,
-            "accepted_server_key_type": key_kind,
-            "provided_server_key_format": provided_key_format,
+            "database_url_present": bool(settings.database_url),
+            "database_url_is_template": "${{" in (settings.database_url or ""),
             "secret_values_exposed": False,
         },
     }
@@ -132,7 +94,7 @@ async def hotmart_webhook(request: Request, x_hotmart_hottok: str | None = Heade
     currency = price.get("currency_code") if isinstance(price, dict) else None
     try:
         await store.append_event("hotmart", event_type, payload, external_id=str(event_id) if event_id else None, amount=float(amount) if amount is not None else None, currency=currency)
-    except SupabaseError as exc:
+    except DatabaseError as exc:
         if "duplicate" not in str(exc).lower() and "unique" not in str(exc).lower():
             raise HTTPException(status_code=503, detail=str(exc)) from exc
     await telegram.send(f"Hermes Pro / Hotmart\nEvento: {event_type}\nValor: {amount} {currency or ''}".strip())

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from backend.app.ai_gateway.factory import build_ai_gateway
 from backend.app.core.config import get_settings
-from backend.app.db.supabase import SupabaseREST
+from backend.app.db.postgres import PostgresStore
 from backend.app.queue import JobQueue
 from backend.app.services.artifacts import build_artifacts
 from backend.app.services.persistence import PersistentStore
@@ -247,7 +247,7 @@ async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
 
 async def run() -> None:
     settings = get_settings()
-    store = PersistentStore(SupabaseREST(settings))
+    store = PersistentStore(PostgresStore(settings))
     queue = JobQueue(settings.redis_url)
     logger.info("Hermes Pro worker started; queue=hermes:jobs:product_generation")
     try:
