@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Header, HTTPException
 
 from .core.config import get_settings
-from .db.supabase import SupabaseREST
+from .db.postgres import PostgresStore
 from .services.execution_funded import execute_service_job, sync_freelancer_contracts
 from .integrations.freelancer import build_freelancer_adapter
 from .services.persistence import PersistentStore
@@ -13,13 +13,13 @@ from .ai_gateway.factory import build_ai_gateway
 
 router = APIRouter(prefix="/api/v1/autonomy", tags=["autonomy"])
 settings = get_settings()
-db = SupabaseREST(settings)
+db = PostgresStore(settings)
 store = PersistentStore(db)
 gateway = build_ai_gateway(settings)
 
 
 async def _require_scheduler(value: str | None) -> None:
-    # Reuse the already-configured server-side Hermes token; no extra Supabase secret/RPC needed.
+    # Reuse the configured server-side Hermes token; scheduler calls stay authenticated.
     expected = settings.hermes_api_token
     if not expected or not value or not __import__("secrets").compare_digest(value, expected):
         raise HTTPException(status_code=401, detail="invalid scheduler credential")
