@@ -22,7 +22,7 @@ from .services.autonomy import AutonomyService
 from .api_commercial import router as commercial_router
 from .api_autonomy import router as autonomy_router
 from .core.config import get_settings
-from .db.supabase import SupabaseREST, SupabaseError
+from .db.postgres import PostgresStore, DatabaseError
 from .queue import JobQueue
 from .schemas import *
 from .schemas_ext import ProductUpdateRequest
@@ -36,7 +36,7 @@ from .services.sales import SalesService
 settings = get_settings()
 ai_gateway = build_ai_gateway(settings)
 registry = AgentRegistry()
-db = SupabaseREST(settings)
+db = PostgresStore(settings)
 store = PersistentStore(db)
 sales_service = SalesService(db)
 queue = JobQueue(settings.redis_url)
@@ -127,10 +127,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
 
-@app.exception_handler(SupabaseError)
-async def supabase_unavailable_handler(request: Request, exc: SupabaseError):
-    # Return an explicit dependency failure instead of an opaque HTTP 500.
-    return JSONResponse(status_code=503, content={"detail": str(exc), "code": "SUPABASE_UNAVAILABLE"})
+@app.exception_handler(DatabaseError)
+async def database_unavailable_handler(request: Request, exc: DatabaseError):
+    # Return an explicit PostgreSQL dependency failure instead of an opaque HTTP 500.
+    return JSONResponse(status_code=503, content={"detail": str(exc), "code": "DATABASE_UNAVAILABLE"})
 app.include_router(commercial_router)
 app.include_router(autonomy_router)
 
@@ -509,7 +509,7 @@ async def create_product(request: ProductCreateRequest, background_tasks: Backgr
     try:
         product, job = await store.create_product_and_job(request.topic, request.metadata, request.idempotency_key)
         background_tasks.add_task(_run_inline_product, str(job["id"]))
-    except SupabaseError as exc: raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except DatabaseError as exc: raise HTTPException(status_code=503, detail=str(exc)) from exc
     return product_response(product)
 
 @app.get("/api/v1/products/{product_id}", response_model=ProductResponse)
