@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException
@@ -18,26 +19,36 @@ store = PersistentStore(db)
 gateway = build_ai_gateway(settings)
 
 
-async def _require_scheduler(value: str | None) -> None:
-    # Reuse the configured server-side Hermes token; scheduler calls stay authenticated.
+async def _require_scheduler(
+    scheduler_value: str | None,
+    api_key_value: str | None = None,
+) -> None:
+    # Keep machine-to-machine routes authenticated while accepting both documented
+    # Hermes headers. Both values are checked against the same server-side secret.
     expected = settings.hermes_api_token
-    if not expected or not value or not __import__("secrets").compare_digest(value, expected):
+    supplied = scheduler_value or api_key_value
+    if not expected:
+        raise HTTPException(status_code=503, detail="scheduler authentication is not configured")
+    if not supplied or not secrets.compare_digest(supplied, expected):
         raise HTTPException(status_code=401, detail="invalid scheduler credential")
 
 
 @router.post("/freelancer/sync")
-async def freelancer_sync(x_hermes_scheduler: str | None = Header(default=None)) -> dict[str, Any]:
-    await _require_scheduler(x_hermes_scheduler)
+async def freelancer_sync(
+    x_hermes_scheduler: str | None = Header(default=None),
+    x_hermes_api_key: str | None = Header(default=None),
+) -> dict[str, Any]:
+    await _require_scheduler(x_hermes_scheduler, x_hermes_api_key)
     return await sync_freelancer_contracts(store=store, settings=settings)
-
 
 
 @router.post("/freelancer/apply/{job_id}")
 async def freelancer_apply(
     job_id: str,
     x_hermes_scheduler: str | None = Header(default=None),
+    x_hermes_api_key: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    await _require_scheduler(x_hermes_scheduler)
+    await _require_scheduler(x_hermes_scheduler, x_hermes_api_key)
     job = await store.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="job not found")
@@ -66,8 +77,9 @@ async def freelancer_apply(
 async def execute_service(
     job_id: str,
     x_hermes_scheduler: str | None = Header(default=None),
+    x_hermes_api_key: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    await _require_scheduler(x_hermes_scheduler)
+    await _require_scheduler(x_hermes_scheduler, x_hermes_api_key)
     job = await store.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="job not found")
