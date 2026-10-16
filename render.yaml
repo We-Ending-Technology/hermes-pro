@@ -19,15 +19,24 @@ services:
       - key: APP_ENV
         value: production
       - key: HERMES_API_TOKEN
-        sync: false
+        fromService:
+          name: hermes-pro-api-commercial
+          type: web
+          envVarKey: HERMES_API_TOKEN
       - key: AI_PROVIDER
         value: gemini
       - key: GEMINI_API_KEY
-        sync: false
+        fromService:
+          name: hermes-pro-api-commercial
+          type: web
+          envVarKey: GEMINI_API_KEY
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
       - key: OPENAI_API_KEY
-        sync: false
+        fromService:
+          name: hermes-pro-api-commercial
+          type: web
+          envVarKey: OPENAI_API_KEY
       - key: OPENAI_MODEL
         value: gpt-5.6-luna
       - key: OPENAI_AGENT_MODEL
@@ -37,97 +46,21 @@ services:
           name: hermes-pro-db
           property: connectionString
       - key: SUPABASE_URL
-        sync: false
+        fromService:
+          name: hermes-pro-api-commercial
+          type: web
+          envVarKey: SUPABASE_URL
       - key: SUPABASE_SECRET_KEY
-        sync: false
+        fromService:
+          name: hermes-pro-api-commercial
+          type: web
+          envVarKey: SUPABASE_SECRET_KEY
       - key: REDIS_URL
-        sync: false
-      - key: CORS_ORIGINS
-        sync: false
-      - key: HOTMART_CLIENT_ID
-        sync: false
-      - key: HOTMART_CLIENT_SECRET
-        sync: false
-      - key: HOTMART_WEBHOOK_TOKEN
-        sync: false
-      - key: TELEGRAM_BOT_TOKEN
-        sync: false
-      - key: TELEGRAM_CHAT_ID
-        sync: false
-      - key: FREELANCER_ACCESS_TOKEN
-        sync: false
-      - key: FREELANCER_SANDBOX
-        value: "true"
-      - key: FREELANCER_ENABLED
-        value: "false"
-      - key: FREELANCER_AUTO_APPLY
-        value: "false"
-      - key: FREELANCER_BIDDER_ID
-        sync: false
-      - key: FREELANCER_PROFILE_ID
-        sync: false
-      - key: CANVA_CLIENT_ID
-        sync: false
-      - key: CANVA_CLIENT_SECRET
-        sync: false
-      - key: CANVA_REDIRECT_URI
-        sync: false
+        fromService:
+          name: hermes-pro-api-commercial
+          type: web
+          envVarKey: REDIS_URL
       - key: AUTONOMY_ENABLED
         value: "true"
       - key: AUTONOMY_MIN_SCORE
         value: "55"
-
-  - type: worker
-    name: hermes-pro-worker
-    runtime: python
-    region: virginia
-    buildCommand: pip install .
-    startCommand: python -m worker.main
-    envVars:
-      - key: APP_ENV
-        value: production
-      - key: AI_PROVIDER
-        value: gemini
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: GEMINI_MODEL
-        value: gemini-2.5-flash
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: OPENAI_MODEL
-        value: gpt-5.6-luna
-      - key: DATABASE_URL
-        fromDatabase:
-          name: hermes-pro-db
-          property: connectionString
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SECRET_KEY
-        sync: false
-      - key: REDIS_URL
-        sync: false
-      - key: AUTONOMY_ENABLED
-        value: "true"
-      - key: AUTONOMY_MIN_SCORE
-        value: "55"
-
-  - type: cron
-    name: hermes-pro-maintenance
-    runtime: python
-    region: virginia
-    schedule: "*/15 * * * *"
-    buildCommand: pip install .
-    startCommand: python -m worker.autonomy_cycle
-    envVars:
-      - key: APP_ENV
-        value: production
-      - key: AUTONOMY_ENABLED
-        value: "true"
-      - key: AUTONOMY_MIN_SCORE
-        value: "55"
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SECRET_KEY
-        sync: false
-      - key: REDIS_URL
-        sync: false
