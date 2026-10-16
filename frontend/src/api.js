@@ -1,4 +1,4 @@
-const DIRECT_API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-commercial.onrender.com";
+const DIRECT_API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-virginia.onrender.com";
 const PROXY_API = "";
 
 async function request(base, path, options = {}) {
