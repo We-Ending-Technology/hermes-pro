@@ -188,7 +188,7 @@ async def require_admin_api_token(request: Request, call_next):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
-    allow_origin_regex=r"https://[a-zA-Z0-9-]+\.vercel\.app$",
+    allow_origin_regex=r"https://[a-zA-Z0-9-]+\.(?:vercel\.app|onrender\.com)$",
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -121,3 +121,16 @@ def test_freelancer_sync_reports_unconfigured_token(monkeypatch) -> None:
             headers={"X-Hermes-Scheduler": "some-token"},
         )
     assert response.status_code == 503
+
+def test_render_frontend_origin_is_allowed_by_cors() -> None:
+    origin = "https://hermes-pro-command-center.onrender.com"
+    with TestClient(app) as client:
+        response = client.options(
+            "/api/v1/dashboard",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == origin
