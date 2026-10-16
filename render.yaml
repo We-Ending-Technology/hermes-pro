@@ -1,7 +1,17 @@
+databases:
+  - name: hermes-pro-db
+    databaseName: hermes_pro_db
+    user: hermes_pro_db_user
+    plan: free
+    region: virginia
+    postgresMajorVersion: "16"
+    diskSizeGB: 1
+
 services:
   - type: web
-    name: hermes-pro-api
+    name: hermes-pro-api-virginia
     runtime: python
+    region: virginia
     buildCommand: pip install .
     startCommand: uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
@@ -70,6 +80,7 @@ services:
   - type: worker
     name: hermes-pro-worker
     runtime: python
+    region: virginia
     buildCommand: pip install .
     startCommand: python -m worker.main
     envVars:
@@ -103,6 +114,7 @@ services:
   - type: cron
     name: hermes-pro-maintenance
     runtime: python
+    region: virginia
     schedule: "*/15 * * * *"
     buildCommand: pip install .
     startCommand: python -m worker.autonomy_cycle
