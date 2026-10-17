@@ -134,3 +134,65 @@ def test_render_frontend_origin_is_allowed_by_cors() -> None:
         )
     assert response.status_code == 200
     assert response.headers.get("access-control-allow-origin") == origin
+
+
+def test_chat_radar_command_executes_real_cycle_and_returns_evidence(monkeypatch) -> None:
+    import backend.app.main as main_module
+
+    monkeypatch.setattr(main_module.settings, "hermes_api_token", "test-token")
+
+    async def fake_cycle():
+        return {
+            "status": "completed",
+            "scanned": 4,
+            "queued": 2,
+            "opportunities": [{"title": "Python automation", "score": 82}],
+            "processed_jobs": [{"job_id": "job-1", "status": "completed"}],
+            "scheduler_mode": "inline_api_process",
+        }
+
+    monkeypatch.setattr(main_module, "_run_autonomy_once", fake_cycle)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/chat",
+            headers={"X-Hermes-API-Key": "test-token"},
+            json={"message": "Hermes, encontre oportunidades de freelancer e rode o radar"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["action"] == "radar_cycle"
+    assert body["evidence"]["scanned"] == 4
+    assert body["evidence"]["queued"] == 2
+    assert "não significa que houve candidatura" in body["response"]
+
+
+def test_chat_system_status_returns_dependency_evidence(monkeypatch) -> None:
+    import backend.app.main as main_module
+
+    monkeypatch.setattr(main_module.settings, "hermes_api_token", "test-token")
+
+    async def fake_status():
+        return {
+            "overall": "configuration_incomplete",
+            "autonomy_enabled": True,
+            "dependencies": {
+                "postgres_connected": False,
+                "ai_credentials_configured": False,
+            },
+            "agents": [],
+        }
+
+    monkeypatch.setattr(main_module, "agents_status", fake_status)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/chat",
+            headers={"X-Hermes-API-Key": "test-token"},
+            json={"message": "Hermes, verifique o sistema e mostre o status do sistema"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["action"] == "system_status"
+    assert body["evidence"]["dependencies"]["postgres_connected"] is False
+    assert "configuration_incomplete" in body["response"]
