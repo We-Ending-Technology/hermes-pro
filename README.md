@@ -43,6 +43,8 @@ pytest
 
 O arquivo `render.yaml` descreve o serviço web, o worker e as variáveis de ambiente sem valores secretos. Configure os segredos no painel do Render.
 
+O plano para transformar a fundação em uma aplicação funcional está em [`docs/ROADMAP-FUNCTIONAL.md`](docs/ROADMAP-FUNCTIONAL.md).
+
 ## Escopo desta etapa
 
 A fundação inclui health checks, gateway de IA, agentes, fila/worker, persistência Supabase, fábrica de produtos, Studio, Radar de oportunidades, preparação de propostas, cron diário, dashboard e contratos de integração. Credenciais de serviços externos permanecem fora do Git e entram somente como variáveis de ambiente. O envio automático em marketplaces fica desabilitado por padrão e só pode ser ativado quando houver API/OAuth válido e compatível com as regras da plataforma.
