@@ -1,12 +1,7 @@
 name: Hermes scheduled opportunity radar
 
 on:
-  schedule:
-    - cron: "17,47 * * * *"
   workflow_dispatch:
-  push:
-    branches:
-      - feat/hermes-foundation
 
 concurrency:
   group: hermes-opportunity-radar
