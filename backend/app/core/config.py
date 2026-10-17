@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     canva_redirect_uri: str | None = Field(default=None, validation_alias="CANVA_REDIRECT_URI")
     autonomy_enabled: bool = Field(default=True, validation_alias="AUTONOMY_ENABLED")
     autonomy_min_score: int = Field(default=55, validation_alias="AUTONOMY_MIN_SCORE")
+    # Side effects stay disabled until the owner explicitly enables them in the deployment.
+    autonomy_kill_switch: bool = Field(default=False, validation_alias="AUTONOMY_KILL_SWITCH")
+    external_actions_enabled: bool = Field(default=False, validation_alias="EXTERNAL_ACTIONS_ENABLED")
+    freelancer_max_bid_brl: float = Field(default=0, ge=0, validation_alias="FREELANCER_MAX_BID_BRL")
+    autonomy_max_concurrent_jobs: int = Field(default=2, ge=1, le=2, validation_alias="AUTONOMY_MAX_CONCURRENT_JOBS")
+    autonomy_max_retries: int = Field(default=3, ge=0, le=3, validation_alias="AUTONOMY_MAX_RETRIES")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
