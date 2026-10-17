@@ -1,13 +1,9 @@
-const DIRECT_API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-commercial.onrender.com";
+const DIRECT_API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-virginia.onrender.com";
 const PROXY_API = "";
-let rejectedToken = false;
-
 function getAdminToken() {
   try {
     const saved = sessionStorage.getItem("hermes_admin_api_token");
-    if (saved && !rejectedToken) return saved;
-    if (rejectedToken && saved) sessionStorage.removeItem("hermes_admin_api_token");
-    rejectedToken = false;
+    if (saved) return saved;
     const entered = window.prompt("Acesso privado do Hermes: cole o HERMES_API_TOKEN já configurado no Render. Isso não é uma nova chave de IA nem do Supabase.");
     if (!entered || !entered.trim()) return "";
     sessionStorage.setItem("hermes_admin_api_token", entered.trim());
@@ -46,10 +42,9 @@ async function request(base, path, options = {}, authRetry = true) {
   const text = await response.text();
   let body = {};
   try { body = text ? JSON.parse(text) : {}; } catch { body = { detail: text }; }
-  if (response.status === 401 && needsAdminToken && authRetry) {
+  if (response.status === 401 && needsAdminToken) {
     try { sessionStorage.removeItem("hermes_admin_api_token"); } catch {}
-    rejectedToken = true;
-    return request(base, path, options, false);
+    throw new Error("A chave de acesso foi rejeitada. Confira HERMES_API_TOKEN no Render e tente novamente.");
   }
   if (!response.ok) {
     const error = new Error(body.detail || ("HTTP " + response.status));
