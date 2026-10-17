@@ -10,3 +10,13 @@
 
 /* Free Google Trends topic picker used by the video content factory. */
 .trend-list{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);display:grid;gap:8px}.trend-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.025)}.trend-row button{flex:1;text-align:left;background:transparent;border:0;color:var(--text);padding:4px 0;cursor:pointer}.trend-row a{white-space:nowrap;color:var(--accent);font-size:12px}
+
+
+/* Evidence-first operational chat */
+.quick-commands{display:flex;gap:8px;flex-wrap:wrap;padding:14px 18px;border-bottom:1px solid var(--line)}
+.quick-commands button{border:1px solid var(--line-hi);border-radius:9px;padding:9px 12px;color:#d9d5ff;background:rgba(130,112,255,.09);font-size:11px}
+.quick-commands button:hover{background:rgba(130,112,255,.18)}
+.action-evidence{margin-top:10px;padding-top:9px;border-top:1px solid var(--line);font-size:11px;color:var(--green)}
+.evidence-details{margin-top:8px;color:var(--soft)}
+.evidence-details summary{cursor:pointer;color:var(--cyan)}
+.evidence-details pre{max-width:100%;max-height:280px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:10px;border:1px solid var(--line);border-radius:8px;background:rgba(0,0,0,.22);color:#c8d4f2;font:10px/1.5 'DM Mono',monospace}
