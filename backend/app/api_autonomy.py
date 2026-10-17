@@ -11,6 +11,7 @@ from .services.execution_funded import execute_service_job, sync_freelancer_cont
 from .integrations.freelancer import build_freelancer_adapter
 from .services.persistence import PersistentStore
 from .ai_gateway.factory import build_ai_gateway
+from .services.guardrails import authorize_external_action
 
 router = APIRouter(prefix="/api/v1/autonomy", tags=["autonomy"])
 settings = get_settings()
@@ -55,15 +56,31 @@ async def freelancer_apply(
     payload = dict(job.get("payload") or {})
     if payload.get("source") != "freelancer" or payload.get("application_automation_allowed") is not True:
         raise HTTPException(status_code=409, detail="automatic application is not enabled for this opportunity")
+    # Never let an AI-produced payload alone authorize an external bid.
+    if not settings.freelancer_enabled or not settings.freelancer_auto_apply:
+        raise HTTPException(status_code=403, detail="Freelancer automation is disabled by owner configuration")
     proposal = payload.get("proposal") or {}
     price = ((proposal.get("suggested_price") or {}).get("recommended") if isinstance(proposal, dict) else None)
     project_id = payload.get("external_id") or payload.get("opportunity_id")
     if not project_id or not price:
         raise HTTPException(status_code=409, detail="missing Freelancer project id or suggested price")
+    try:
+        requested_amount = float(price)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=409, detail="suggested bid amount is invalid")
+    decision = authorize_external_action(
+        kill_switch=settings.autonomy_kill_switch,
+        external_actions_enabled=settings.external_actions_enabled,
+        action_enabled=settings.freelancer_auto_apply and settings.freelancer_enabled,
+        configured_limit=settings.freelancer_max_bid_brl,
+        requested_amount=requested_amount,
+    )
+    if not decision.allowed:
+        raise HTTPException(status_code=403, detail=decision.reason)
     adapter = build_freelancer_adapter(settings)
     bid = await adapter.create_bid(
         project_id=project_id,
-        amount=float(price),
+        amount=requested_amount,
         description=str(proposal.get("proposal_text") or "")[:5000],
         period=max(1, int(proposal.get("estimated_hours") or 8) // 8),
     )
