@@ -92,7 +92,13 @@ function App() {
     const result = await action(() => call("/api/v1/chat", {
       method: "POST", body: JSON.stringify({ message: text })
     }));
-    if (result) setChat(items => [...items, { role: "assistant", text: result.response, meta: `${result.provider || "AI"} · ${result.model || "modelo"}` }]);
+    if (result) setChat(items => [...items, {
+      role: "assistant",
+      text: result.response,
+      meta: `${result.provider || "AI"} · ${result.model || "modelo"}`,
+      action: result.action || null,
+      evidence: result.evidence || null,
+    }]);
   };
 
   const findTrendingTopics = async () => {
@@ -250,7 +256,34 @@ function VideoFactory({ channel, setChannel, topic, setTopic, result, submit, bu
   </Page>;
 }
 
-function ChatView({ chat, input, setInput, send }) { return <Page title="Hermes" sub="Assistente operacional conectado ao AI Gateway."><div className="panel chat-panel"><div className="chat-history">{chat.length ? chat.map((m, i) => <div className={`bubble ${m.role}`} key={i}><span>{m.role === "user" ? "Você" : "Hermes"}</span><p>{m.text}</p>{m.meta && <small>{m.meta}</small>}</div>) : <p>Envie uma instrução. Se o Gemini estiver indisponível, o erro será mostrado claramente.</p>}</div><form className="chat-form" onSubmit={send}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Fale com Hermes…"/><Button primary type="submit">Enviar ↗</Button></form></div></Page>; }
+function ChatView({ chat, input, setInput, send }) {
+  return <Page title="Hermes" sub="Chat operacional: comandos explícitos acionam ferramentas reais e retornam evidências.">
+    <div className="panel chat-panel">
+      <div className="quick-commands">
+        <button type="button" onClick={() => setInput("Hermes, verifique o sistema e mostre o status do sistema")}>Verificar sistema</button>
+        <button type="button" onClick={() => setInput("Hermes, encontre oportunidades de freelancer e rode o radar")}>Rodar Radar</button>
+      </div>
+      <div className="chat-history">
+        {chat.length ? chat.map((m, i) => <div className={`bubble ${m.role}`} key={i}>
+          <span>{m.role === "user" ? "Você" : "Hermes"}</span>
+          <p>{m.text}</p>
+          {m.meta && <small>{m.meta}</small>}
+          {m.action && <div className="action-evidence">
+            <strong>Ação executada: {m.action === "radar_cycle" ? "Ciclo do Radar" : m.action === "system_status" ? "Diagnóstico do sistema" : m.action}</strong>
+            {m.evidence && <details className="evidence-details">
+              <summary>Ver evidências estruturadas</summary>
+              <pre>{JSON.stringify(m.evidence, null, 2)}</pre>
+            </details>}
+          </div>}
+        </div>) : <p>Experimente “Verificar sistema” ou “Rodar Radar”. O Hermes deve mostrar o resultado da ferramenta, não apenas afirmar que executou.</p>}
+      </div>
+      <form className="chat-form" onSubmit={send}>
+        <input value={input} onChange={e => setInput(e.target.value)} placeholder="Dê uma instrução ao Hermes…" />
+        <Button primary type="submit">Enviar ↗</Button>
+      </form>
+    </div>
+  </Page>;
+}
 function DiagnosticsPanel({ data }) { if (!data) return <Empty text="Diagnóstico ainda não executado." />; return <div className="panel diagnostics-grid">{data.checks.map((x, i) => <div className="diag-row" key={`${x.name}-${i}`}><i className={x.status === "online" || x.status === "ready" ? "online" : "offline"}></i><strong>{x.name}</strong><span>{x.status}</span><small>{x.message || ""}</small></div>)}</div>; }
 function Integrations({ items, diagnostics, runDiagnostics }) { return <Page title="Integrações" sub="Estado das conexões sem expor segredos."><Button primary onClick={runDiagnostics}>Testar conexões</Button><DiagnosticsPanel data={diagnostics} /><div className="integration-list">{items.length ? items.map(x => <div className="panel" key={x.name}><strong>{x.name}</strong><p>{x.status}</p><small>{x.message}</small></div>) : <Empty text="Nenhuma integração retornada pelo backend." />}</div></Page>; }
 function Experiments({ products, radar }) { return <Page title="Experimentos" sub="Área para comparar temas e resultados reais."><div className="metric-grid"><Metric label="Produtos" value={products.length}/><Metric label="Radar disponível" value={radar ? "sim" : "não"}/></div><Empty text="Os experimentos usam somente produtos e análises persistidos; não há conversões inventadas." /></Page>; }
