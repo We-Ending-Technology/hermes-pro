@@ -24,6 +24,8 @@ class ChatResponse(BaseModel):
     response: str
     provider: str
     model: str
+    action: str | None = None
+    evidence: dict[str, Any] | None = None
 
 class ProductCreateRequest(BaseModel):
     topic: str = Field(min_length=3, max_length=240)
