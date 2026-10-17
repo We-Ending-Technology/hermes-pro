@@ -355,15 +355,75 @@ async def create_video_package(request: dict):
     }
 
 
+def _chat_requests_radar_cycle(message: str) -> bool:
+    """Recognize explicit operational requests, not general questions about the radar."""
+    normalized = " ".join(message.lower().replace("ç", "c").replace("ã", "a").replace("õ", "o").split())
+    asks_to_act = any(token in normalized for token in (
+        "encontre", "encontrar", "busque", "buscar", "procure", "procurar",
+        "rode", "execute", "inicie", "atualize", "varra", "varrer", "faca o radar",
+    ))
+    mentions_opportunities = any(token in normalized for token in (
+        "oportun", "freelancer", "servico", "serviços", "jobs", "trabalhos", "radar",
+    ))
+    return asks_to_act and mentions_opportunities
+
+
+def _chat_requests_system_status(message: str) -> bool:
+    normalized = " ".join(message.lower().replace("ç", "c").replace("ã", "a").replace("õ", "o").split())
+    return any(token in normalized for token in (
+        "status do sistema", "saude do sistema", "diagnostico do sistema",
+        "hermes esta funcionando", "hermes ta funcionando", "verifique o sistema",
+    ))
+
+
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
+    message = request.message.strip()
+    if _chat_requests_radar_cycle(message):
+        # This is a real operational tool call. The evidence object is returned
+        # separately so the UI and future clients can display verified counters.
+        result = await _run_autonomy_once()
+        scanned = int(result.get("scanned", 0))
+        queued = int(result.get("queued", 0))
+        processed = len(result.get("processed_jobs", []))
+        summary = (
+            f"Ciclo real do Radar concluído: {scanned} oportunidades analisadas, "
+            f"{queued} tarefas elegíveis na fila e {processed} tarefas processadas. "
+            "Confira a evidência retornada; isso não significa que houve candidatura, contrato ou pagamento."
+        )
+        return ChatResponse(
+            response=summary,
+            provider="hermes-tools",
+            model="autonomy-cycle",
+            action="radar_cycle",
+            evidence=result,
+        )
+    if _chat_requests_system_status(message):
+        status = await agents_status()
+        dependencies = status.get("dependencies", {})
+        summary = (
+            f"Diagnóstico do Hermes: {status.get('overall', 'unknown')}. "
+            f"PostgreSQL conectado: {bool(dependencies.get('postgres_connected'))}; "
+            f"credenciais de IA configuradas: {bool(dependencies.get('ai_credentials_configured'))}; "
+            f"autonomia habilitada: {bool(status.get('autonomy_enabled'))}. "
+            "Configuração não comprova, sozinha, uma execução comercial bem-sucedida."
+        )
+        return ChatResponse(
+            response=summary,
+            provider="hermes-tools",
+            model="system-diagnostics",
+            action="system_status",
+            evidence=status,
+        )
+
     now = datetime.now().astimezone()
     temporal_context = now.strftime("%Y-%m-%d %H:%M:%S %Z (weekday=%A)")
     result = await ai_gateway.complete(
-        request.message,
+        message,
         system=(
             "You are Hermes Pro, an operations assistant for digital products. "
             "Be concise, truthful, and never invent sales, integrations, or completed jobs. "
+            "Do not claim to have executed tools unless an action result is explicitly present. "
             f"The current server date and time is {temporal_context}. "
             "When asked for the current date or time, use this value and state that it is server time."
         ),
