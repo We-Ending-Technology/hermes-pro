@@ -1,12 +1,11 @@
 name: Hermes scheduled opportunity radar
 
 on:
+  # Poll only on schedule or an explicit manual run. Do not trigger a production
+  # cycle on every code push.
   schedule:
     - cron: "17,47 * * * *"
   workflow_dispatch:
-  push:
-    branches:
-      - feat/hermes-foundation
 
 concurrency:
   group: hermes-opportunity-radar
@@ -17,28 +16,60 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Check API readiness before running the Radar
+        id: readiness
+        env:
+          HERMES_API_URL: https://hermes-pro-api-virginia.onrender.com
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error --max-time 20 --output "$response_file" --write-out "%{http_code}" "$HERMES_API_URL/ready" || true)"
+          if [ "$status" != "200" ]; then
+            echo "Radar skipped: readiness endpoint returned HTTP ${status:-unknown}." | tee -a "$GITHUB_STEP_SUMMARY"
+            rm -f "$response_file"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          ready_status="$(jq -r '.status // "unknown"' "$response_file")"
+          if [ "$ready_status" != "ok" ]; then
+            # Do not repeatedly attempt paid or database-dependent work while
+            # dependencies are known to be unavailable. Surface the blocker in
+            # the run summary without dumping environment details or secrets.
+            jq -r '"Radar skipped: API readiness is " + (.status // "unknown") + ". Check /ready for missing dependencies."' "$response_file" | tee -a "$GITHUB_STEP_SUMMARY"
+            rm -f "$response_file"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          rm -f "$response_file"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
       - name: Validate existing API token is configured
+        if: steps.readiness.outputs.ready == 'true'
         env:
           HERMES_API_TOKEN: ${{ secrets.HERMES_API_TOKEN }}
         run: |
           if [ -z "$HERMES_API_TOKEN" ]; then
-            echo "::error::Missing repository Actions secret HERMES_API_TOKEN. Copy the existing token from the Render API service; do not print it."
+            echo "::error::Missing repository Actions secret HERMES_API_TOKEN. Configure the existing token in GitHub Actions secrets; do not print it."
             exit 1
           fi
 
       - name: Run one real discovery cycle
+        if: steps.readiness.outputs.ready == 'true'
         env:
           HERMES_API_TOKEN: ${{ secrets.HERMES_API_TOKEN }}
-          HERMES_API_URL: https://hermes-pro-api-commercial.onrender.com
+          HERMES_API_URL: https://hermes-pro-api-virginia.onrender.com
         run: |
+          set -euo pipefail
           response_file="$(mktemp)"
           status="$(curl --silent --show-error --max-time 180 --retry 2 --retry-delay 10 --output "$response_file" --write-out "%{http_code}" \
             --request POST "$HERMES_API_URL/api/v1/autonomy/cycle" \
             --header "X-Hermes-API-Key: $HERMES_API_TOKEN" \
             --header "Content-Type: application/json")"
-          cat "$response_file"
-          rm -f "$response_file"
           if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-            echo "::error::Hermes radar cycle returned HTTP $status"
+            # Do not print raw API responses into workflow logs.
+            echo "::error::Hermes Radar request failed with HTTP $status. Check API authentication and service logs; response body withheld."
+            rm -f "$response_file"
             exit 1
           fi
+          jq -r '"Radar cycle response: " + (.status // "completed") + "; scanned=" + ((.scanned // "unknown")|tostring) + "; queued=" + ((.queued // "unknown")|tostring)' "$response_file" | tee -a "$GITHUB_STEP_SUMMARY"
+          rm -f "$response_file"
