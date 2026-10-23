@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from .core.config import get_settings
 from .db.postgres import PostgresStore, DatabaseError
@@ -20,7 +21,7 @@ telegram = TelegramNotifier(settings)
 
 
 @router.get("/ready")
-async def ready() -> dict[str, Any]:
+async def ready() -> Any:
     """Check real PostgreSQL connectivity separately from optional integrations."""
     statuses = {x["name"].lower(): x for x in integration_service.status()}
     database_configured = bool(settings.database_url and "${{" not in settings.database_url)
@@ -46,8 +47,22 @@ async def ready() -> dict[str, Any]:
             "connected": None,
             "message": item.get("message", "Estado da integração indisponível."),
         })
+    if not database_connected:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready",
+                "service": "hermes-pro-api",
+                "checks": checks,
+                "credential_diagnostics": {
+                    "database_url_present": bool(settings.database_url),
+                    "database_url_is_template": "${{" in (settings.database_url or ""),
+                    "secret_values_exposed": False,
+                },
+            },
+        )
     gemini_configured = next((x["configured"] for x in checks if x["name"] == "Gemini"), False)
-    status = "ready" if database_connected and gemini_configured else "degraded"
+    status = "ready" if gemini_configured else "degraded"
     return {
         "status": status,
         "service": "hermes-pro-api",
