@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from .db.postgres import DatabaseError, PostgresStore
@@ -22,6 +22,7 @@ class PersistenceTestCreate(BaseModel):
 async def create_persistence_test(
     request: PersistenceTestCreate,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    response: Response = None,
 ) -> dict[str, Any]:
     """Create a harmless durable diagnostic record, without enqueueing business work."""
     key = (idempotency_key or "").strip()
@@ -32,6 +33,7 @@ async def create_persistence_test(
         params={"idempotency_key": f"eq.{key}", "limit": "1"},
     )
     if existing:
+        response.status_code = 200
         return {"created": False, "test": existing[0]}
     now = datetime.now(timezone.utc).isoformat()
     record = {
@@ -56,6 +58,7 @@ async def create_persistence_test(
             params={"idempotency_key": f"eq.{key}", "limit": "1"},
         )
         if existing:
+            response.status_code = 200
             return {"created": False, "test": existing[0]}
         raise
 
