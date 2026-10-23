@@ -118,10 +118,16 @@ async def lifespan(app: FastAPI):
             registry.register(PassThroughAgent(agent_name))
     scheduler_enabled = settings.autonomy_enabled and settings.app_env.strip().lower() == "production"
     scheduler_task = asyncio.create_task(_autonomy_loop(), name="hermes-autonomy-loop") if scheduler_enabled else None
+    recovery_task = asyncio.create_task(_recover_inline_product_jobs(), name="hermes-product-recovery")
     app.state.autonomy_scheduler_mode = "inline_api_process" if scheduler_task else "disabled"
     try:
         yield
     finally:
+        recovery_task.cancel()
+        try:
+            await recovery_task
+        except asyncio.CancelledError:
+            pass
         if scheduler_task:
             scheduler_task.cancel()
             try:
@@ -573,13 +579,16 @@ async def cancel_job(job_id: str):
 @app.get("/api/v1/products", response_model=list[ProductResponse])
 async def products(): return [product_response(row) for row in await store.list_products()]
 
+_inline_product_tasks: set[str] = set()
+
+
 async def _run_inline_product(job_id: str) -> None:
     """Process product jobs in the API process so generation works before a separate worker is provisioned."""
     from worker.main import process_product
 
     class InlineRetryQueue:
         async def enqueue(self, retry_job_id: str) -> None:
-            asyncio.create_task(_run_inline_product(retry_job_id))
+            asyncio.create_task(_run_inline_product_once(retry_job_id))
 
     try:
         await process_product(job_id, store, InlineRetryQueue())
@@ -588,11 +597,46 @@ async def _run_inline_product(job_id: str) -> None:
         logging.getLogger("hermes.inline_worker").exception("inline product job failed: %s", job_id)
 
 
+async def _run_inline_product_once(job_id: str) -> None:
+    # Prevent duplicate local execution when an API request and startup recovery race.
+    if job_id in _inline_product_tasks:
+        return
+    _inline_product_tasks.add(job_id)
+    try:
+        await _run_inline_product(job_id)
+    finally:
+        _inline_product_tasks.discard(job_id)
+
+
+async def _recover_inline_product_jobs() -> int:
+    """Recover durable product jobs interrupted by an API restart."""
+    import logging
+    logger = logging.getLogger("hermes.inline_worker")
+    try:
+        jobs = await store.list_jobs()
+        recovered = 0
+        for job in jobs:
+            if job.get("job_type") != "product_generation":
+                continue
+            if job.get("status") not in {"pending", "retrying", "running"}:
+                continue
+            job_id = str(job.get("id") or "")
+            if not job_id or job_id in _inline_product_tasks:
+                continue
+            asyncio.create_task(_run_inline_product_once(job_id), name=f"hermes-product-recovery-{job_id}")
+            recovered += 1
+        logger.info("product recovery scan completed recovered=%s", recovered)
+        return recovered
+    except Exception:
+        logger.exception("product recovery scan failed; persisted jobs remain available for next startup")
+        return 0
+
+
 @app.post("/api/v1/products", response_model=ProductResponse, status_code=202)
 async def create_product(request: ProductCreateRequest, background_tasks: BackgroundTasks):
     try:
         product, job = await store.create_product_and_job(request.topic, request.metadata, request.idempotency_key)
-        background_tasks.add_task(_run_inline_product, str(job["id"]))
+        background_tasks.add_task(_run_inline_product_once, str(job["id"]))
     except DatabaseError as exc: raise HTTPException(status_code=503, detail=str(exc)) from exc
     return product_response(product)
 
