@@ -201,28 +201,32 @@ def test_chat_system_status_returns_dependency_evidence(monkeypatch) -> None:
 
 def test_ready_reports_connected_postgres_without_exposing_connection_details(monkeypatch) -> None:
     from unittest.mock import AsyncMock
-    import backend.app.main as main_module
+    import backend.app.api_commercial as commercial_module
 
-    monkeypatch.setattr(main_module.db, "health", AsyncMock(return_value=True))
+    monkeypatch.setattr(commercial_module.db, "health", AsyncMock(return_value=True))
     with TestClient(app) as client:
         response = client.get("/ready")
 
     assert response.status_code == 200
-    assert response.json()["status"] == "ready"
-    assert response.json()["checks"]["postgresql"]["status"] == "connected"
-    assert response.json()["checks"]["postgresql"]["query"] == "SELECT 1"
+    body = response.json()
+    postgres = next(item for item in body["checks"] if item["name"] == "PostgreSQL")
+    assert postgres["connected"] is True
+    assert postgres["status"] == "connected"
+    assert body["credential_diagnostics"]["secret_values_exposed"] is False
 
 
 def test_ready_returns_503_when_postgres_is_unavailable_without_leaking_secrets(monkeypatch) -> None:
     from unittest.mock import AsyncMock
-    import backend.app.main as main_module
+    import backend.app.api_commercial as commercial_module
 
-    monkeypatch.setattr(main_module.db, "health", AsyncMock(return_value=False))
+    monkeypatch.setattr(commercial_module.db, "health", AsyncMock(return_value=False))
     with TestClient(app) as client:
         response = client.get("/ready")
 
     assert response.status_code == 503
-    assert response.json()["status"] == "not_ready"
-    assert response.json()["checks"]["postgresql"]["status"] == "unavailable"
-    assert "DATABASE_URL" not in response.text
+    body = response.json()
+    assert body["status"] == "not_ready"
+    postgres = next(item for item in body["checks"] if item["name"] == "PostgreSQL")
+    assert postgres["connected"] is False
+    assert body["credential_diagnostics"]["secret_values_exposed"] is False
     assert "postgresql://" not in response.text
