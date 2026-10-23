@@ -29,7 +29,7 @@ class PersistentStore:
             "payload": {"product_id": product["id"], "topic": product["topic"]},
             "idempotency_key": idempotency_key, "created_at": now, "updated_at": now,
         })
-        product = await self.db.update("hermes_products", {"job_id": job["id"], "updated_at": now}, {"id": f"eq.{product['id']}"})
+        product = await self.db.update("hermes_products", {"job_id": job["id"], "updated_at": now}, where={"id": f"eq.{product['id']}"})
         return product, job
 
     async def create_opportunity_if_absent(self, values: dict[str, Any]) -> dict[str, Any]:
