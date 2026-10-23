@@ -18,6 +18,12 @@ class PersistenceTestCreate(BaseModel):
     purpose: str = Field(default="restart_recovery", pattern="^restart_recovery$")
 
 
+@router.get("/api/v1/diagnostics/database-identity")
+async def database_identity() -> dict[str, str]:
+    """Return safe database identity fields; never expose connection details."""
+    return await db.identity()
+
+
 @router.post("/api/v1/diagnostics/persistence-test", status_code=201)
 async def create_persistence_test(
     request: PersistenceTestCreate,
