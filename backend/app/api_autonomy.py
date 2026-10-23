@@ -38,6 +38,9 @@ async def freelancer_sync(
     x_hermes_scheduler: str | None = Header(default=None),
     x_hermes_api_key: str | None = Header(default=None),
 ) -> dict[str, Any]:
+    # Radar pause must be enforced at the endpoint, not only in the main cycle.
+    if not settings.autonomy_enabled:
+        raise HTTPException(status_code=409, detail="autonomy disabled")
     await _require_scheduler(x_hermes_scheduler, x_hermes_api_key)
     return await sync_freelancer_contracts(store=store, settings=settings)
 
