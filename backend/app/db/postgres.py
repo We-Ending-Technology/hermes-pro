@@ -194,6 +194,35 @@ class PostgresStore:
             await conn.commit()
         return dict(row["record"])
 
+    async def claim_persistence_test_execution(self, test_id: str) -> tuple[dict[str, Any], bool]:
+        """Atomically mark a diagnostic no-op as executed exactly once."""
+        physical = await self._ensure_table("hermes_persistence_tests")
+        async with await psycopg.AsyncConnection.connect(self.database_url, row_factory=dict_row) as conn:
+            cur = await conn.execute(
+                f"""UPDATE {physical}
+                    SET record = record || %s
+                    WHERE id = %s AND record->>'status' = 'pending'
+                    RETURNING record""",
+                (Jsonb({
+                    "status": "executed",
+                    "execution_count": 1,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }), test_id),
+            )
+            row = await cur.fetchone()
+            if row:
+                await conn.commit()
+                return dict(row["record"]), True
+            cur = await conn.execute(
+                f"SELECT record FROM {physical} WHERE id = %s",
+                (test_id,),
+            )
+            existing = await cur.fetchone()
+            if not existing:
+                raise DatabaseError("Teste de persistência não encontrado.")
+            await conn.commit()
+            return dict(existing["record"]), False
+
     async def rpc(self, function: str, payload: dict[str, Any] | None = None) -> Any:
         raise DatabaseError(f"RPC legado '{function}' não está implementado no PostgreSQL.")
 
