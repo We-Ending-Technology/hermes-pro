@@ -75,6 +75,10 @@ async def _process_pending_opportunities() -> list[dict]:
 
 
 async def _run_autonomy_once() -> dict:
+    # Central safety gate: every entry point (scheduler, chat command, API route)
+    # must honor the owner-controlled pause flag before any discovery/network calls.
+    if not settings.autonomy_enabled:
+        raise HTTPException(status_code=409, detail="autonomy disabled")
     async with autonomy_lock:
         cycle = await autonomy_service.cycle(settings.autonomy_min_score, enqueue_jobs=False)
         processed = await _process_pending_opportunities()
