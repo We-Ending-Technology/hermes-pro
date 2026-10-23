@@ -196,3 +196,37 @@ def test_chat_system_status_returns_dependency_evidence(monkeypatch) -> None:
     assert body["action"] == "system_status"
     assert body["evidence"]["dependencies"]["postgres_connected"] is False
     assert "configuration_incomplete" in body["response"]
+
+
+
+def test_ready_reports_connected_postgres_without_exposing_connection_details(monkeypatch) -> None:
+    from unittest.mock import AsyncMock
+    import backend.app.api_commercial as commercial_module
+
+    monkeypatch.setattr(commercial_module.db, "health", AsyncMock(return_value=True))
+    with TestClient(app) as client:
+        response = client.get("/ready")
+
+    assert response.status_code == 200
+    body = response.json()
+    postgres = next(item for item in body["checks"] if item["name"] == "PostgreSQL")
+    assert postgres["connected"] is True
+    assert postgres["status"] == "connected"
+    assert body["credential_diagnostics"]["secret_values_exposed"] is False
+
+
+def test_ready_returns_503_when_postgres_is_unavailable_without_leaking_secrets(monkeypatch) -> None:
+    from unittest.mock import AsyncMock
+    import backend.app.api_commercial as commercial_module
+
+    monkeypatch.setattr(commercial_module.db, "health", AsyncMock(return_value=False))
+    with TestClient(app) as client:
+        response = client.get("/ready")
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "not_ready"
+    postgres = next(item for item in body["checks"] if item["name"] == "PostgreSQL")
+    assert postgres["connected"] is False
+    assert body["credential_diagnostics"]["secret_values_exposed"] is False
+    assert "postgresql://" not in response.text
