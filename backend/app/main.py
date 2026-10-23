@@ -224,25 +224,6 @@ async def root_head():
 @app.get("/health", response_model=HealthResponse)
 async def health(): return HealthResponse(status="ok", service="hermes-pro-api", environment=settings.app_env)
 
-@app.get("/ready")
-async def ready():
-    """Readiness probe: only ready when PostgreSQL answers a real SELECT 1."""
-    database_connected = await db.health()
-    if not database_connected:
-        return JSONResponse(
-            status_code=503,
-            content={
-                "status": "not_ready",
-                "service": "hermes-pro-api",
-                "checks": {"postgresql": {"status": "unavailable"}},
-            },
-        )
-    return {
-        "status": "ready",
-        "service": "hermes-pro-api",
-        "checks": {"postgresql": {"status": "connected", "query": "SELECT 1"}},
-    }
-
 @app.get("/api/v1/agents")
 async def list_agents(): return {"agents": registry.names()}
 
