@@ -21,8 +21,8 @@ class PersistenceTestCreate(BaseModel):
 @router.post("/api/v1/diagnostics/persistence-test", status_code=201)
 async def create_persistence_test(
     request: PersistenceTestCreate,
+    response: Response,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-    response: Response = None,
 ) -> dict[str, Any]:
     """Create a harmless durable diagnostic record, without enqueueing business work."""
     key = (idempotency_key or "").strip()
