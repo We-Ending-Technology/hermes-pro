@@ -8,6 +8,9 @@ class FakeDiagnosticsDB:
         self.rows = {}
         self.keys = {}
 
+    async def identity(self):
+        return {"database_name": "hermes_test_db", "schema_name": "public"}
+
     async def select(self, table, *, params=None):
         params = params or {}
         if "idempotency_key" in params:
@@ -104,3 +107,13 @@ def test_persistence_test_not_found(monkeypatch):
             headers={"X-Hermes-API-Key": "test-token"},
         )
     assert response.status_code == 404
+
+
+def test_database_identity_is_authenticated_and_safe(monkeypatch):
+    setup_test(monkeypatch)
+    with TestClient(app) as client:
+        unauthorized = client.get("/api/v1/diagnostics/database-identity")
+        authorized = client.get("/api/v1/diagnostics/database-identity", headers={"X-Hermes-API-Key": "test-token"})
+    assert unauthorized.status_code == 401
+    assert authorized.status_code == 200
+    assert authorized.json() == {"database_name": "hermes_test_db", "schema_name": "public"}
