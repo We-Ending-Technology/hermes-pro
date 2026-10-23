@@ -21,6 +21,7 @@ from .agents.stubs import AGENT_NAMES, PassThroughAgent
 from .agents.operational import (RadarAgent, ResearcherAgent, AnalystAgent, ExecutorAgent, QAAgent, CommercialAgent, FinanceAgent, RecoveryAgent, GuardianAgent, WatchtowerAgent, SupervisorAgent)
 from .services.autonomy import AutonomyService
 from .api_commercial import router as commercial_router
+from .api_diagnostics import router as diagnostics_router
 from .api_autonomy import router as autonomy_router
 from .core.config import get_settings
 from .db.postgres import PostgresStore, DatabaseError
@@ -159,6 +160,7 @@ async def postgres_driver_error_handler(request: Request, exc: psycopg.Error):
         },
     )
 app.include_router(commercial_router)
+app.include_router(diagnostics_router)
 app.include_router(autonomy_router)
 
 @app.middleware("http")
