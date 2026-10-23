@@ -226,6 +226,19 @@ class PostgresStore:
     async def rpc(self, function: str, payload: dict[str, Any] | None = None) -> Any:
         raise DatabaseError(f"RPC legado '{function}' não está implementado no PostgreSQL.")
 
+    async def identity(self) -> dict[str, str]:
+        """Return non-secret identity of the connected PostgreSQL database."""
+        self._require_url()
+        try:
+            async with await psycopg.AsyncConnection.connect(self.database_url, row_factory=dict_row) as conn:
+                cur = await conn.execute("SELECT current_database() AS database_name, current_schema() AS schema_name")
+                row = await cur.fetchone()
+                if not row:
+                    raise DatabaseError("Não foi possível identificar o banco PostgreSQL.")
+                return {"database_name": str(row["database_name"]), "schema_name": str(row["schema_name"] or "")}
+        except psycopg.Error as exc:
+            raise DatabaseError("Não foi possível consultar a identidade do PostgreSQL.") from exc
+
     async def health(self) -> bool:
         if not self.database_url:
             return False
