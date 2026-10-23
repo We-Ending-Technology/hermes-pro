@@ -1,35 +1,16 @@
 name: Hermes Radar
 
+# Paused by owner request on 2026-10-20. Manual-only; no API calls.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
-  schedule:
-    - cron: "7,37 * * * *"
 
 permissions:
   contents: read
 
 jobs:
-  radar:
+  radar-paused:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 2
     steps:
-      - name: Health check
-        env:
-          HERMES_API_TOKEN: ${{ secrets.HERMES_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          test -n "${HERMES_API_TOKEN}" || (echo "Missing GitHub Actions secret HERMES_API_TOKEN" >&2; exit 1)
-          curl --fail --silent --show-error --max-time 30 \
-            https://hermes-pro-api-commercial.onrender.com/health
-      - name: Run Radar
-        env:
-          HERMES_API_TOKEN: ${{ secrets.HERMES_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          test -n "${HERMES_API_TOKEN}" || (echo "Missing GitHub Actions secret HERMES_API_TOKEN" >&2; exit 1)
-          curl --fail --silent --show-error --max-time 180 \
-            -X POST \
-            -H "X-Hermes-API-Key: ${HERMES_API_TOKEN}" \
-            "https://hermes-pro-api-commercial.onrender.com/api/v1/autonomy/cycle"
+      - name: Confirm paused state
+        run: echo "Hermes Radar is paused. No discovery or API calls are executed."
