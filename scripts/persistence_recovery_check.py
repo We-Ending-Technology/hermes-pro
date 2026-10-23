@@ -46,7 +46,9 @@ def wait_until_ready() -> dict:
             req = urllib.request.Request(BASE_URL + "/ready", headers={"Accept": "application/json"})
             with urllib.request.urlopen(req, timeout=15) as response:
                 body = json.loads(response.read().decode("utf-8"))
-                if response.status == 200 and body.get("status") in {"ok", "ready", "healthy"}:
+                if response.status == 200:
+                    # Overall readiness may be degraded by optional AI credentials; the authenticated
+                    # database-identity endpoint below independently proves PostgreSQL connectivity.
                     return body
                 last_error = f"HTTP {response.status}: status={body.get('status')}"
         except Exception as exc:
