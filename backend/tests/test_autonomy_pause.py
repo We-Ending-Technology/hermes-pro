@@ -24,3 +24,25 @@ async def test_autonomy_pause_blocks_all_cycle_entry_points(monkeypatch):
     assert exc.value.status_code == 409
     assert exc.value.detail == "autonomy disabled"
     assert called is False
+
+@pytest.mark.asyncio
+async def test_freelancer_sync_refuses_to_run_while_radar_is_paused(monkeypatch):
+    from backend.app import api_autonomy
+
+    monkeypatch.setattr(api_autonomy.settings, "autonomy_enabled", False)
+    auth_called = False
+
+    async def forbidden_auth(*args, **kwargs):
+        nonlocal auth_called
+        auth_called = True
+        raise AssertionError("paused sync must stop before authentication or network work")
+
+    monkeypatch.setattr(api_autonomy, "_require_scheduler", forbidden_auth)
+
+    with pytest.raises(HTTPException) as exc:
+        await api_autonomy.freelancer_sync()
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail == "autonomy disabled"
+    assert auth_called is False
+
