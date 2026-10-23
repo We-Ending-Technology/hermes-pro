@@ -61,6 +61,6 @@ services:
           type: web
           envVarKey: REDIS_URL
       - key: AUTONOMY_ENABLED
-        value: "true"
+        value: "false"
       - key: AUTONOMY_MIN_SCORE
         value: "55"
