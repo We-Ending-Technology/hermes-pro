@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -18,7 +17,13 @@ READY_PRODUCT_STATUSES = {"ready_to_publish", "review_required"}
 
 def _json_object(raw: str) -> dict[str, Any]:
     text = raw.strip()
-    text = re.sub(r"^\`\`\`(?:json)?\\s*|\\s*\`\`\`$", "", text, flags=re.IGNORECASE)
+    if text.startswith("```"):
+        text = text[3:]
+        if text.lstrip().lower().startswith("json"):
+            text = text.lstrip()[4:]
+    if text.rstrip().endswith("```"):
+        text = text.rstrip()[:-3]
+    text = text.strip()
     value = json.loads(text)
     if not isinstance(value, dict):
         raise ValueError("autonomy candidate must be a JSON object")
