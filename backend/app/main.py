@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 from uuid import uuid4
@@ -23,6 +25,7 @@ from .services.quality import quality_service
 from .services.radar import radar_service
 from .services.sales import SalesService
 
+logger = logging.getLogger("hermes.api")
 settings = get_settings()
 ai_gateway = build_ai_gateway(settings)
 registry = AgentRegistry()
@@ -32,13 +35,40 @@ sales_service = SalesService(db)
 queue = JobQueue(settings.redis_url)
 autonomy = AutonomyService(settings, store)
 
+
+async def _run_embedded_worker() -> None:
+    """Run the queue consumer inside the free API service when no paid worker exists."""
+    from worker.main import run as run_worker
+
+    try:
+        await run_worker()
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("embedded worker stopped unexpectedly")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     registry.register(DiagnosticAgent(ai_gateway))
     for agent_name in AGENT_NAMES:
         registry.register(PassThroughAgent(agent_name))
-    yield
-    await queue.close()
+
+    worker_task = None
+    if settings.embedded_worker_enabled:
+        worker_task = asyncio.create_task(_run_embedded_worker(), name="hermes-embedded-worker")
+        logger.info("embedded worker enabled")
+    try:
+        yield
+    finally:
+        if worker_task is not None:
+            worker_task.cancel()
+            try:
+                await worker_task
+            except asyncio.CancelledError:
+                pass
+        await queue.close()
+
 
 app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
 app.add_middleware(
@@ -82,6 +112,7 @@ async def agents_status():
             {"name": "Hermes Analyst", "role": "analysis", "status": "ready" if ready else "blocked"},
         ],
         "autonomy_enabled": settings.autonomy_enabled,
+        "embedded_worker_enabled": settings.embedded_worker_enabled,
     }
 
 @app.get("/api/v1/agents/runs")
