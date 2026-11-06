@@ -13,28 +13,48 @@ class PersistentStore:
         self.db = db
 
     async def create_product_and_job(self, topic: str, metadata: dict[str, Any], idempotency_key: str | None) -> tuple[dict[str, Any], dict[str, Any]]:
+        product = None
         if idempotency_key:
-            existing = await self.db.select("hermes_products", params={"select": "*", "idempotency_key": f"eq.{idempotency_key}", "limit": "1"})
-            if existing:
-                jobs = await self.db.select("hermes_jobs", params={"select": "*", "payload->>product_id": f"eq.{existing[0]['id']}", "limit": "1"})
-                if jobs:
-                    return existing[0], jobs[0]
+            existing = await self.db.select(
+                "hermes_products",
+                params={"select": "*", "idempotency_key": f"eq.{idempotency_key}", "limit": "1"},
+            )
+            product = existing[0] if existing else None
+            jobs = await self.db.select(
+                "hermes_jobs",
+                params={"select": "*", "idempotency_key": f"eq.{idempotency_key}", "limit": "1"},
+            )
+            if product and jobs:
+                return product, jobs[0]
+
         now = datetime.now(timezone.utc).isoformat()
-        product = await self.db.insert("hermes_products", {
-            "topic": topic.strip(), "status": "queued", "current_stage": PIPELINE_STAGES[0],
-            "metadata": metadata or {}, "idempotency_key": idempotency_key, "created_at": now, "updated_at": now,
-        })
-        try:
-            job = await self.db.insert("hermes_jobs", {
-                "job_type": "product_generation", "status": JobStatus.PENDING.value,
-                "attempts": 0, "max_attempts": 3,
-                "payload": {"product_id": product["id"], "topic": product["topic"]},
-                "idempotency_key": idempotency_key, "created_at": now, "updated_at": now,
+        if product is None:
+            product = await self.db.insert("hermes_products", {
+                "topic": topic.strip(),
+                "status": "queued",
+                "current_stage": PIPELINE_STAGES[0],
+                "metadata": metadata or {},
+                "idempotency_key": idempotency_key,
+                "created_at": now,
+                "updated_at": now,
             })
-        except Exception:
-            # Avoid leaving an apparently queued product without a job. The API will surface the error.
-            raise
-        product = await self.db.update("hermes_products", {"job_id": job["id"], "updated_at": now}, {"id": f"eq.{product['id']}"})
+
+        job_values = {
+            "job_type": "product_generation",
+            "status": JobStatus.PENDING.value,
+            "attempts": 0,
+            "max_attempts": 3,
+            "payload": {"product_id": product["id"], "topic": product["topic"]},
+            "idempotency_key": idempotency_key,
+            "created_at": now,
+            "updated_at": now,
+        }
+        job = await self.db.insert("hermes_jobs", job_values)
+        product = await self.db.update(
+            "hermes_products",
+            {"job_id": job["id"], "updated_at": now},
+            {"id": f"eq.{product['id']}"},
+        )
         return product, job
 
     async def get_product(self, product_id: str) -> dict[str, Any] | None:
