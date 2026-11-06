@@ -104,7 +104,12 @@ async def list_agents(): return {"agents": registry.names()}
 
 @app.get("/api/v1/agents/status")
 async def agents_status():
-    ready = bool(settings.openai_api_key)
+    provider = settings.ai_provider.strip().lower()
+    ready = (
+        (provider == "gemini" and bool(settings.gemini_api_key))
+        or (provider == "openai" and bool(settings.openai_api_key))
+        or bool(settings.ai_api_key)
+    )
     return {
         "chief": "ready" if ready else "blocked_missing_OPENAI_API_KEY",
         "agents": [
