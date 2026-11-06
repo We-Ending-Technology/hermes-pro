@@ -11,7 +11,10 @@ logger = logging.getLogger("hermes.agent-worker")
 
 async def process_agent(job_id: str, store: PersistentStore, settings: Settings, queue) -> None:
     job = await store.get_job(job_id)
-    if not job or job["job_type"] != "agent_run" or job["status"] in {"completed", "cancelled"}:
+    if not job or job["job_type"] != "agent_run" or job["status"] in {"completed", "cancelled", "running"}:
+        return
+    if int(job.get("attempts", 0)) >= int(job.get("max_attempts", 3)):
+        await store.update_job(job_id, "failed", attempts=int(job.get("attempts", 0)), error_message="maximum attempts reached")
         return
     attempts = int(job.get("attempts", 0)) + 1
     payload = job.get("payload") or {}

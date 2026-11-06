@@ -23,9 +23,15 @@ services:
       - key: OPENAI_AGENT_MODEL
         value: gpt-6-astra
       - key: AUTONOMY_ENABLED
-        value: "false"
+        value: "true"
       - key: AUTONOMY_INTERVAL_SECONDS
         value: "900"
+      - key: AUTONOMY_MAX_DAILY_PRODUCTS
+        value: "3"
+      - key: AUTONOMY_MAX_ACTIVE_PRODUCTS
+        value: "1"
+      - key: AUTONOMY_MAX_READY_TO_PUBLISH
+        value: "3"
       - key: DATABASE_URL
         sync: false
       - key: SUPABASE_URL
