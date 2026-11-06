@@ -18,9 +18,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hermes.worker")
 MAX_ATTEMPTS = 3
 
+
 async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) -> None:
     job = await store.get_job(job_id)
-    if not job or job["job_type"] != "product_generation" or job["status"] in {"completed", "cancelled", "paused"}: return
+    if not job or job["job_type"] != "product_generation" or job["status"] in {"completed", "cancelled", "paused"}:
+        return
     if int(job["attempts"]) >= MAX_ATTEMPTS:
         await store.update_job(job_id, "failed", attempts=job["attempts"], error_message="maximum attempts reached")
         return
@@ -33,12 +35,16 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
 
     async def checkpoint() -> bool:
         current = await store.get_product(product_id)
-        if not current: return True
-        if current.get("status") in {"paused", "cancelled"} or bool(current.get("paused", False)): return True
+        if not current:
+            return True
+        metadata = current.get("metadata") or {}
+        if current.get("status") in {"paused", "cancelled"} or bool(current.get("paused", False)) or bool(metadata.get("paused", False)):
+            return True
         return False
 
     try:
-        if await checkpoint(): return
+        if await checkpoint():
+            return
         await store.update_job(job_id, "running", attempts=attempts, error_message=None)
         settings = get_settings()
         gateway = build_ai_gateway(settings)
@@ -48,21 +54,24 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             f"Create a concise product strategy for the digital ebook topic: {topic}. Return valid JSON with keys: positioning, audience, title, subtitle, outline (array of chapter titles).",
             system="You are the Hermes Pro strategist. Return only valid JSON. Do not claim market data you do not have.",
         )
-        if await checkpoint(): return
+        if await checkpoint():
+            return
 
         await store.update_product(product_id, current_stage="writer")
         writer = await gateway.complete(
             f"Using this strategy, write the ebook for topic '{topic}'. Strategy: {strategist.content}\nReturn valid JSON with keys: introduction, chapters (array of objects with title and content), conclusion.",
             system="You are the Hermes Pro writer. Return only valid JSON. Produce original, useful educational content and do not fabricate citations.",
         )
-        if await checkpoint(): return
+        if await checkpoint():
+            return
 
         await store.update_product(product_id, current_stage="reviewer")
         reviewer = await gateway.complete(
             f"Review this proposed ebook for topic '{topic}'. Identify factual, structural and readability problems and provide a quality score from 0-100. Return valid JSON with keys: score, findings (array), approved (boolean).\nSTRATEGY: {strategist.content}\nEBOOK: {writer.content}",
             system="You are the Hermes Pro reviewer. Return only valid JSON. Be conservative: approval requires score >= 80.",
         )
-        if await checkpoint(): return
+        if await checkpoint():
+            return
 
         await store.update_product(product_id, current_stage="validation")
         try:
@@ -70,7 +79,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             review_data = json.loads(reviewer.content)
             writer_data = json.loads(writer.content)
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
-            raise RuntimeError("Gemini returned invalid JSON for the product pipeline") from exc
+            raise RuntimeError("AI provider returned invalid JSON for the product pipeline") from exc
 
         score = int(review_data.get("score", 0))
         approved = bool(review_data.get("approved")) and score >= 80
@@ -98,7 +107,8 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         storage = SupabaseStorage(settings)
         artifact_urls: dict[str, str] = {}
         for kind, (path, content, content_type) in artifacts.items():
-            if await checkpoint(): return
+            if await checkpoint():
+                return
             artifact_urls[kind] = await storage.upload(f"{product_id}/{path}", content, content_type)
 
         metadata["artifacts"] = artifact_urls
@@ -116,6 +126,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             await store.update_product(product_id, status="failed")
         logger.exception("product_generation failed job=%s", job_id)
 
+
 async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
     for job in await store.list_jobs():
         if job["status"] not in {"pending", "retrying", "running"}:
@@ -124,6 +135,7 @@ async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
             await queue.enqueue(str(job["id"]))
         elif job["job_type"] == "agent_run":
             await queue.enqueue_agent(str(job["id"]))
+
 
 async def run() -> None:
     settings = get_settings()
@@ -135,7 +147,8 @@ async def run() -> None:
         await recover_pending(store, queue)
         while True:
             if settings.autonomy_enabled and (asyncio.get_running_loop().time() - last_autonomy_tick) >= settings.autonomy_interval_seconds:
-                await autonomy_tick(settings, store, queue)
+                outcome = await autonomy_tick(settings, store, queue)
+                logger.info("autonomy tick: %s", outcome)
                 last_autonomy_tick = asyncio.get_running_loop().time()
             agent_job_id = await queue.dequeue_agent(timeout=1)
             if agent_job_id:
@@ -149,6 +162,9 @@ async def run() -> None:
     finally:
         await queue.close()
 
+
 if __name__ == "__main__":
-    try: asyncio.run(run())
-    except KeyboardInterrupt: logger.info("Hermes Pro worker stopped")
+    try:
+        asyncio.run(run())
+    except KeyboardInterrupt:
+        logger.info("Hermes Pro worker stopped")
