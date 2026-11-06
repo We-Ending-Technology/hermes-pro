@@ -40,7 +40,7 @@ class FakeQueue:
 
 
 def test_json_object_accepts_markdown_fence():
-    parsed = autonomy_scheduler._json_object(chr(96) * 3 + "json\\n{\"topic\":\"Tema válido\"}\\n" + chr(96) * 3)
+    parsed = autonomy_scheduler._json_object(chr(96) * 3 + "json" + chr(10) + "{\"topic\":\"Tema válido\"}" + chr(10) + chr(96) * 3)
     assert parsed["topic"] == "Tema válido"
 
 
