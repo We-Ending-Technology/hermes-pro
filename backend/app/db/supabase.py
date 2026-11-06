@@ -16,10 +16,10 @@ class SupabaseError(RuntimeError):
 class SupabaseREST:
     def __init__(self, settings: Settings) -> None:
         self.base_url = (settings.supabase_url or "").rstrip("/") + "/rest/v1"
-        self.secret_key = settings.supabase_secret_key
+        self.secret_key = settings.supabase_secret_key or settings.supabase_service_role_key
         self.headers = {
-            "apikey": settings.supabase_secret_key or "",
-            "Authorization": f"Bearer {settings.supabase_secret_key or ''}",
+            "apikey": self.secret_key or "",
+            "Authorization": f"Bearer {self.secret_key or ''}",
             "Content-Type": "application/json",
         }
 
