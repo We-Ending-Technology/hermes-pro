@@ -39,8 +39,9 @@ class GeminiAdapter(ConfiguredProviderAdapter):
             contents.append({"role":"user","parts":[{"text":f"SYSTEM INSTRUCTIONS:\n{system}"}]})
         contents.append({"role":"user","parts":[{"text":prompt}]})
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        headers = {"x-goog-api-key": self.api_key, "Content-Type": "application/json"}
         async with httpx.AsyncClient(timeout=45) as client:
-            response = await client.post(url, params={"key": self.api_key}, json={"contents": contents})
+            response = await client.post(url, headers=headers, json={"contents": contents})
             response.raise_for_status()
             data = response.json()
         try:
