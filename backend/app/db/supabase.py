@@ -6,7 +6,7 @@ from uuid import UUID
 
 import httpx
 
-from ..core.config import Settings
+from ..core.config import Settings, get_supabase_server_key
 
 
 class SupabaseError(RuntimeError):
@@ -16,7 +16,7 @@ class SupabaseError(RuntimeError):
 class SupabaseREST:
     def __init__(self, settings: Settings) -> None:
         self.base_url = (settings.supabase_url or "").rstrip("/") + "/rest/v1"
-        self.secret_key = settings.supabase_secret_key or settings.supabase_service_role_key
+        self.secret_key = get_supabase_server_key(settings)
         self.headers = {
             "apikey": self.secret_key or "",
             "Authorization": f"Bearer {self.secret_key or ''}",
@@ -25,7 +25,9 @@ class SupabaseREST:
 
     def _ensure_configured(self) -> None:
         if not self.secret_key or not self.base_url.startswith("http"):
-            raise SupabaseError("SUPABASE_URL and SUPABASE_SECRET_KEY are required")
+            raise SupabaseError(
+                "SUPABASE_URL and a server credential are required: use sb_secret_ or a legacy service_role JWT, never anon/publishable."
+            )
 
     @staticmethod
     def _json_value(value: Any) -> Any:
