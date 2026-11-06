@@ -21,7 +21,7 @@ MAX_ATTEMPTS = 3
 
 async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) -> None:
     job = await store.get_job(job_id)
-    if not job or job["job_type"] != "product_generation" or job["status"] in {"completed", "cancelled", "paused"}:
+    if not job or job["job_type"] != "product_generation" or job["status"] in {"completed", "cancelled", "paused", "running"}:
         return
     if int(job["attempts"]) >= MAX_ATTEMPTS:
         await store.update_job(job_id, "failed", attempts=job["attempts"], error_message="maximum attempts reached")
@@ -128,8 +128,24 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
 
 
 async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
     for job in await store.list_jobs():
-        if job["status"] not in {"pending", "retrying", "running"}:
+        status = job.get("status")
+        if status == "running":
+            updated = job.get("updated_at")
+            try:
+                updated_at = datetime.fromisoformat(str(updated).replace("Z", "+00:00"))
+                if updated_at.tzinfo is None:
+                    updated_at = updated_at.replace(tzinfo=timezone.utc)
+            except (TypeError, ValueError):
+                continue
+            if now - updated_at < timedelta(minutes=15):
+                continue
+            await store.update_job(str(job["id"]), "pending", error_message="recovered after stale worker lease")
+            status = "pending"
+        if status not in {"pending", "retrying"}:
             continue
         if job["job_type"] == "product_generation":
             await queue.enqueue(str(job["id"]))
@@ -147,8 +163,11 @@ async def run() -> None:
         await recover_pending(store, queue)
         while True:
             if settings.autonomy_enabled and (asyncio.get_running_loop().time() - last_autonomy_tick) >= settings.autonomy_interval_seconds:
-                outcome = await autonomy_tick(settings, store, queue)
-                logger.info("autonomy tick: %s", outcome)
+                try:
+                    outcome = await autonomy_tick(settings, store, queue)
+                    logger.info("autonomy tick: %s", outcome)
+                except Exception:
+                    logger.exception("autonomy tick failed; worker will continue")
                 last_autonomy_tick = asyncio.get_running_loop().time()
             agent_job_id = await queue.dequeue_agent(timeout=1)
             if agent_job_id:
