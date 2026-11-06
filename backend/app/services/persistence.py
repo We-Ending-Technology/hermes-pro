@@ -53,7 +53,7 @@ class PersistentStore:
         product = await self.db.update(
             "hermes_products",
             {"job_id": job["id"], "updated_at": now},
-            {"id": f"eq.{product['id']}"},
+            where={"id": f"eq.{product['id']}"},
         )
         return product, job
 
