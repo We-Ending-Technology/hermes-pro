@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     openai_chat_model: str = Field(default="gpt-6-luna", validation_alias="OPENAI_CHAT_MODEL")
     openai_agent_model: str = Field(default="gpt-6-astra", validation_alias="OPENAI_AGENT_MODEL")
     autonomy_enabled: bool = Field(default=False, validation_alias="AUTONOMY_ENABLED")
+    embedded_worker_enabled: bool = Field(default=False, validation_alias="EMBEDDED_WORKER_ENABLED")
     autonomy_interval_seconds: int = Field(default=900, validation_alias="AUTONOMY_INTERVAL_SECONDS")
     autonomy_max_daily_products: int = Field(default=3, ge=0, le=100, validation_alias="AUTONOMY_MAX_DAILY_PRODUCTS")
     autonomy_max_active_products: int = Field(default=1, ge=1, le=20, validation_alias="AUTONOMY_MAX_ACTIVE_PRODUCTS")
