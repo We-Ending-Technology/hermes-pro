@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import httpx
 
-from ..core.config import Settings
+from ..core.config import Settings, get_supabase_server_key
 
 
 class StorageError(RuntimeError):
@@ -12,7 +12,7 @@ class StorageError(RuntimeError):
 class SupabaseStorage:
     def __init__(self, settings: Settings, bucket: str = "hermes-artifacts") -> None:
         self.base = (settings.supabase_url or "").rstrip("/")
-        self.key = settings.supabase_secret_key or settings.supabase_service_role_key or ""
+        self.key = get_supabase_server_key(settings) or ""
         self.bucket = bucket
 
     def _headers(self) -> dict[str, str]:
@@ -20,7 +20,7 @@ class SupabaseStorage:
 
     async def ensure_bucket(self) -> None:
         if not self.base or not self.key:
-            raise StorageError("Supabase storage is not configured")
+            raise StorageError("Supabase server credential is not configured")
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(
                 f"{self.base}/storage/v1/bucket",
