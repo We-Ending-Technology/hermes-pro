@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     gemini_model: str = Field(default="gemini-2.5-flash", validation_alias="GEMINI_MODEL")
     supabase_url: str | None = Field(default=None, validation_alias="SUPABASE_URL")
     supabase_secret_key: str | None = Field(default=None, validation_alias="SUPABASE_SECRET_KEY")
+    supabase_service_role_key: str | None = Field(default=None, validation_alias="SUPABASE_SERVICE_ROLE_KEY")
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
     cors_origins: str = Field(default="http://localhost:5173", validation_alias="CORS_ORIGINS")
     hotmart_client_id: str | None = Field(default=None, validation_alias="HOTMART_CLIENT_ID")
