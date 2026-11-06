@@ -1,3 +1,5 @@
+import base64
+import json
 from functools import lru_cache
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -46,6 +48,27 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+
+def get_supabase_server_key(settings: Settings) -> str | None:
+    """Return only a Supabase server credential; never fall back to anon/publishable keys."""
+    candidates = (settings.supabase_service_role_key, settings.supabase_secret_key)
+    for key in candidates:
+        if not key:
+            continue
+        if key.startswith("sb_secret_"):
+            return key
+        if key.startswith("eyJ") and key.count(".") >= 2:
+            try:
+                payload = key.split(".")[1]
+                payload += "=" * (-len(payload) % 4)
+                claims = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
+                if claims.get("role") == "service_role":
+                    return key
+            except (ValueError, TypeError, json.JSONDecodeError):
+                continue
+    return None
+
 
 @lru_cache
 def get_settings() -> Settings:
