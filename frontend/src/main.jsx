@@ -15,6 +15,9 @@ const DEFAULT_RADAR = { demand: 80, competition: 45, differentiation: 75, produc
 
 function App() {
   const [view, setView] = useState("Início");
+  const [apiAccess, setApiAccess] = useState("checking");
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [apiKeyError, setApiKeyError] = useState("");
   const [products, setProducts] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [integrations, setIntegrations] = useState([]);
@@ -51,10 +54,26 @@ function App() {
   };
 
   useEffect(() => {
+    const savedKey = localStorage.getItem("hermes_api_key");
+    if (!savedKey) { setApiAccess("login"); return; }
+    call("/api/v1/agents/status").then(() => setApiAccess("authenticated")).catch(() => { localStorage.removeItem("hermes_api_key"); setApiAccess("login"); });
+  }, []);
+
+  useEffect(() => {
+    if (apiAccess !== "authenticated") return;
     refresh();
     const timer = setInterval(refresh, 10000);
     return () => clearInterval(timer);
-  }, []);
+  }, [apiAccess]);
+
+  const login = async (event) => {
+    event.preventDefault(); setApiKeyError("");
+    localStorage.setItem("hermes_api_key", apiKeyInput);
+    try { await call("/api/v1/agents/status"); setApiKeyInput(""); setApiAccess("authenticated"); }
+    catch (error) { localStorage.removeItem("hermes_api_key"); setApiKeyError(error.message); }
+  };
+
+  const logout = () => { localStorage.removeItem("hermes_api_key"); setApiAccess("login"); setView("Início"); };
 
   const action = async (fn, success = "") => {
     setBusy(true);
@@ -89,6 +108,9 @@ function App() {
   const loadSales = () => action(() => call("/api/v1/sales"), "Vendas atualizadas.").then(setSales);
   const loadAnalytics = () => action(() => call("/api/v1/analytics"), "Analytics atualizado.").then(setAnalytics);
 
+  if (apiAccess === "checking") return <div className="shell"><main className="main"><section className="page"><div className="panel">Verificando acesso privado…</div></section></main></div>;
+  if (apiAccess !== "authenticated") return <AccessGate value={apiKeyInput} setValue={setApiKeyInput} error={apiKeyError} onSubmit={login} />;
+
   return <div className="shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">H</div><div><strong>HERMES</strong><span>PRO / COMMAND CENTER</span></div></div>
@@ -97,7 +119,7 @@ function App() {
       <div className="sidebar-foot"><span>LIVE OPS • REAL DATA</span><button onClick={refresh}>↻ Atualizar</button></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div><span className="kicker">HERMES PRO / MONEY OPERATIONS</span><h1>{view}</h1></div><div className="top-actions"><span className="api-label"><i className={online ? "online" : "offline"}></i>{online ? "Backend conectado" : "Backend indisponível"}</span><button className="icon-button" onClick={runDiagnostics}>⌁</button><button className="icon-button" onClick={refresh}>↻</button><button className="avatar">W</button></div></header>
+      <header className="topbar"><div><span className="kicker">HERMES PRO / MONEY OPERATIONS</span><h1>{view}</h1></div><div className="top-actions"><span className="api-label"><i className={online ? "online" : "offline"}></i>{online ? "Backend conectado" : "Backend indisponível"}</span><button className="icon-button" onClick={runDiagnostics}>⌁</button><button className="icon-button" onClick={refresh}>↻</button><button className="icon-button" onClick={logout}>Sair</button><button className="avatar">W</button></div></header>
       {notice && <div className="notice">{notice}<button onClick={() => setNotice("")}>×</button></div>}
       {busy && <div className="loading-line"><i /> sincronizando dados reais…</div>}
       {view === "Início" && <Home dashboard={dashboard} products={products} jobs={jobs} go={setView} select={selectProduct} diagnostics={diagnostics} runDiagnostics={runDiagnostics} />}
@@ -119,6 +141,16 @@ function App() {
       {view === "Guias" && <Guides />}
     </main>
   </div>;
+}
+
+
+function AccessGate({ value, setValue, error, onSubmit }) {
+  return <div className="shell"><main className="main"><section className="page">
+    <div className="page-intro"><K>HERMES PRO</K><h2>Área privada</h2><p>Informe sua chave de acesso para abrir o Command Center.</p></div>
+    <form className="factory-form" onSubmit={onSubmit}><label>Chave privada<input type="password" value={value} onChange={e => setValue(e.target.value)} autoComplete="current-password" required /></label>
+      <div className="form-footer"><span>Somente o proprietário tem acesso.</span><Button primary type="submit">Entrar ↗</Button></div>
+      {error && <p role="alert">{error}</p>}
+    </form></section></main></div>;
 }
 
 const K = ({ children }) => <span className="kicker violet">{children}</span>;

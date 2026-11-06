@@ -4,7 +4,10 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+import hmac
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from .ai_gateway.factory import build_ai_gateway
@@ -73,7 +76,19 @@ async def lifespan(app: FastAPI):
         await queue.close()
 
 
-app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+
+@app.middleware("http")
+async def require_private_api_key(request: Request, call_next):
+    public_paths = {"/", "/health", "/api/v1/webhooks/hotmart"}
+    if request.method == "OPTIONS" or request.url.path in public_paths:
+        return await call_next(request)
+    if not settings.hermes_api_key:
+        return JSONResponse({"detail": "Private API access is not configured."}, status_code=503)
+    supplied = request.headers.get("X-Hermes-API-Key", "")
+    if not hmac.compare_digest(supplied, settings.hermes_api_key):
+        return JSONResponse({"detail": "Acesso privado: chave inválida ou ausente."}, status_code=401)
+    return await call_next(request)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,

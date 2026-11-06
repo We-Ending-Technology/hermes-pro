@@ -1,10 +1,10 @@
-const DIRECT_API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-m7wd.onrender.com";
+const DIRECT_API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-commercial.onrender.com";
 const PROXY_API = "";
 
 async function request(base, path, options = {}) {
   const response = await fetch(`${base}${path}`, {
     ...options,
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    headers: { "Content-Type": "application/json", ...(typeof localStorage !== "undefined" && localStorage.getItem("hermes_api_key") ? { "X-Hermes-API-Key": localStorage.getItem("hermes_api_key") } : {}), ...(options.headers || {}) },
   });
   const text = await response.text();
   let body = {};

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -55,7 +56,9 @@ async def hotmart_offers(ucode: str) -> dict[str, Any]:
 @router.post("/api/v1/webhooks/hotmart")
 async def hotmart_webhook(request: Request, x_hotmart_hottok: str | None = Header(default=None)) -> dict[str, Any]:
     expected = settings.hotmart_webhook_token
-    if expected and x_hotmart_hottok != expected:
+    if not expected:
+        raise HTTPException(status_code=503, detail="Hotmart webhook token is not configured")
+    if not hmac.compare_digest(x_hotmart_hottok or "", expected):
         raise HTTPException(status_code=401, detail="invalid Hotmart webhook token")
     payload = await request.json()
     event_type = str(payload.get("event") or payload.get("event_type") or "UNKNOWN")
