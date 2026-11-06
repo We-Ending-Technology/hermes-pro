@@ -93,13 +93,3 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
-
-  - type: cron
-    name: hermes-pro-maintenance
-    runtime: python
-    schedule: "0 3 * * *"
-    buildCommand: pip install .
-    startCommand: python -c "print('maintenance placeholder: no production automation enabled')"
-    envVars:
-      - key: APP_ENV
-        value: production
