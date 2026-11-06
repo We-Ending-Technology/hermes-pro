@@ -40,12 +40,15 @@ async def _run_embedded_worker() -> None:
     """Run the queue consumer inside the free API service when no paid worker exists."""
     from worker.main import run as run_worker
 
-    try:
-        await run_worker()
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        logger.exception("embedded worker stopped unexpectedly")
+    while True:
+        try:
+            await run_worker()
+            logger.warning("embedded worker exited; retrying in 60 seconds")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("embedded worker stopped unexpectedly; retrying in 60 seconds")
+        await asyncio.sleep(60)
 
 
 @asynccontextmanager
