@@ -31,14 +31,14 @@ def build_review_excerpt(writer_data: dict[str, Any]) -> str:
         chapters = []
 
     sample = {
-        "introduction": str(writer_data.get("introduction") or "")[:1800],
+        "introduction": str(writer_data.get("introduction") or "")[:1000],
         "chapter_count": len(chapters),
         "chapters": [
             {
-                "title": str(chapter.get("title") or "")[:180],
-                "content_excerpt": str(chapter.get("content") or "")[:1200],
+                "title": str(chapter.get("title") or "")[:120],
+                "content_excerpt": str(chapter.get("content") or "")[:1000],
             }
-            for chapter in chapters[:8]
+            for chapter in chapters[:6]
             if isinstance(chapter, dict)
         ],
         "conclusion": str(writer_data.get("conclusion") or "")[:1500],
