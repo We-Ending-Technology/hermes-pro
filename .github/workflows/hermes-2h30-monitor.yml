@@ -1,0 +1,98 @@
+name: Hermes API and database monitor
+
+on:
+  # Exactly 150 minutes between scheduled slots (UTC); GitHub may delay scheduled starts.
+  schedule:
+    - cron: "0 0,5,10,15,20 * * *"
+    - cron: "30 2,7,12,17,22 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: hermes-2h30-monitor
+  cancel-in-progress: false
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Probe API and Supabase readiness
+        id: probe
+        env:
+          HERMES_API_URL: https://hermes-pro-api-commercial.onrender.com
+        shell: bash
+        run: |
+          set +e
+          : > /tmp/hermes-readiness.json
+          status=$(curl --silent --show-error --output /tmp/hermes-readiness.json --write-out '%{http_code}' \
+            --connect-timeout 15 --max-time 40 --retry 2 --retry-delay 10 --retry-all-errors \
+            "$HERMES_API_URL/ready")
+          curl_exit=$?
+          if [ "$curl_exit" -ne 0 ]; then
+            status="000"
+          fi
+          body=$(cat /tmp/hermes-readiness.json)
+          echo "http_status=$status" >> "$GITHUB_OUTPUT"
+          echo "body=$body" >> "$GITHUB_OUTPUT"
+          echo "Hermes readiness HTTP status: $status"
+          echo "$body"
+          if [ "$status" != "200" ]; then
+            exit 1
+          fi
+          echo "$body" | jq -e '.status == "ready" and .checks.api == "ok" and .checks.database == "ok"'
+
+      - name: Open one alert on failure, close it after recovery
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          PROBE_OUTCOME: ${{ steps.probe.outcome }}
+          HTTP_STATUS: ${{ steps.probe.outputs.http_status }}
+          PROBE_BODY: ${{ steps.probe.outputs.body }}
+        with:
+          script: |
+            const title = "[Hermes Monitor] API ou banco indisponível";
+            const { owner, repo } = context.repo;
+            const openIssues = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: "open", per_page: 100
+            });
+            const alert = openIssues.find(item => !item.pull_request && item.title === title);
+            const failed = process.env.PROBE_OUTCOME !== "success";
+            const status = process.env.HTTP_STATUS || "sem resposta";
+            let details = process.env.PROBE_BODY || "A API não retornou conteúdo legível.";
+            if (details.length > 4000) details = details.slice(0, 4000);
+
+            if (failed && !alert) {
+              await github.rest.issues.create({
+                owner, repo, title,
+                body: [
+                  "O monitor externo detectou falha no Hermes.",
+                  "",
+                  `- Horário UTC: ${new Date().toISOString()}`,
+                  `- HTTP: ${status}`,
+                  `- Endpoint: https://hermes-pro-api-commercial.onrender.com/ready`,
+                  "",
+                  "Resposta:",
+                  "```json",
+                  details,
+                  "```",
+                  "",
+                  "Este alerta será fechado automaticamente quando API e Supabase voltarem a responder."
+                ].join("\n")
+              });
+            } else if (failed && alert) {
+              core.notice(`Falha continua ativa; alerta existente #${alert.number} será mantido sem duplicação.`);
+            } else if (!failed && alert) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: alert.number,
+                body: `Hermes recuperado. API e Supabase responderam corretamente em ${new Date().toISOString()} UTC. Alerta encerrado automaticamente.`
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: alert.number, state: "closed"
+              });
+            } else {
+              core.info("Hermes saudável; nenhum alerta aberto.");
+            }
