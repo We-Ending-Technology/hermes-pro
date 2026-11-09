@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from typing import Any
 
 from backend.app.ai_gateway.factory import build_ai_gateway
 from backend.app.core.config import get_settings
@@ -13,12 +14,44 @@ from backend.app.services.persistence import PersistentStore
 from backend.app.services.storage import SupabaseStorage
 from worker.agent_jobs import process_agent
 from worker.autonomy_scheduler import autonomy_tick
+from worker.json_utils import build_review_excerpt, parse_json_object
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hermes.worker")
 MAX_ATTEMPTS = 3
 RECOVERY_INTERVAL_SECONDS = 300
 ARTIFACT_BUCKETS = {"cover": "covers", "docx": "exports", "pdf": "ebooks"}
+
+
+async def complete_json_response(
+    gateway: Any,
+    prompt: str,
+    system: str,
+    *,
+    label: str,
+    fallback: dict | None = None,
+):
+    """Request structured JSON, repair one malformed response, and fail closed when needed."""
+    result = await gateway.complete(prompt, system=system)
+    try:
+        return result, parse_json_object(result.content)
+    except ValueError as exc:
+        logger.warning("%s returned invalid JSON (%s); requesting one repair", label, str(exc)[:180])
+
+    repair_prompt = (
+        "Your previous answer was empty or invalid. Return exactly one valid JSON object, "
+        "with no Markdown fences, no preamble, and no text outside the JSON object.\n"
+        f"Original task:\n{prompt[:12000]}\n"
+        f"Previous response:\n{(result.content or '')[:3000]}"
+    )
+    repaired = await gateway.complete(repair_prompt, system=system)
+    try:
+        return repaired, parse_json_object(repaired.content)
+    except ValueError as exc:
+        if fallback is not None:
+            logger.error("%s remained invalid after repair; applying fail-closed fallback", label)
+            return repaired, fallback
+        raise RuntimeError(f"{label} did not return valid JSON after one repair attempt") from exc
 
 
 async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) -> None:
@@ -52,38 +85,65 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         gateway = build_ai_gateway(settings)
         await store.update_product(product_id, status="generating", current_stage="topic")
 
-        strategist = await gateway.complete(
-            f"Create a concise product strategy for the digital ebook topic: {topic}. Return valid JSON with keys: positioning, audience, title, subtitle, outline (array of chapter titles).",
-            system="You are the Hermes Pro strategist. Return only valid JSON. Do not claim market data you do not have.",
+        strategy_prompt = (
+            f"Create a concise product strategy for the digital ebook topic: {topic}. "
+            "Return valid JSON with keys: positioning, audience, title, subtitle, outline "
+            "(array of chapter titles)."
+        )
+        strategist, strategy_data = await complete_json_response(
+            gateway,
+            strategy_prompt,
+            "You are the Hermes Pro strategist. Return only valid JSON. Do not claim market data you do not have.",
+            label="strategist",
         )
         if await checkpoint():
             return
 
         await store.update_product(product_id, current_stage="writer")
-        writer = await gateway.complete(
-            f"Using this strategy, write the ebook for topic '{topic}'. Strategy: {strategist.content}\nReturn valid JSON with keys: introduction, chapters (array of objects with title and content), conclusion.",
-            system="You are the Hermes Pro writer. Return only valid JSON. Produce original, useful educational content and do not fabricate citations.",
+        writer_prompt = (
+            f"Using this strategy, write the ebook for topic '{topic}'. "
+            f"Strategy: {json.dumps(strategy_data, ensure_ascii=False)}\n"
+            "Return valid JSON with keys: introduction, chapters "
+            "(array of objects with title and content), conclusion."
+        )
+        writer, writer_data = await complete_json_response(
+            gateway,
+            writer_prompt,
+            "You are the Hermes Pro writer. Return only valid JSON. Produce original, useful educational content and do not fabricate citations.",
+            label="writer",
         )
         if await checkpoint():
             return
 
         await store.update_product(product_id, current_stage="reviewer")
-        reviewer = await gateway.complete(
-            f"Review this proposed ebook for topic '{topic}'. Identify factual, structural and readability problems and provide a quality score from 0-100. Return valid JSON with keys: score, findings (array), approved (boolean).\nSTRATEGY: {strategist.content}\nEBOOK: {writer.content}",
-            system="You are the Hermes Pro reviewer. Return only valid JSON. Be conservative: approval requires score >= 80.",
+        review_sample = build_review_excerpt(writer_data)
+        review_prompt = (
+            f"Review this proposed ebook for topic '{topic}'. Assess factual accuracy, "
+            "structure, completeness and readability. Return valid JSON with keys: "
+            "score (integer 0-100), findings (array of strings), approved (boolean). "
+            "Approval requires score >= 80. Do not infer market demand.\n"
+            f"STRATEGY: {json.dumps(strategy_data, ensure_ascii=False)[:3500]}\n"
+            f"REPRESENTATIVE EBOOK EXCERPTS: {review_sample}"
+        )
+        _, review_data = await complete_json_response(
+            gateway,
+            review_prompt,
+            "You are the Hermes Pro reviewer. Return exactly one JSON object and be conservative: approval requires score >= 80.",
+            label="reviewer",
+            fallback={
+                "score": 0,
+                "findings": ["Reviewer output remained invalid after one repair; manual review required."],
+                "approved": False,
+            },
         )
         if await checkpoint():
             return
 
         await store.update_product(product_id, current_stage="validation")
         try:
-            strategy_data = json.loads(strategist.content)
-            review_data = json.loads(reviewer.content)
-            writer_data = json.loads(writer.content)
-        except (ValueError, TypeError, json.JSONDecodeError) as exc:
-            raise RuntimeError("AI provider returned invalid JSON for the product pipeline") from exc
-
-        score = int(review_data.get("score", 0))
+            score = int(review_data.get("score", 0))
+        except (TypeError, ValueError):
+            score = 0
         approved = bool(review_data.get("approved")) and score >= 80
         metadata = {
             "strategy": strategy_data,
