@@ -3,6 +3,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const secretKeys = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") ?? "{}");
 const adminKey = secretKeys.default ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const allowedBuckets = new Set(["covers", "ebooks", "exports"]);
 
 function hex(bytes: Uint8Array): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
@@ -25,6 +26,78 @@ function privilegedHeaders(): Headers {
   // Legacy service_role keys are JWTs. New sb_secret_ keys must be sent only as apikey.
   if (adminKey.startsWith("eyJ")) headers.set("Authorization", `Bearer ${adminKey}`);
   return headers;
+}
+
+function copyResponseHeaders(source: Headers): Headers {
+  const headers = new Headers();
+  for (const name of ["content-type", "content-range", "content-location", "preference-applied", "location", "cache-control"]) {
+    const value = source.get(name);
+    if (value) headers.set(name, value);
+  }
+  return headers;
+}
+
+async function proxyStorage(req: Request, url: URL, route: string[]): Promise<Response> {
+  const storageRoute = route.slice(1);
+  if (!storageRoute.length) return Response.json({ error: "invalid_storage_route" }, { status: 404 });
+
+  let bucket = "";
+  let body: ArrayBuffer | undefined;
+  const resource = storageRoute[0];
+
+  if (resource === "bucket") {
+    if (storageRoute.length === 1 && req.method === "POST") {
+      body = await req.arrayBuffer();
+      try {
+        const payload = JSON.parse(new TextDecoder().decode(body));
+        bucket = String(payload.id ?? payload.name ?? "");
+      } catch {
+        return Response.json({ error: "invalid_bucket_payload" }, { status: 400 });
+      }
+    } else if (storageRoute.length === 2 && ["PUT", "GET"].includes(req.method)) {
+      bucket = storageRoute[1];
+    } else {
+      return Response.json({ error: "storage_method_not_allowed" }, { status: 405 });
+    }
+  } else if (resource === "object") {
+    if (storageRoute[1] === "sign") {
+      bucket = storageRoute[2] ?? "";
+      if (req.method !== "POST" || storageRoute.length < 4) {
+        return Response.json({ error: "storage_method_not_allowed" }, { status: 405 });
+      }
+    } else {
+      bucket = storageRoute[1] ?? "";
+      if (req.method !== "POST" || storageRoute.length < 3) {
+        return Response.json({ error: "storage_method_not_allowed" }, { status: 405 });
+      }
+    }
+    body = await req.arrayBuffer();
+  } else {
+    return Response.json({ error: "invalid_storage_route" }, { status: 404 });
+  }
+
+  if (!allowedBuckets.has(bucket)) {
+    return Response.json({ error: "bucket_not_allowed" }, { status: 403 });
+  }
+
+  if (body === undefined && !["GET", "DELETE"].includes(req.method)) {
+    body = await req.arrayBuffer();
+  }
+  const headers = privilegedHeaders();
+  for (const name of ["content-type", "x-upsert", "cache-control", "content-disposition", "x-metadata", "accept"]) {
+    const value = req.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  const target = `${supabaseUrl.replace(/\/$/, "")}/storage/v1/${storageRoute.join("/")}${url.search}`;
+  const upstream = await fetch(target, {
+    method: req.method,
+    headers,
+    body: ["GET", "DELETE"].includes(req.method) ? undefined : body,
+  });
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: copyResponseHeaders(upstream.headers),
+  });
 }
 
 Deno.serve(async (req: Request) => {
@@ -53,7 +126,12 @@ Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   const segments = url.pathname.split("/").filter(Boolean);
   const functionIndex = segments.indexOf("hermes-db-bridge");
-  const table = functionIndex >= 0 ? segments.slice(functionIndex + 1).join("/") : "";
+  const route = functionIndex >= 0 ? segments.slice(functionIndex + 1) : [];
+  if (route[0] === "storage") {
+    return await proxyStorage(req, url, route);
+  }
+
+  const table = route.join("/");
   if (!/^[a-z][a-z0-9_]*$/.test(table) || table === "hermes_bridge_secret") {
     return Response.json({ error: "invalid_table" }, { status: 404 });
   }
@@ -72,13 +150,10 @@ Deno.serve(async (req: Request) => {
   const upstream = await fetch(target, {
     method: req.method,
     headers,
-    body: ["GET", "DELETE"].includes(req.method) ? undefined : await req.text(),
+    body: ["GET", "DELETE"].includes(req.method) ? undefined : await req.arrayBuffer(),
   });
-
-  const responseHeaders = new Headers();
-  for (const name of ["content-type", "content-range", "content-location", "preference-applied", "location"]) {
-    const value = upstream.headers.get(name);
-    if (value) responseHeaders.set(name, value);
-  }
-  return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: copyResponseHeaders(upstream.headers),
+  });
 });
