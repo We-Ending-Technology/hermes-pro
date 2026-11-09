@@ -35,7 +35,7 @@ registry = AgentRegistry()
 db = SupabaseREST(settings)
 store = PersistentStore(db)
 sales_service = SalesService(db)
-queue = JobQueue(settings.redis_url)
+queue = JobQueue(settings.redis_url or "redis://localhost:6379/0")
 autonomy = AutonomyService(settings, store)
 
 
@@ -120,13 +120,17 @@ async def list_agents(): return {"agents": registry.names()}
 @app.get("/api/v1/agents/status")
 async def agents_status():
     provider = settings.ai_provider.strip().lower()
-    ready = (
-        (provider == "gemini" and bool(settings.gemini_api_key))
-        or (provider == "openai" and bool(settings.openai_api_key))
-        or bool(settings.ai_api_key)
-    )
+    if provider == "gemini":
+        ready = bool(settings.gemini_api_key or settings.ai_api_key)
+        blocked_reason = "blocked_missing_GEMINI_API_KEY"
+    elif provider == "openai":
+        ready = bool(settings.openai_api_key)
+        blocked_reason = "blocked_missing_OPENAI_API_KEY"
+    else:
+        ready = False
+        blocked_reason = "blocked_non_production_AI_PROVIDER"
     return {
-        "chief": "ready" if ready else "blocked_missing_OPENAI_API_KEY",
+        "chief": "ready" if ready else blocked_reason,
         "agents": [
             {"name": "Hermes Chefe", "role": "orchestrator", "status": "ready" if ready else "blocked"},
             {"name": "Hermes Radar", "role": "research", "status": "ready" if ready else "blocked"},
