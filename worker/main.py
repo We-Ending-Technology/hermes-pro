@@ -219,12 +219,17 @@ async def run() -> None:
     last_autonomy_tick = 0.0
     last_recovery = loop.time()
     try:
-        await recover_pending(store, queue)
+        try:
+            await asyncio.wait_for(recover_pending(store, queue), timeout=60)
+            logger.info("initial job recovery complete")
+        except Exception:
+            logger.exception("initial job recovery failed or timed out; worker will continue")
         while True:
             now = loop.time()
             if settings.autonomy_enabled and (now - last_autonomy_tick) >= settings.autonomy_interval_seconds:
                 try:
-                    outcome = await autonomy_tick(settings, store, queue)
+                    logger.info("autonomy tick starting")
+                    outcome = await asyncio.wait_for(autonomy_tick(settings, store, queue), timeout=90)
                     logger.info("autonomy tick: %s", outcome)
                 except Exception:
                     logger.exception("autonomy tick failed; worker will continue")
