@@ -1,15 +1,16 @@
 name: Hermes API and database monitor
 
 on:
-  # Exactly 150 minutes between scheduled slots (UTC); GitHub may delay scheduled starts.
+  # Poll every 15 minutes; perform a real probe only after 150 minutes have elapsed.
+  # GitHub may delay scheduled starts, so the practical interval can drift slightly.
   schedule:
-    - cron: "0 0,5,10,15,20 * * *"
-    - cron: "30 2,7,12,17,22 * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
   issues: write
+  actions: read
 
 concurrency:
   group: hermes-2h30-monitor
@@ -20,8 +21,46 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
+      - name: Check whether 150 minutes have elapsed
+        id: gate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const artifacts = await github.paginate(github.rest.actions.listArtifactsForRepo, {
+              owner, repo, per_page: 100
+            });
+            const checkpoints = artifacts
+              .filter(item => item.name.startsWith("hermes-monitor-checkpoint-") && !item.expired)
+              .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+            const latest = checkpoints[0];
+            const elapsedMs = latest ? Date.now() - Date.parse(latest.created_at) : Number.POSITIVE_INFINITY;
+            const intervalMs = 150 * 60 * 1000;
+            const shouldRun = !latest || elapsedMs >= intervalMs;
+            core.setOutput("should_run", shouldRun ? "true" : "false");
+            if (latest) {
+              core.info(`Last probe checkpoint: ${latest.created_at}; elapsed minutes: ${Math.floor(elapsedMs / 60000)}`);
+            } else {
+              core.info("No previous checkpoint; first probe will run.");
+            }
+            core.info(shouldRun ? "150-minute interval reached; running probe." : "Interval not reached; skipping this poll.");
+
+      - name: Save monitoring checkpoint
+        if: steps.gate.outputs.should_run == 'true'
+        run: date -u +'%Y-%m-%dT%H:%M:%SZ' > hermes-monitor-checkpoint.txt
+
+      - name: Persist checkpoint for the next scheduled run
+        if: steps.gate.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermes-monitor-checkpoint-${{ github.run_id }}
+          path: hermes-monitor-checkpoint.txt
+          retention-days: 90
+          if-no-files-found: error
+
       - name: Probe API and Supabase readiness
         id: probe
+        if: steps.gate.outputs.should_run == 'true'
         env:
           HERMES_API_URL: https://hermes-pro-api-commercial.onrender.com
         shell: bash
@@ -46,7 +85,7 @@ jobs:
           echo "$body" | jq -e '.status == "ready" and .checks.api == "ok" and .checks.database == "ok"'
 
       - name: Open one alert on failure, close it after recovery
-        if: always()
+        if: always() && steps.gate.outputs.should_run == 'true'
         uses: actions/github-script@v7
         env:
           PROBE_OUTCOME: ${{ steps.probe.outcome }}
