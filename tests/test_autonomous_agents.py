@@ -22,6 +22,10 @@ def test_gemini_agent_configuration_does_not_require_openai_key():
     assert settings.openai_api_key is None
 
 
+def test_gemini_default_model_is_current_flash():
+    assert Settings().gemini_model == "gemini-3.8-flash"
+
+
 class FakeGateway:
     def __init__(self):
         self.calls = []
