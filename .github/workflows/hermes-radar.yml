@@ -1,16 +1,34 @@
 name: Hermes Autonomous Radar
 
-# Intentionally manual-only while the owner has paused Radar.
-# Do not add schedule/push triggers without an explicit owner request.
 on:
+  # Keep the free Render API awake so its embedded worker can run the
+  # autonomous scheduler. This uses no paid API or GitHub-hosted secret.
+  schedule:
+    - cron: "*/14 * * * *"
   workflow_dispatch:
+
+concurrency:
+  group: hermes-autonomous-radar
+  cancel-in-progress: false
 
 jobs:
   radar:
     runs-on: ubuntu-slim
-    timeout-minutes: 5
+    timeout-minutes: 4
     steps:
-      - name: Explain paused state
+      - name: Wake Hermes API and embedded autonomous worker
+        env:
+          HERMES_API_URL: https://hermes-pro-api-commercial.onrender.com
         run: |
-          echo "Radar is paused by owner request."
-          echo "This workflow does not call Hermes APIs or discover opportunities."
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error --location --max-time 180 \
+            --output "$response_file" --write-out "%{http_code}" \
+            "$HERMES_API_URL/health")"
+          cat "$response_file"
+          rm -f "$response_file"
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "::error::Hermes health check returned HTTP $status"
+            exit 1
+          fi
+          echo "Hermes API responded successfully; embedded worker starts its own autonomy loop."
