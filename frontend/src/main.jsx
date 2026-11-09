@@ -58,7 +58,7 @@ function App() {
 
   const safeCall = async (path, options) => {
     try { return await call(path, options); }
-    catch (error) { if (path === "/health") setNotice(error.message); return null; }
+    catch (error) { setNotice(error.message); return null; }
   };
 
   useEffect(() => {
