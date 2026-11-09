@@ -11,9 +11,9 @@ services:
       - key: APP_ENV
         value: production
       - key: AI_PROVIDER
-        value: openai
-      - key: AI_FALLBACK_PROVIDER
         value: gemini
+      - key: AI_FALLBACK_PROVIDER
+        value: none
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
@@ -31,7 +31,7 @@ services:
       - key: AUTONOMY_INTERVAL_SECONDS
         value: "900"
       - key: AUTONOMY_MAX_DAILY_PRODUCTS
-        value: "3"
+        value: "1"
       - key: AUTONOMY_MAX_ACTIVE_PRODUCTS
         value: "1"
       - key: AUTONOMY_MAX_READY_TO_PUBLISH
