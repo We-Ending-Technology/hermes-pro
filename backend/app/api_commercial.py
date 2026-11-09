@@ -54,6 +54,7 @@ async def ready() -> dict[str, Any]:
         fallback_provider == "gemini" and bool(settings.gemini_api_key or settings.ai_api_key)
     )
     ai_ok = primary_ai_ok or fallback_ai_ok
+    ai_message = "Primary configured: " + str(primary_ai_ok) + "; fallback " + fallback_provider + " configured: " + str(fallback_ai_ok)
 
     configured = {x["name"].lower(): x for x in integration_service.status()}
     checks: list[dict[str, Any]] = [
@@ -75,7 +76,7 @@ async def ready() -> dict[str, Any]:
             "name": "AI",
             "status": "ready" if ai_ok else "error",
             "configured": ai_ok,
-            "message": f"Provedor {provider} configurado" if ai_ok else "Provedor de IA real não configurado.",
+            "message": ai_message if ai_ok else "Nenhum provedor de IA real está configurado.",
             "required": True,
         },
     ]
