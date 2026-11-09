@@ -23,9 +23,12 @@ class SupabaseREST:
             self.base_url = f"{supabase_url}/rest/v1"
             self.headers = {
                 "apikey": self.secret_key,
-                "Authorization": f"Bearer {self.secret_key}",
                 "Content-Type": "application/json",
             }
+            # New sb_secret_ keys are opaque API keys, not JWTs. Only legacy
+            # service_role JWTs belong in Authorization: Bearer.
+            if self.secret_key.startswith("eyJ"):
+                self.headers["Authorization"] = f"Bearer {self.secret_key}"
         else:
             # Privileged DB access is isolated inside a Supabase Edge Function.
             # Render receives only a publishable key plus a separate bridge secret.
