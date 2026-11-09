@@ -78,6 +78,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
+
 @app.middleware("http")
 async def require_private_api_key(request: Request, call_next):
     public_paths = {"/", "/health", "/ready", "/api/v1/webhooks/hotmart"}
@@ -89,6 +90,8 @@ async def require_private_api_key(request: Request, call_next):
     if not hmac.compare_digest(supplied, settings.hermes_api_key):
         return JSONResponse({"detail": "Acesso privado: chave inválida ou ausente."}, status_code=401)
     return await call_next(request)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -99,23 +102,57 @@ app.add_middleware(
 )
 app.include_router(commercial_router)
 
+
 def product_response(row: dict) -> ProductResponse:
     metadata = dict(row.get("metadata") or {})
     metadata["job_id"] = row.get("job_id")
     metadata["paused"] = bool(row.get("paused", False))
     return ProductResponse(id=str(row["id"]), topic=row["topic"], title=row.get("title"), status=row["status"], current_stage=row["current_stage"], stages=list(__import__("backend.app.product_factory", fromlist=["PIPELINE_STAGES"]).PIPELINE_STAGES), metadata=metadata, created_at=row["created_at"])
 
+
 def job_response(row: dict) -> JobResponse:
     return JobResponse(id=str(row["id"]), job_type=row["job_type"], status=row["status"], attempts=row["attempts"], max_attempts=row["max_attempts"], error_message=row.get("error_message"), payload=row.get("payload") or {}, created_at=row["created_at"])
+
 
 @app.get("/")
 async def root(): return {"status":"ok","service":"hermes-pro-api","version":"0.5.0"}
 
+
 @app.get("/health", response_model=HealthResponse)
 async def health(): return HealthResponse(status="ok", service="hermes-pro-api", environment=settings.app_env)
 
+
+@app.get("/ready")
+async def readiness():
+    """Readiness probe: confirm the API process and its Supabase data path are usable."""
+    try:
+        database_ready = await db.health()
+    except Exception:
+        logger.exception("readiness database probe raised an unexpected exception")
+        database_ready = False
+
+    checked_at = datetime.now().astimezone().isoformat()
+    if not database_ready:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready",
+                "service": "hermes-pro-api",
+                "checks": {"api": "ok", "database": "error"},
+                "checked_at": checked_at,
+            },
+        )
+    return {
+        "status": "ready",
+        "service": "hermes-pro-api",
+        "checks": {"api": "ok", "database": "ok"},
+        "checked_at": checked_at,
+    }
+
+
 @app.get("/api/v1/agents")
 async def list_agents(): return {"agents": registry.names()}
+
 
 @app.get("/api/v1/agents/status")
 async def agents_status():
@@ -142,9 +179,11 @@ async def agents_status():
         "embedded_worker_enabled": settings.embedded_worker_enabled,
     }
 
+
 @app.get("/api/v1/agents/runs")
 async def agent_runs():
     return {"runs": await store.list_agent_runs()}
+
 
 @app.post("/api/v1/agents/dispatch")
 async def dispatch_agent(request: AgentRunRequest):
@@ -153,12 +192,14 @@ async def dispatch_agent(request: AgentRunRequest):
     await queue.enqueue_agent(str(job["id"]))
     return {"run_id": str(job["id"]), "agent": "Hermes Chefe", "status": "queued", "output": {}}
 
+
 @app.post("/api/v1/agents/run", response_model=AgentRunResponse)
 async def run_agent(request: AgentRunRequest):
     try: agent = registry.get(request.agent)
     except KeyError as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
     output = await agent.run(request.input)
     return AgentRunResponse(run_id=str(uuid4()), agent=request.agent, status="completed", output=output)
+
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
@@ -175,17 +216,21 @@ async def chat(request: ChatRequest):
     )
     return ChatResponse(response=result.content, provider=result.provider, model=result.model)
 
+
 @app.get("/api/v1/integrations", response_model=list[IntegrationStatus])
 async def integrations(): return [IntegrationStatus(**item) for item in integration_service.status()]
 
+
 @app.get("/api/v1/jobs", response_model=list[JobResponse])
 async def jobs(): return [job_response(row) for row in await store.list_jobs()]
+
 
 @app.get("/api/v1/jobs/{job_id}", response_model=JobResponse)
 async def get_job(job_id: str):
     row = await store.get_job(job_id)
     if not row: raise HTTPException(status_code=404, detail="job not found")
     return job_response(row)
+
 
 @app.post("/api/v1/jobs/{job_id}/cancel", response_model=JobResponse)
 async def cancel_job(job_id: str):
@@ -197,8 +242,10 @@ async def cancel_job(job_id: str):
     if product_id: await store.update_product(product_id, status="cancelled")
     return job_response(updated)
 
+
 @app.get("/api/v1/products", response_model=list[ProductResponse])
 async def products(): return [product_response(row) for row in await store.list_products()]
+
 
 @app.post("/api/v1/products", response_model=ProductResponse, status_code=202)
 async def create_product(request: ProductCreateRequest):
@@ -208,11 +255,13 @@ async def create_product(request: ProductCreateRequest):
     except SupabaseError as exc: raise HTTPException(status_code=503, detail=str(exc)) from exc
     return product_response(product)
 
+
 @app.get("/api/v1/products/{product_id}", response_model=ProductResponse)
 async def get_product(product_id: str):
     row = await store.get_product(product_id)
     if not row: raise HTTPException(status_code=404, detail="product not found")
     return product_response(row)
+
 
 @app.patch("/api/v1/products/{product_id}", response_model=ProductResponse)
 async def update_product(product_id: str, request: ProductUpdateRequest):
@@ -222,6 +271,7 @@ async def update_product(product_id: str, request: ProductUpdateRequest):
     updated = await store.update_product(product_id, title=request.title, metadata=request.metadata)
     return product_response(updated)
 
+
 @app.post("/api/v1/products/{product_id}/pause", response_model=ProductResponse)
 async def pause_product(product_id: str):
     row = await store.get_product(product_id)
@@ -230,6 +280,7 @@ async def pause_product(product_id: str):
     updated = await store.update_product(product_id, status="paused", metadata=metadata)
     if row.get("job_id"): await store.update_job(str(row["job_id"]), "paused", error_message="paused by operator")
     return product_response(updated)
+
 
 @app.post("/api/v1/products/{product_id}/resume", response_model=ProductResponse)
 async def resume_product(product_id: str):
@@ -242,15 +293,18 @@ async def resume_product(product_id: str):
         await queue.enqueue(str(row["job_id"]))
     return product_response(updated)
 
+
 @app.post("/api/v1/radar", response_model=RadarResponse)
 async def radar(request: RadarRequest):
     result = radar_service.score(request.model_dump())
     return RadarResponse(score=result.score, confidence=result.confidence, dimensions=result.dimensions, findings=result.findings)
 
+
 @app.get("/api/v1/radar", response_model=RadarResponse)
 async def radar_default():
     result = radar_service.score({})
     return RadarResponse(score=result.score, confidence=result.confidence, dimensions=result.dimensions, findings=result.findings)
+
 
 @app.post("/api/v1/products/{product_id}/quality", response_model=QualityResponse)
 async def quality(product_id: str, product: dict):
@@ -258,11 +312,14 @@ async def quality(product_id: str, product: dict):
     result = quality_service.evaluate(product)
     return QualityResponse(score=result.score, decision=result.decision, dimensions=result.dimensions, findings=result.findings, safe_fixes=result.safe_fixes)
 
+
 @app.get("/api/v1/sales", response_model=SalesSummary)
 async def sales(range_start: date | None = None, range_end: date | None = None): return SalesSummary(**(await sales_service.summary(range_start, range_end)))
 
+
 @app.get("/api/v1/analytics", response_model=AnalyticsResponse)
 async def analytics(range_start: date | None = None, range_end: date | None = None): return AnalyticsResponse(**analytics_service.insights(range_start, range_end))
+
 
 @app.get("/api/v1/dashboard", response_model=DashboardResponse)
 async def dashboard():
