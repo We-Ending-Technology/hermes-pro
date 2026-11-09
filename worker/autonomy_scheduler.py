@@ -52,10 +52,16 @@ async def autonomy_tick(settings: Settings, store: PersistentStore, queue) -> di
     if not settings.autonomy_enabled:
         return {"status": "disabled"}
 
-    if settings.ai_provider == "gemini" and not (settings.gemini_api_key or settings.ai_api_key):
-        return {"status": "blocked", "reason": "missing_gemini_api_key"}
-    if settings.ai_provider == "openai" and not settings.openai_api_key:
-        return {"status": "blocked", "reason": "missing_openai_api_key"}
+    provider = (settings.ai_provider or "").strip().lower()
+    primary_available = (
+        provider == "gemini" and bool(settings.gemini_api_key or settings.ai_api_key)
+    ) or (provider == "openai" and bool(settings.openai_api_key))
+    fallback_provider = (settings.ai_fallback_provider or "").strip().lower()
+    fallback_available = (
+        fallback_provider == "gemini" and bool(settings.gemini_api_key or settings.ai_api_key)
+    ) or (fallback_provider == "openai" and bool(settings.openai_api_key))
+    if not primary_available and not fallback_available:
+        return {"status": "blocked", "reason": "missing_all_configured_ai_keys"}
 
     products = await store.list_products()
     active = [p for p in products if p.get("status") in ACTIVE_PRODUCT_STATUSES]
