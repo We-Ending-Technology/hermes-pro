@@ -32,4 +32,18 @@ def test_supabase_prefers_direct_server_key_over_bridge():
 
     assert client.base_url == "https://example.supabase.co/rest/v1"
     assert client.headers["apikey"].startswith("eyJ")
+    assert client.headers["Authorization"].startswith("Bearer eyJ")
     assert "x-hermes-bridge-key" not in client.headers
+
+
+def test_new_supabase_secret_key_is_not_sent_as_bearer_jwt():
+    settings = Settings(
+        supabase_url="https://example.supabase.co",
+        supabase_secret_key="sb_secret_test",
+    )
+
+    client = SupabaseREST(settings)
+
+    assert client.base_url == "https://example.supabase.co/rest/v1"
+    assert client.headers["apikey"] == "sb_secret_test"
+    assert "Authorization" not in client.headers
