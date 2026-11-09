@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     autonomy_max_active_products: int = Field(default=1, ge=1, le=20, validation_alias="AUTONOMY_MAX_ACTIVE_PRODUCTS")
     autonomy_max_ready_to_publish: int = Field(default=3, ge=0, le=100, validation_alias="AUTONOMY_MAX_READY_TO_PUBLISH")
     gemini_api_key: str | None = Field(default=None, validation_alias="GEMINI_API_KEY")
-    gemini_model: str = Field(default="gemini-3.5-flash", validation_alias="GEMINI_MODEL")
+    gemini_model: str = Field(default="gemini-3.8-flash", validation_alias="GEMINI_MODEL")
     supabase_url: str | None = Field(default=None, validation_alias="SUPABASE_URL")
     supabase_secret_key: str | None = Field(default=None, validation_alias="SUPABASE_SECRET_KEY")
     supabase_service_role_key: str | None = Field(default=None, validation_alias="SUPABASE_SERVICE_ROLE_KEY")
