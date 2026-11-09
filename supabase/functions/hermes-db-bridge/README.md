@@ -9,6 +9,7 @@ This function is the server-side fallback for Hermes when the Render service doe
 - The bridge secret is stored in Render as `SUPABASE_BRIDGE_SECRET`; only its SHA-256 hash is stored in `public.hermes_bridge_secret`.
 - The bridge compares hashes in constant time and never returns the stored hash.
 - The bridge refuses access to its own secret table and accepts only GET, POST, PATCH, and DELETE requests to simple table names.
+- It also proxies only the private `covers`, `ebooks`, and `exports` Storage buckets for bucket checks, uploads, and signed-link creation.
 - Do not commit the bridge secret or a Supabase secret/service-role key.
 
 ## Required runtime configuration
