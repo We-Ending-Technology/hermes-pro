@@ -15,18 +15,33 @@ class SupabaseError(RuntimeError):
 
 class SupabaseREST:
     def __init__(self, settings: Settings) -> None:
-        self.base_url = (settings.supabase_url or "").rstrip("/") + "/rest/v1"
+        supabase_url = (settings.supabase_url or "").rstrip("/")
         self.secret_key = get_supabase_server_key(settings)
-        self.headers = {
-            "apikey": self.secret_key or "",
-            "Authorization": f"Bearer {self.secret_key or ''}",
-            "Content-Type": "application/json",
-        }
+        self.bridge_secret = settings.supabase_bridge_secret or ""
+        self.publishable_key = settings.supabase_publishable_key or ""
+        if self.secret_key:
+            self.base_url = f"{supabase_url}/rest/v1"
+            self.headers = {
+                "apikey": self.secret_key,
+                "Authorization": f"Bearer {self.secret_key}",
+                "Content-Type": "application/json",
+            }
+        else:
+            # Privileged DB access is isolated inside a Supabase Edge Function.
+            # Render receives only a publishable key plus a separate bridge secret.
+            self.base_url = f"{supabase_url}/functions/v1/hermes-db-bridge"
+            self.headers = {
+                "apikey": self.publishable_key,
+                "x-hermes-bridge-key": self.bridge_secret,
+                "Content-Type": "application/json",
+            }
 
     def _ensure_configured(self) -> None:
-        if not self.secret_key or not self.base_url.startswith("http"):
+        if not self.base_url.startswith("http"):
+            raise SupabaseError("SUPABASE_URL is required")
+        if not self.secret_key and (not self.bridge_secret or not self.publishable_key):
             raise SupabaseError(
-                "SUPABASE_URL and a server credential are required: use sb_secret_ or a legacy service_role JWT, never anon/publishable."
+                "Configure a Supabase server credential or the secured Edge Function bridge."
             )
 
     @staticmethod
