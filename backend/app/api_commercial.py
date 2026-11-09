@@ -4,6 +4,7 @@ import hmac
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request
+from redis.asyncio import Redis
 
 from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
@@ -22,19 +23,72 @@ telegram = TelegramNotifier(settings)
 
 @router.get("/ready")
 async def ready() -> dict[str, Any]:
-    """Readiness/configuration diagnostics without exposing secret values."""
-    statuses = {x["name"].lower(): x for x in integration_service.status()}
-    checks: list[dict[str, Any]] = []
-    for name in ("Gemini", "Supabase", "Redis", "Hotmart", "Telegram"):
-        item = statuses[name.lower()]
-        is_ready = item["status"] not in {"not_configured", "error", "offline"}
+    """Check live dependencies; never expose secret values."""
+    supabase_ok = await db.health()
+    redis_ok = False
+    if settings.redis_url:
+        client = Redis.from_url(
+            settings.redis_url,
+            decode_responses=True,
+            socket_connect_timeout=3,
+            socket_timeout=3,
+        )
+        try:
+            redis_ok = bool(await client.ping())
+        except Exception:
+            redis_ok = False
+        finally:
+            await client.aclose()
+
+    provider = settings.ai_provider.strip().lower()
+    if provider == "gemini":
+        ai_ok = bool(settings.gemini_api_key or settings.ai_api_key)
+    elif provider == "openai":
+        ai_ok = bool(settings.openai_api_key)
+    else:
+        ai_ok = False
+
+    configured = {x["name"].lower(): x for x in integration_service.status()}
+    checks: list[dict[str, Any]] = [
+        {
+            "name": "Supabase",
+            "status": "ready" if supabase_ok else "error",
+            "configured": supabase_ok,
+            "message": "Conexão REST validada" if supabase_ok else "Banco inacessível ou credencial de servidor inválida.",
+            "required": True,
+        },
+        {
+            "name": "Redis",
+            "status": "ready" if redis_ok else "error",
+            "configured": redis_ok,
+            "message": "PING confirmado" if redis_ok else "Fila indisponível; verifique REDIS_URL e o serviço Key Value.",
+            "required": True,
+        },
+        {
+            "name": "AI",
+            "status": "ready" if ai_ok else "error",
+            "configured": ai_ok,
+            "message": f"Provedor {provider} configurado" if ai_ok else "Provedor de IA real não configurado.",
+            "required": True,
+        },
+    ]
+
+    for name in ("Hotmart", "Telegram"):
+        item = configured[name.lower()]
         checks.append({
             "name": name,
-            "status": "ready" if is_ready else "not_configured",
-            "configured": is_ready,
+            "status": "ready" if item["status"] == "connected" else "optional_missing",
+            "configured": item["status"] == "connected",
             "message": item["message"],
+            "required": False,
         })
-    return {"status": "ready" if all(x["configured"] for x in checks) else "degraded", "service": "hermes-pro-api", "checks": checks}
+
+    critical_ready = all(item["configured"] for item in checks if item["required"])
+    return {
+        "status": "ready" if critical_ready else "degraded",
+        "service": "hermes-pro-api",
+        "checks": checks,
+    }
 
 
 @router.get("/api/v1/hotmart/products")
