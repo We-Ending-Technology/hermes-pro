@@ -12,24 +12,44 @@ class StorageError(RuntimeError):
 class SupabaseStorage:
     def __init__(self, settings: Settings, bucket: str = "hermes-artifacts") -> None:
         self.base = (settings.supabase_url or "").rstrip("/")
-        self.key = get_supabase_server_key(settings) or ""
+        self.secret_key = get_supabase_server_key(settings)
+        self.bridge_secret = settings.supabase_bridge_secret or ""
+        self.publishable_key = settings.supabase_publishable_key or ""
         self.bucket = bucket
+        if self.secret_key:
+            self.storage_base = f"{self.base}/storage/v1"
+        else:
+            self.storage_base = f"{self.base}/functions/v1/hermes-db-bridge/storage"
 
     def _headers(self) -> dict[str, str]:
-        return {"apikey": self.key, "Authorization": f"Bearer {self.key}"}
+        if self.secret_key:
+            headers = {"apikey": self.secret_key}
+            # New sb_secret_ keys are opaque API keys, not JWTs.
+            if self.secret_key.startswith("eyJ"):
+                headers["Authorization"] = f"Bearer {self.secret_key}"
+            return headers
+        return {
+            "apikey": self.publishable_key,
+            "x-hermes-bridge-key": self.bridge_secret,
+        }
+
+    def _ensure_configured(self) -> None:
+        if not self.base.startswith("http"):
+            raise StorageError("SUPABASE_URL is required")
+        if not self.secret_key and (not self.publishable_key or not self.bridge_secret):
+            raise StorageError("Configure a Supabase server credential or the secured Edge Function bridge")
 
     async def ensure_bucket(self) -> None:
-        if not self.base or not self.key:
-            raise StorageError("Supabase server credential is not configured")
+        self._ensure_configured()
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(
-                f"{self.base}/storage/v1/bucket",
+                f"{self.storage_base}/bucket",
                 headers={**self._headers(), "Content-Type": "application/json"},
                 json={"id": self.bucket, "name": self.bucket, "public": False},
             )
             if response.status_code == 409:
                 response = await client.put(
-                    f"{self.base}/storage/v1/bucket/{self.bucket}",
+                    f"{self.storage_base}/bucket/{self.bucket}",
                     headers={**self._headers(), "Content-Type": "application/json"},
                     json={"public": False},
                 )
@@ -40,14 +60,14 @@ class SupabaseStorage:
         await self.ensure_bucket()
         async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(
-                f"{self.base}/storage/v1/object/{self.bucket}/{path}",
+                f"{self.storage_base}/object/{self.bucket}/{path}",
                 headers={**self._headers(), "Content-Type": content_type, "x-upsert": "true"},
                 content=content,
             )
             if response.is_error:
                 raise StorageError(f"Storage upload failed: {response.status_code} {response.text[:500]}")
             signed = await client.post(
-                f"{self.base}/storage/v1/object/sign/{self.bucket}/{path}",
+                f"{self.storage_base}/object/sign/{self.bucket}/{path}",
                 headers={**self._headers(), "Content-Type": "application/json"},
                 json={"expiresIn": 604800},
             )
