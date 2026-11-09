@@ -1,7 +1,7 @@
 name: Hermes API and database monitor
 
 on:
-  # Poll every 15 minutes; perform a real probe only after 150 minutes have elapsed.
+  # Poll every 10 minutes; perform a real probe after the 150-minute target interval.
   # GitHub may delay scheduled starts, so the practical interval can drift slightly.
   schedule:
     - cron: "*/15 * * * *"
@@ -35,7 +35,7 @@ jobs:
               .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
             const latest = checkpoints[0];
             const elapsedMs = latest ? Date.now() - Date.parse(latest.created_at) : Number.POSITIVE_INFINITY;
-            const intervalMs = 150 * 60 * 1000;
+            const intervalMs = 148 * 60 * 1000;
             const shouldRun = !latest || elapsedMs >= intervalMs;
             core.setOutput("should_run", shouldRun ? "true" : "false");
             if (latest) {
