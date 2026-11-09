@@ -71,6 +71,17 @@ class PersistentStore:
     async def list_jobs(self) -> list[dict[str, Any]]:
         return await self.db.select("hermes_jobs", params={"select": "*", "order": "created_at.desc"})
 
+    async def list_recoverable_jobs(self, stale_before: datetime) -> list[dict[str, Any]]:
+        cutoff = stale_before.astimezone(timezone.utc).isoformat()
+        return await self.db.select(
+            "hermes_jobs",
+            params={
+                "select": "*",
+                "or": f"(status.eq.pending,status.eq.retrying,and(status.eq.running,updated_at.lt.{cutoff}))",
+                "order": "created_at.asc",
+            },
+        )
+
     async def update_job(self, job_id: str, status: str, *, attempts: int | None = None, error_message: str | None = None) -> dict[str, Any]:
         values: dict[str, Any] = {"status": status, "updated_at": datetime.now(timezone.utc).isoformat(), "error_message": error_message}
         if attempts is not None:
