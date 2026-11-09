@@ -1,0 +1,2 @@
+[functions.hermes-db-bridge]
+verify_jwt = false
