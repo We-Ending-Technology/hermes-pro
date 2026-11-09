@@ -42,11 +42,18 @@ async def ready() -> dict[str, Any]:
 
     provider = settings.ai_provider.strip().lower()
     if provider == "gemini":
-        ai_ok = bool(settings.gemini_api_key or settings.ai_api_key)
+        primary_ai_ok = bool(settings.gemini_api_key or settings.ai_api_key)
     elif provider == "openai":
-        ai_ok = bool(settings.openai_api_key)
+        primary_ai_ok = bool(settings.openai_api_key)
     else:
-        ai_ok = False
+        primary_ai_ok = False
+    fallback_provider = (settings.ai_fallback_provider or "").strip().lower()
+    fallback_ai_ok = (
+        fallback_provider == "openai" and bool(settings.openai_api_key)
+    ) or (
+        fallback_provider == "gemini" and bool(settings.gemini_api_key or settings.ai_api_key)
+    )
+    ai_ok = primary_ai_ok or fallback_ai_ok
 
     configured = {x["name"].lower(): x for x in integration_service.status()}
     checks: list[dict[str, Any]] = [
