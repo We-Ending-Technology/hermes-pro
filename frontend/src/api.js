@@ -1,10 +1,14 @@
 const DIRECT_API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-commercial.onrender.com";
 const PROXY_API = "";
+let tokenPromptAttempted = false;
+
 function getAdminToken() {
   try {
     const saved = sessionStorage.getItem("hermes_admin_api_token");
     if (saved) return saved;
-    const entered = window.prompt("Acesso privado do Hermes: cole o HERMES_API_TOKEN já configurado no Render. Isso não é uma nova chave de IA nem do Supabase.");
+    if (tokenPromptAttempted) return "";
+    tokenPromptAttempted = true;
+    const entered = window.prompt("Acesso privado do Hermes: cole o valor de HERMES_API_KEY configurado no Render. Isso não é uma chave de IA nem do Supabase.");
     if (!entered || !entered.trim()) return "";
     sessionStorage.setItem("hermes_admin_api_token", entered.trim());
     return entered.trim();
@@ -13,16 +17,7 @@ function getAdminToken() {
   }
 }
 
-const PUBLIC_READ_ROUTES = new Set([
-  "/api/v1/dashboard",
-  "/api/v1/jobs",
-  "/api/v1/products",
-  "/api/v1/integrations",
-  "/api/v1/agents",
-  "/api/v1/agents/status",
-  "/api/v1/agents/runs",
-  "/ready",
-]);
+
 
 async function request(base, path, options = {}, authRetry = true) {
   const headers = { ...(options.headers || {}) };
@@ -30,8 +25,7 @@ async function request(base, path, options = {}, authRetry = true) {
   // Keep read-only dashboard views usable without a browser-held server secret.
   // All writes, AI execution, and financial/admin actions still require the server token.
   const needsAdminToken = path.startsWith("/api/v1/")
-    && path !== "/api/v1/webhooks/hotmart"
-    && !(method === "GET" && PUBLIC_READ_ROUTES.has(path));
+    && path !== "/api/v1/webhooks/hotmart";
   if (options.body !== undefined && options.body !== null && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   if (needsAdminToken) {
     const token = getAdminToken();
