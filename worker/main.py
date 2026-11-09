@@ -17,6 +17,8 @@ from worker.autonomy_scheduler import autonomy_tick
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hermes.worker")
 MAX_ATTEMPTS = 3
+RECOVERY_INTERVAL_SECONDS = 300
+ARTIFACT_BUCKETS = {"cover": "covers", "docx": "exports", "pdf": "ebooks"}
 
 
 async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) -> None:
@@ -104,11 +106,14 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
 
         await store.update_product(product_id, status="generating_artifacts", current_stage="studio", title=title, metadata=metadata)
         artifacts = build_artifacts(title or topic, subtitle, writer.content)
-        storage = SupabaseStorage(settings)
         artifact_urls: dict[str, str] = {}
         for kind, (path, content, content_type) in artifacts.items():
             if await checkpoint():
                 return
+            bucket = ARTIFACT_BUCKETS.get(kind)
+            if not bucket:
+                raise RuntimeError(f"No private storage bucket mapped for artifact kind: {kind}")
+            storage = SupabaseStorage(settings, bucket=bucket)
             artifact_urls[kind] = await storage.upload(f"{product_id}/{path}", content, content_type)
 
         metadata["artifacts"] = artifact_urls
@@ -131,18 +136,10 @@ async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
     from datetime import datetime, timedelta, timezone
 
     now = datetime.now(timezone.utc)
-    for job in await store.list_jobs():
+    stale_before = now - timedelta(minutes=15)
+    for job in await store.list_recoverable_jobs(stale_before):
         status = job.get("status")
         if status == "running":
-            updated = job.get("updated_at")
-            try:
-                updated_at = datetime.fromisoformat(str(updated).replace("Z", "+00:00"))
-                if updated_at.tzinfo is None:
-                    updated_at = updated_at.replace(tzinfo=timezone.utc)
-            except (TypeError, ValueError):
-                continue
-            if now - updated_at < timedelta(minutes=15):
-                continue
             await store.update_job(str(job["id"]), "pending", error_message="recovered after stale worker lease")
             status = "pending"
         if status not in {"pending", "retrying"}:
@@ -156,19 +153,30 @@ async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
 async def run() -> None:
     settings = get_settings()
     store = PersistentStore(SupabaseREST(settings))
-    queue = JobQueue(settings.redis_url)
+    queue = JobQueue(settings.redis_url or "redis://localhost:6379/0")
     logger.info("Hermes Pro worker started; autonomous=%s", settings.autonomy_enabled)
+    loop = asyncio.get_running_loop()
     last_autonomy_tick = 0.0
+    last_recovery = loop.time()
     try:
         await recover_pending(store, queue)
         while True:
-            if settings.autonomy_enabled and (asyncio.get_running_loop().time() - last_autonomy_tick) >= settings.autonomy_interval_seconds:
+            now = loop.time()
+            if settings.autonomy_enabled and (now - last_autonomy_tick) >= settings.autonomy_interval_seconds:
                 try:
                     outcome = await autonomy_tick(settings, store, queue)
                     logger.info("autonomy tick: %s", outcome)
                 except Exception:
                     logger.exception("autonomy tick failed; worker will continue")
-                last_autonomy_tick = asyncio.get_running_loop().time()
+                last_autonomy_tick = loop.time()
+
+            if now - last_recovery >= RECOVERY_INTERVAL_SECONDS:
+                try:
+                    await recover_pending(store, queue)
+                except Exception:
+                    logger.exception("job recovery scan failed; worker will continue")
+                last_recovery = loop.time()
+
             agent_job_id = await queue.dequeue_agent(timeout=1)
             if agent_job_id:
                 await process_agent(agent_job_id, store, settings, queue)
@@ -176,8 +184,6 @@ async def run() -> None:
             job_id = await queue.dequeue(timeout=5)
             if job_id:
                 await process_product(job_id, store, queue)
-            else:
-                await recover_pending(store, queue)
     finally:
         await queue.close()
 
