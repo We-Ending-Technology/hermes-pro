@@ -23,6 +23,6 @@ def test_build_review_excerpt_bounds_large_chapter_content():
 
     excerpt = build_review_excerpt(writer)
 
-    assert len(excerpt) < 14000
+    assert len(excerpt) < 11000
     assert '"chapter_count": 20' in excerpt
     assert '"title": "Capítulo"' in excerpt
