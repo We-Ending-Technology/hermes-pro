@@ -12,6 +12,10 @@ This function is the server-side fallback for Hermes when the Render service doe
 - It also proxies only the private `covers`, `ebooks`, and `exports` Storage buckets for bucket checks, uploads, and signed-link creation.
 - Do not commit the bridge secret or a Supabase secret/service-role key.
 
+## Database access policy
+
+All `hermes_*` tables are backend-only. Row-level security stays enabled with no client policies, and SQL privileges are explicitly revoked from `anon` and `authenticated` (including `TRUNCATE`). The normal PostgreSQL migration owner also has restricted default table/sequence grants so newly created Hermes tables do not inherit public access. The `service_role` retains the privileges required by the private backend.
+
 ## Required runtime configuration
 
 Render:
