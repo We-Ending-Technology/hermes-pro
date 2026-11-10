@@ -34,8 +34,12 @@ jobs:
           fetch-depth: 0
       - name: Package versioned Hermes source
         run: git archive --format=zip --output hermes-pro-source.zip HEAD
+      - name: Package complete Git history and refs
+        run: git bundle create hermes-pro-history.bundle --all
       - uses: actions/upload-artifact@v4
         with:
-          name: hermes-pro-source-${{ github.sha }}
-          path: hermes-pro-source.zip
+          name: hermes-pro-backup-${{ github.sha }}
+          path: |
+            hermes-pro-source.zip
+            hermes-pro-history.bundle
           retention-days: 90
