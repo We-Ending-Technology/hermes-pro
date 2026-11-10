@@ -85,10 +85,10 @@ async def complete_json_response(
 async def revise_ebook_if_needed(gateway: Any, topic: str, writer_response: Any, writer_data: dict):
     """Run up to two targeted editorial passes; never approve content that misses deterministic gates."""
     best_response = writer_response
-    best_data = json.loads(json.dumps(writer_data, ensure_ascii=False))
-    best_gate = validate_ebook(best_data)
+    best_gate = validate_ebook(writer_data)
     if best_gate["approved"]:
-        return best_response, best_data, best_gate
+        return best_response, writer_data, best_gate
+    best_data = json.loads(json.dumps(writer_data, ensure_ascii=False))
 
     def gate_key(gate: dict) -> tuple:
         return (
