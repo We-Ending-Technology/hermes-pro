@@ -234,13 +234,24 @@ function Home({ dashboard, products, jobs, go, select, diagnostics, runDiagnosti
 }
 function Metric({ label, value }) { return <article className="metric"><span>{label}</span><strong>{value}</strong><small>estado persistido</small></article>; }
 function Factory({ topic, setTopic, submit }) { return <Page title="Fábrica" sub="Digite um tema e crie um job real no servidor."><form className="factory-form" onSubmit={submit}><label>Tema do produto<textarea value={topic} onChange={e => setTopic(e.target.value)} minLength="3" required placeholder="Ex.: guia de marketing digital para MEIs" /></label><div className="form-footer"><span>Render → Redis → Worker → Gemini → Supabase</span><Button primary type="submit">Iniciar produção ↗</Button></div></form><div className="pipeline">{["IDEIA", "ESTRATÉGIA", "CONTEÚDO", "REVISÃO", "STUDIO", "ARTEFATOS"].map((x, i) => <span key={x}>{i ? "→ " : ""}{x}</span>)}</div></Page>; }
-function ProductCard({ p, onClick }) { return <article className="product-card detailed" onClick={onClick}><div className="cover-placeholder"><span>H</span><small>{p.status}</small></div><div className="product-info"><span className="tag">EBOOK</span><h4>{p.title || p.topic}</h4><p>{p.topic}</p><div className="product-meta"><span>stage: {p.current_stage}</span><span>{p.metadata?.quality_score ? `${p.metadata.quality_score}/100` : "quality —"}</span></div></div></article>; }
+function ProductCard({ p, onClick }) {
+  const cover = p.metadata?.artifacts?.cover || p.metadata?.cover_url;
+  return <article className="product-card detailed" onClick={onClick}>
+    <div className="cover-placeholder">
+      {cover ? <img src={cover} alt={`Capa de ${p.title || p.topic}`} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "12px" }} /> : <span>H</span>}
+      <small>{p.status}</small>
+    </div>
+    <div className="product-info"><span className="tag">EBOOK</span><h4>{p.title || p.topic}</h4><p>{p.topic}</p><div className="product-meta"><span>stage: {p.current_stage}</span><span>{p.metadata?.quality_score ? `${p.metadata.quality_score}/100` : "quality —"}</span></div></div>
+  </article>;
+}
 function Products({ items, select }) { return <Page title="Produtos" sub="Catálogo persistido no Supabase."><div className="product-grid">{items.length ? items.map(p => <ProductCard key={p.id} p={p} onClick={() => select(p)} />) : <Empty text="Nenhum produto ainda." />}</div></Page>; }
 function Jobs({ jobs, products, action }) { const productFor = j => products.find(p => p.metadata?.job_id === j.id); return <Page title="Jobs" sub="Fila real com estado e controles operacionais."><div className="job-list">{jobs.length ? jobs.map(j => { const p = productFor(j); const active = ["pending", "running", "retrying"].includes(j.status); return <article className="job" key={j.id}><div className={`job-icon ${j.status}`}>↻</div><div className="job-main"><strong>{p?.title || p?.topic || j.job_type}</strong><p>{j.error_message || `${j.job_type} • ${j.id}`}</p></div><span className={`job-status ${j.status}`}>{j.status}</span><small>{j.attempts}/{j.max_attempts}</small>{active && p && <div className="job-actions"><Button onClick={() => action(() => call(`/api/v1/products/${p.id}/pause`, { method: "POST" }), "Produção pausada.")}>Pausar</Button><Button onClick={() => action(() => call(`/api/v1/jobs/${j.id}/cancel`, { method: "POST" }), "Job cancelado.")}>Cancelar</Button></div>}{j.status === "paused" && p && <div className="job-actions"><Button primary onClick={() => action(() => call(`/api/v1/products/${p.id}/resume`, { method: "POST" }), "Produção retomada.")}>Retomar</Button></div>}</article>; }) : <Empty text="Nenhum job persistido." />}</div></Page>; }
 function Studio({ product, notify, refresh }) {
   const [title, setTitle] = useState(product?.title || "");
-  useEffect(() => setTitle(product?.title || ""), [product?.id, product?.title]);
+  const [showReader, setShowReader] = useState(true);
+  useEffect(() => { setTitle(product?.title || ""); setShowReader(true); }, [product?.id, product?.title]);
   if (!product) return <Page title="Studio" sub="Selecione um produto no catálogo." />;
+
   const save = async () => {
     try {
       await call("/api/v1/products/" + product.id, { method: "PATCH", body: JSON.stringify({ title }) });
@@ -248,20 +259,59 @@ function Studio({ product, notify, refresh }) {
       await refresh();
     } catch (e) { notify(e.message); }
   };
+
   const rawArtifacts = product.metadata?.artifacts && Object.keys(product.metadata.artifacts).length
     ? product.metadata.artifacts
     : { pdf: product.metadata?.pdf_url, cover: product.metadata?.cover_url, docx: product.metadata?.document_url };
-  const artifacts = Object.entries(rawArtifacts).filter(([, value]) => typeof value === "string" && /^https?:\/\//i.test(value));
-  return <Page title="Studio" sub="Edite o produto e abra os arquivos gerados.">
-    <div className="panel">
-      <label>Título<input value={title} onChange={e => setTitle(e.target.value)} /></label>
-      <p>Status: <b>{product.status}</b> · etapa: <b>{product.current_stage}</b></p>
-      <Button primary onClick={save} disabled={["completed", "cancelled"].includes(product.status)}>Salvar alterações</Button>
-      {["completed", "cancelled"].includes(product.status) && <p className="panel-note">Este produto está finalizado; o título não pode ser alterado nesta etapa.</p>}
+  const artifacts = Object.entries(rawArtifacts).filter(([, value]) => typeof value === "string" && /^https?:\\/\\//i.test(value));
+  const cover = rawArtifacts.cover;
+  const pdf = rawArtifacts.pdf;
+  const content = product.metadata?.content_data || {};
+  const chapters = Array.isArray(content.chapters) ? content.chapters : [];
+  const review = product.metadata?.review || {};
+  const hasContent = Boolean(content.introduction || chapters.length || content.conclusion);
+
+  return <Page title="Studio" sub="Veja a capa, leia o conteúdo e abra os arquivos reais do produto.">
+    <div className="two-col">
+      <div className="panel">
+        {cover && <img src={cover} alt={`Capa do ebook ${product.title || product.topic}`} style={{ display: "block", width: "min(100%, 300px)", maxHeight: "440px", objectFit: "contain", margin: "0 auto 20px", borderRadius: "12px" }} />}
+        {!cover && <div className="panel-note">A capa ainda não foi gerada para este produto.</div>}
+        <label>Título<input value={title} onChange={e => setTitle(e.target.value)} /></label>
+        <p>Status: <b>{product.status}</b> · etapa: <b>{product.current_stage}</b></p>
+        {product.metadata?.quality_score != null && <p>Nota de revisão: <b>{product.metadata.quality_score}/100</b></p>}
+        <Button primary onClick={save} disabled={["completed", "cancelled"].includes(product.status)}>Salvar alterações</Button>
+      </div>
+      <div className="panel">
+        <h3>Prévia do PDF</h3>
+        {pdf
+          ? <iframe title={`Prévia do ebook ${product.title || product.topic}`} src={pdf + "#toolbar=1&navpanes=0"} style={{ width: "100%", height: "620px", border: "1px solid var(--border, #333)", borderRadius: "10px", background: "#fff" }} />
+          : <p>O PDF só será criado depois que o conteúdo passar pela revisão de qualidade.</p>}
+      </div>
     </div>
-    <div className="panel"><h3>Artefatos</h3>
-      {artifacts.map(([kind, url]) => <p key={kind}><b>{kind}:</b> <a href={url} target="_blank" rel="noreferrer">abrir arquivo</a></p>)}
-      {!artifacts.length && <p>Nenhum link de arquivo foi salvo para este produto.</p>}
+    {product.status === "review_required" && <div className="panel">
+      <h3>Revisão necessária</h3>
+      <p>Este conteúdo não passou pelo critério de qualidade e ainda não pode ser publicado.</p>
+      {review.score != null && <p>Nota: <b>{review.score}/100</b></p>}
+      {Array.isArray(review.findings) && <ul>{review.findings.map((finding, i) => <li key={i}>{finding}</li>)}</ul>}
+      <p className="panel-note">Nenhum arquivo final foi criado para este produto.</p>
+    </div>}
+    <div className="panel">
+      <div className="section-heading"><div><h3>Leitura do ebook</h3><p className="panel-note">{chapters.length} capítulos · conteúdo salvo no Hermes</p></div>
+        <Button onClick={() => setShowReader(value => !value)}>{showReader ? "Recolher leitura" : "Ler ebook completo"}</Button>
+      </div>
+      {showReader && hasContent
+        ? <article style={{ maxWidth: "820px", lineHeight: 1.75 }}>
+            <h2>{product.title || product.topic}</h2>
+            {product.metadata?.strategy?.subtitle && <p><i>{product.metadata.strategy.subtitle}</i></p>}
+            {content.introduction && <><h3>Introdução</h3><p style={{ whiteSpace: "pre-wrap" }}>{content.introduction}</p></>}
+            {chapters.map((chapter, index) => <section key={index}><h3>{chapter.title || `Capítulo ${index + 1}`}</h3><p style={{ whiteSpace: "pre-wrap" }}>{chapter.content || ""}</p></section>)}
+            {content.conclusion && <><h3>Conclusão</h3><p style={{ whiteSpace: "pre-wrap" }}>{content.conclusion}</p></>}
+          </article>
+        : !hasContent ? <p>O texto integral ainda não está disponível para leitura.</p> : null}
+    </div>
+    <div className="panel"><h3>Arquivos do produto</h3>
+      {artifacts.map(([kind, url]) => <p key={kind}><b>{kind.toUpperCase()}:</b> <a href={url} target="_blank" rel="noreferrer">abrir ou baixar arquivo ↗</a></p>)}
+      {!artifacts.length && <p>Nenhum arquivo final disponível.</p>}
     </div>
   </Page>;
 }
