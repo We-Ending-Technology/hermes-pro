@@ -1,35 +1,33 @@
 const DIRECT_API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-commercial.onrender.com";
 const PROXY_API = "";
-let tokenPromptAttempted = false;
 
-function getAdminToken() {
-  try {
-    const saved = sessionStorage.getItem("hermes_admin_api_token");
-    if (saved) return saved;
-    if (tokenPromptAttempted) return "";
-    tokenPromptAttempted = true;
-    const entered = window.prompt("Acesso privado do Hermes: cole o valor de HERMES_API_KEY configurado no Render. Isso não é uma chave de IA nem do Supabase.");
-    if (!entered || !entered.trim()) return "";
-    sessionStorage.setItem("hermes_admin_api_token", entered.trim());
-    return entered.trim();
-  } catch {
-    return "";
-  }
+// The private API key exists only in this page's JavaScript memory.
+let adminToken = "";
+
+export function setAdminToken(value) {
+  adminToken = String(value || "").trim();
 }
 
+export function clearAdminToken() {
+  adminToken = "";
+}
 
+export function hasAdminToken() {
+  return Boolean(adminToken);
+}
 
-async function request(base, path, options = {}, authRetry = true) {
+function getAdminToken() {
+  return adminToken;
+}
+
+async function request(base, path, options = {}) {
   const headers = { ...(options.headers || {}) };
-  const method = String(options.method || "GET").toUpperCase();
-  // Keep read-only dashboard views usable without a browser-held server secret.
-  // All writes, AI execution, and financial/admin actions still require the server token.
   const needsAdminToken = path.startsWith("/api/v1/")
     && path !== "/api/v1/webhooks/hotmart";
   if (options.body !== undefined && options.body !== null && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   if (needsAdminToken) {
     const token = getAdminToken();
-    if (!token) throw new Error("Acesso privado não informado. Para executar ações, informe o HERMES_API_TOKEN já configurado no Render.");
+    if (!token) throw new Error("Acesso privado não informado. Digite a chave configurada em HERMES_API_KEY no Render.");
     headers["X-Hermes-API-Key"] = token;
   }
   const response = await fetch(base + path, { ...options, headers });
@@ -37,7 +35,7 @@ async function request(base, path, options = {}, authRetry = true) {
   let body = {};
   try { body = text ? JSON.parse(text) : {}; } catch { body = { detail: text }; }
   if (response.status === 401 && needsAdminToken) {
-    try { sessionStorage.removeItem("hermes_admin_api_token"); } catch {}
+    clearAdminToken();
     throw new Error("A chave de acesso foi rejeitada. Confira HERMES_API_KEY no Render e tente novamente.");
   }
   if (!response.ok) {
@@ -55,15 +53,13 @@ export async function call(path, options = {}) {
   for (const base of bases) {
     try { return await request(base, path, options); } catch (error) { lastError = error; }
   }
-  throw new Error("Backend indisponível: " + (lastError?.message || "falha de conexão"));
+  throw new Error(lastError?.message || "Falha de conexão com o backend.");
 }
 
 export async function diagnose() {
   const checks = [];
   const started = Date.now();
-  const candidates = import.meta.env.DEV ? [{ label: "Render API", base: DIRECT_API }] : [
-    { label: "Render API", base: DIRECT_API },
-  ];
+  const candidates = [{ label: "Render API", base: DIRECT_API }];
   for (const candidate of candidates) {
     const t = Date.now();
     try {
