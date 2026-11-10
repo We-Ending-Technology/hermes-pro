@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 from datetime import datetime, timezone
 
@@ -12,6 +14,96 @@ logger = logging.getLogger("hermes.agent-worker")
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+async def _safe_select(store: PersistentStore, table: str, params: dict) -> list[dict]:
+    try:
+        rows = await store.db.select(table, params=params)
+        return rows if isinstance(rows, list) else []
+    except Exception as exc:
+        logger.warning("operational context read failed table=%s error=%s", table, str(exc)[:180])
+        return []
+
+
+async def build_operational_context(store: PersistentStore, settings: Settings) -> dict:
+    """Collect bounded, non-sensitive operational facts for the Chief and specialists."""
+    products, jobs, sales, health = await asyncio.gather(
+        _safe_select(store, "hermes_products", {
+            "select": "id,title,topic,status,current_stage,updated_at",
+            "order": "updated_at.desc",
+            "limit": "30",
+        }),
+        _safe_select(store, "hermes_jobs", {
+            "select": "id,job_type,status,attempts,max_attempts,error_message,updated_at",
+            "order": "updated_at.desc",
+            "limit": "30",
+        }),
+        _safe_select(store, "hermes_sales_events", {
+            "select": "provider,event_type,amount,currency,occurred_at",
+            "order": "occurred_at.desc",
+            "limit": "30",
+        }),
+        _safe_select(store, "hermes_system_health", {
+            "select": "component,status,message,checked_at",
+            "order": "checked_at.desc",
+            "limit": "20",
+        }),
+    )
+
+    product_counts: dict[str, int] = {}
+    for row in products:
+        status = str(row.get("status") or "unknown")
+        product_counts[status] = product_counts.get(status, 0) + 1
+
+    job_counts: dict[str, int] = {}
+    for row in jobs:
+        status = str(row.get("status") or "unknown")
+        job_counts[status] = job_counts.get(status, 0) + 1
+
+    provider = str(getattr(settings, "ai_provider", "unknown"))
+    fallback = str(getattr(settings, "ai_fallback_provider", "") or "")
+    fallback_configured = (
+        (fallback == "openai" and bool(getattr(settings, "openai_api_key", None)))
+        or (fallback == "gemini" and bool(
+            getattr(settings, "gemini_api_key", None) or getattr(settings, "ai_api_key", None)
+        ))
+    )
+
+    return {
+        "captured_at": _now(),
+        "provider": {
+            "primary": provider,
+            "fallback": fallback or None,
+            "fallback_configured": fallback_configured,
+            "model": (
+                getattr(settings, "gemini_model", None) if provider == "gemini"
+                else getattr(settings, "openai_chat_model", None) if provider == "openai"
+                else None
+            ),
+        },
+        "products": {
+            "recent_count": len(products),
+            "counts_by_status_in_recent_sample": product_counts,
+            "recent": products[:10],
+        },
+        "jobs": {
+            "recent_count": len(jobs),
+            "counts_by_status_in_recent_sample": job_counts,
+            "recent_failures": [
+                {key: row.get(key) for key in ("id", "job_type", "status", "attempts", "error_message", "updated_at")}
+                for row in jobs if row.get("status") in {"failed", "retrying"}
+            ][:10],
+        },
+        "sales": {
+            "recent_event_count": len(sales),
+            "approved_purchase_events": sum(
+                1 for row in sales
+                if str(row.get("event_type", "")).upper() == "PURCHASE_APPROVED"
+            ),
+            "recent": sales[:10],
+        },
+        "system_health": health,
+    }
 
 
 async def process_agent(job_id: str, store: PersistentStore, settings: Settings, queue) -> None:
@@ -51,8 +143,18 @@ async def process_agent(job_id: str, store: PersistentStore, settings: Settings,
             "error_message": None,
         }, where={"id": f"eq.{job_id}"})
 
-        result = await run_chief(instruction, settings)
+        operational_context = await build_operational_context(store, settings)
+        enriched_instruction = (
+            f"{instruction}\n\n"
+            "DADOS OPERACIONAIS REAIS COLETADOS DO BANCO DO HERMES (JSON):\n"
+            f"{json.dumps(operational_context, ensure_ascii=False, default=str)}\n\n"
+            "Use esses dados como evidência principal. Diferencie contagens da amostra recente "
+            "de totais históricos. Não diga que faltam logs ou telemetria quando os dados acima "
+            "respondem à pergunta. Se algum campo estiver vazio, declare apenas aquela lacuna."
+        )
+        result = await run_chief(enriched_instruction, settings)
         completed_at = _now()
+        result["operational_context"] = operational_context
         await store.db.update("hermes_agent_runs", {
             "status": "completed",
             "output": result,
