@@ -1,4 +1,4 @@
-from backend.app.services.kiwify import normalize_kiwify_event, sanitize_kiwify_payload
+from backend.app.services.kiwify import normalize_kiwify_event, sanitize_kiwify_payload, verify_kiwify_signature
 
 
 def test_normalizes_approved_order_from_cents():
@@ -44,3 +44,18 @@ def test_requires_stable_order_identifier():
         assert "order_id" in str(exc)
     else:
         raise AssertionError("expected missing order id to be rejected")
+
+
+
+def test_verifies_official_kiwify_hmac_sha1_vector():
+    token = "kiwify-token-de-teste"
+    body = b'{"order_id":"9b1c2d3e-0000-4000-8000-000000000001","order_status":"paid","webhook_event_type":"order_approved"}'
+    signature = "bf18f352a4f981b91dfa3f6d8742a81080ab8c86"
+    assert verify_kiwify_signature(body, token, signature)
+
+
+def test_rejects_modified_body_or_missing_signature():
+    token = "kiwify-token-de-teste"
+    signature = "bf18f352a4f981b91dfa3f6d8742a81080ab8c86"
+    assert verify_kiwify_signature(b'{"order_id":"changed"}', token, signature) is False
+    assert verify_kiwify_signature(b'{}', token, "") is False

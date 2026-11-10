@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -71,3 +73,12 @@ def sanitize_kiwify_payload(payload: dict[str, Any]) -> dict[str, Any]:
         else:
             safe["commissions"] = commissions
     return safe
+
+
+
+def verify_kiwify_signature(raw_body: bytes, token: str, signature: str) -> bool:
+    """Verify Kiwify HMAC-SHA1 over the exact raw request body."""
+    if not token or len(signature) != 40:
+        return False
+    expected = hmac.new(token.encode("utf-8"), raw_body, hashlib.sha1).hexdigest()
+    return hmac.compare_digest(expected, signature.lower())

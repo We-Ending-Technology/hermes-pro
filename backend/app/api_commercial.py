@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import json
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -9,7 +10,7 @@ from redis.asyncio import Redis
 from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
 from .services.hotmart import HotmartClient, HotmartError
-from .services.kiwify import normalize_kiwify_event, sanitize_kiwify_payload
+from .services.kiwify import normalize_kiwify_event, sanitize_kiwify_payload, verify_kiwify_signature
 from .services.integrations import integration_service
 from .services.persistence import PersistentStore
 from .services.telegram import TelegramNotifier
@@ -143,21 +144,19 @@ async def hotmart_webhook(request: Request, x_hotmart_hottok: str | None = Heade
 
 @router.post("/api/v1/webhooks/kiwify")
 async def kiwify_webhook(request: Request) -> dict[str, Any]:
-    """Receive Kiwify sale events using a per-webhook URL token.
+    """Receive Kiwify JSON events signed with HMAC-SHA1 over the raw body."""
+    secret = settings.kiwify_webhook_token or ""
+    if not secret:
+        raise HTTPException(status_code=503, detail="Kiwify webhook signing token is not configured")
 
-    Kiwify's product webhooks are JSON POSTs. The URL token protects this
-    endpoint because the webhook UI does not provide a custom auth header.
-    """
-    expected = settings.kiwify_webhook_token or ""
-    received = request.query_params.get("token", "")
-    if not expected:
-        raise HTTPException(status_code=503, detail="Kiwify webhook token is not configured")
-    if not hmac.compare_digest(received, expected):
-        raise HTTPException(status_code=401, detail="invalid Kiwify webhook token")
+    raw_body = await request.body()
+    signature = request.query_params.get("signature", "")
+    if not verify_kiwify_signature(raw_body, secret, signature):
+        raise HTTPException(status_code=401, detail="invalid Kiwify webhook signature")
 
     try:
-        payload = await request.json()
-    except Exception as exc:
+        payload = json.loads(raw_body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=400, detail="invalid JSON payload") from exc
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="webhook payload must be a JSON object")
