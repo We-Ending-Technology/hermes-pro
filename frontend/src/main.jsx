@@ -522,8 +522,10 @@ function AgentControlCenter() {
 
   return <>
     {notice && <div className="notice">{notice}</div>}
+    {status?.ai_provider_last_error && <div className="panel-note">Última falha do provedor IA: {status.ai_provider_last_error}</div>}
     <div className="metric-grid">
       <Metric label="Chefe" value={status?.chief || "verificando"} />
+      <Metric label="Provedor IA" value={status?.ai_provider_status || "verificando"} />
       <Metric label="Worker real" value={status?.worker_status || "verificando"} />
       <Metric label="Fila Redis" value={status?.queue_status || "verificando"} />
       <Metric label="Autonomia de fábrica" value={status?.autonomy_enabled ? "ativa" : "pausada"} />
