@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { call, diagnose } from "./api.js";
+import { call, diagnose, setAdminToken, clearAdminToken, hasAdminToken } from "./api.js";
+import "./auth.css";
 import "./style.css";
 import "./diagnostics.css";
 
@@ -13,6 +14,10 @@ const NAV = [
 const DEFAULT_RADAR = { demand: 80, competition: 45, differentiation: 75, production_difficulty: 35, pricing_potential: 70, audience_clarity: 85 };
 
 function App() {
+  const [authenticated, setAuthenticated] = useState(false);
+  const [authKey, setAuthKey] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState("");
   const [view, setView] = useState("Início");
   const [products, setProducts] = useState([]);
   const [jobs, setJobs] = useState([]);
@@ -36,6 +41,33 @@ function App() {
   const [trendsBusy, setTrendsBusy] = useState(false);
   const refreshing = useRef(false);
 
+  const login = async (event) => {
+    event.preventDefault();
+    const candidate = authKey.trim();
+    if (!candidate) return;
+    setAuthBusy(true);
+    setAuthError("");
+    setAdminToken(candidate);
+    try {
+      const data = await call("/api/v1/dashboard");
+      setDashboard(data);
+      setAuthenticated(true);
+      setAuthKey("");
+    } catch (error) {
+      clearAdminToken();
+      setAuthError(error.message || "Acesso negado. Confira a chave configurada no Render.");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const logout = () => {
+    clearAdminToken();
+    setAuthenticated(false);
+    setProducts([]); setJobs([]); setIntegrations([]); setDashboard({});
+    setNotice("");
+  };
+
   const refresh = async () => {
     if (refreshing.current) return;
     refreshing.current = true;
@@ -58,19 +90,20 @@ function App() {
 
   const safeCall = async (path, options) => {
     try { return await call(path, options); }
-    catch (error) { setNotice(error.message); return null; }
+    catch (error) { if (!hasAdminToken()) setAuthenticated(false); setNotice(error.message); return null; }
   };
 
   useEffect(() => {
+    if (!authenticated) return undefined;
     refresh();
     const timer = setInterval(refresh, 30000);
     return () => clearInterval(timer);
-  }, []);
+  }, [authenticated]);
 
   const action = async (fn, success = "") => {
     setBusy(true);
     try { const result = await fn(); if (success) setNotice(success); return result; }
-    catch (error) { setNotice(error.message); return null; }
+    catch (error) { if (!hasAdminToken()) setAuthenticated(false); setNotice(error.message); return null; }
     finally { await refresh(); setBusy(false); }
   };
 
@@ -130,6 +163,8 @@ function App() {
   const loadSales = () => action(() => call("/api/v1/sales"), "Vendas atualizadas.").then(setSales);
   const loadAnalytics = () => action(() => call("/api/v1/analytics"), "Analytics atualizado.").then(setAnalytics);
 
+  if (!authenticated) return <AuthGate value={authKey} onChange={setAuthKey} onSubmit={login} busy={authBusy} error={authError} />;
+
   return <div className="shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">H</div><div><strong>HERMES</strong><span>PRO / COMMAND CENTER</span></div></div>
@@ -138,7 +173,7 @@ function App() {
       <div className="sidebar-foot"><span>LIVE OPS • REAL DATA</span><button onClick={refresh}>↻ Atualizar</button></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div><span className="kicker">HERMES PRO / MONEY OPERATIONS</span><h1>{view}</h1></div><div className="top-actions"><span className="api-label"><i className={online ? "online" : "offline"}></i>{online ? "Backend conectado" : "Backend indisponível"}</span><button className="icon-button" onClick={runDiagnostics}>⌁</button><button className="icon-button" onClick={refresh}>↻</button><button className="avatar">W</button></div></header>
+      <header className="topbar"><div><span className="kicker">HERMES PRO / MONEY OPERATIONS</span><h1>{view}</h1></div><div className="top-actions"><span className="api-label"><i className={online ? "online" : "offline"}></i>{online ? "Backend conectado" : "Backend indisponível"}</span><button className="icon-button" onClick={runDiagnostics}>⌁</button><button className="icon-button" onClick={refresh}>↻</button><button className="text-button" onClick={logout}>Sair</button><button className="avatar">W</button></div></header>
       {notice && <div className="notice">{notice}<button onClick={() => setNotice("")}>×</button></div>}
       {busy && <div className="loading-line"><i /> sincronizando dados reais…</div>}
       {view === "Início" && <Home dashboard={dashboard} products={products} jobs={jobs} go={setView} select={selectProduct} diagnostics={diagnostics} runDiagnostics={runDiagnostics} />}
@@ -161,6 +196,23 @@ function App() {
       {view === "Guias" && <Guides />}
     </main>
   </div>;
+}
+
+
+function AuthGate({ value, onChange, onSubmit, busy, error }) {
+  return <main className="auth-screen">
+    <form className="auth-card" onSubmit={onSubmit}>
+      <div className="auth-mark">H</div>
+      <span className="auth-kicker">HERMES PRO / ACESSO PRIVADO</span>
+      <h1>Bem-vindo de volta.</h1>
+      <p>Informe a chave privada configurada no serviço de API do Render para abrir seu Command Center.</p>
+      <label htmlFor="hermes-access-key">Chave de acesso</label>
+      <input id="hermes-access-key" type="password" autoComplete="current-password" value={value} onChange={event => onChange(event.target.value)} placeholder="HERMES_API_KEY" required autoFocus />
+      {error && <div className="auth-error" role="alert">{error}</div>}
+      <button className="primary auth-submit" type="submit" disabled={busy || !value.trim()}>{busy ? "Validando acesso…" : "Entrar no Hermes"}</button>
+      <small>A chave é mantida somente na memória desta aba e não é salva no armazenamento do navegador.</small>
+    </form>
+  </main>;
 }
 
 const K = ({ children }) => <span className="kicker violet">{children}</span>;
