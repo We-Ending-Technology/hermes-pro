@@ -520,7 +520,8 @@ function AgentControlCenter() {
     {notice && <div className="notice">{notice}</div>}
     <div className="metric-grid">
       <Metric label="Chefe" value={status?.chief || "verificando"} />
-      <Metric label="Worker embutido" value={status?.embedded_worker_enabled ? "ativo" : "inativo"} />
+      <Metric label="Worker real" value={status?.worker_status || "verificando"} />
+      <Metric label="Fila Redis" value={status?.queue_status || "verificando"} />
       <Metric label="Autonomia de fábrica" value={status?.autonomy_enabled ? "ativa" : "pausada"} />
       <Metric label="Execuções registradas" value={runs.length} />
     </div>
@@ -548,10 +549,10 @@ function AgentControlCenter() {
         <div className="job-main">
           <strong>{run.agent || "Hermes Chefe"}</strong>
           <p>{run.input?.instruction || run.input?.prompt || "Tarefa operacional"}</p>
-          {run.error_message && <small>{run.error_message}</small>}
+          {(run.error_message || run.job_error) && <small>{run.error_message || run.job_error}</small>}
           {run.output?.output && <details><summary>Ver resultado consolidado</summary><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{run.output.output}</pre></details>}
         </div>
-        <span className={`job-status ${run.status}`}>{run.status}</span>
+        <span className={`job-status ${run.job_status || run.status}`}>{run.job_status || run.status}</span>
       </article>) : <Empty text="Nenhuma execução do time registrada ainda. Envie uma tarefa acima para iniciar a primeira." />}
     </div>
     <div className="panel-note">A autonomia de fábrica cria e-books dentro dos limites configurados. Publicação, gastos e envio de propostas continuam sujeitos às permissões e confirmações das plataformas.</div>
