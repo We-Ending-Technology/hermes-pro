@@ -41,50 +41,68 @@ def test_checkout_requires_quality_gate_and_all_artifacts():
     product["status"] = "completed"
     assert is_kiwify_publishable_product(product) is False
 
+
 import pytest
 
 
 @pytest.mark.asyncio
-async def test_short_ebook_gets_one_targeted_expansion_pass(monkeypatch):
+async def test_short_ebook_gets_targeted_section_additions_merged(monkeypatch):
     from worker import main
 
-    short = {
-        "introduction": "introducao curta",
-        "chapters": [{"title": "Capitulo 1", "content": "texto curto"}],
-        "conclusion": "conclusao curta",
+    original = {
+        "introduction": "introducao original",
+        "chapters": [
+            {"title": "Capitulo 1", "content": "conteudo original"},
+            {"title": "Capitulo 2", "content": "conteudo original 2"},
+        ],
+        "conclusion": "conclusao original",
     }
-    expanded = _valid_content()
+    additions = {
+        "introduction_addition": "Contexto adicional prático.",
+        "chapter_additions": [
+            {"index": 1, "content": "Exemplo adicional para o capítulo dois."}
+        ],
+        "conclusion_addition": "Próximas ações e síntese final.",
+    }
     gate_calls = []
-    prompts = []
 
     def fake_validate(content):
         gate_calls.append(content)
         if len(gate_calls) == 1:
             return {
                 "approved": False,
-                "findings": ["Conteúdo insuficiente: 100 palavras; mínimo 1800."],
-                "chapter_word_counts": [{"title": "Capitulo 1", "words": 10}],
+                "score": 60,
+                "findings": ["Conclusão curta."],
+                "introduction_words": 100,
+                "conclusion_words": 100,
+                "chapter_word_counts": [
+                    {"title": "Capitulo 1", "words": 250},
+                    {"title": "Capitulo 2", "words": 120},
+                ],
             }
         return {"approved": True, "score": 100, "word_count": 2000, "findings": []}
 
+    captured = {}
     async def fake_complete_json_response(gateway, prompt, system, *, label, fallback=None):
-        prompts.append((prompt, label))
-        return ("revised-response", expanded)
+        captured["prompt"] = prompt
+        captured["label"] = label
+        return ("revision-response", additions)
 
     monkeypatch.setattr(main, "validate_ebook", fake_validate)
     monkeypatch.setattr(main, "complete_json_response", fake_complete_json_response)
 
-    response, data, gate = await main.revise_ebook_if_needed(
-        object(), "Agentes de IA na Prática", "original-response", short
+    response, revised, gate = await main.revise_ebook_if_needed(
+        object(), "Agentes de IA", "original-response", original
     )
 
-    assert response == "revised-response"
-    assert data is expanded
+    assert response == "revision-response"
     assert gate["approved"] is True
-    assert len(prompts) == 1
-    assert prompts[0][1] == "writer_revision"
-    assert "2,200 words" in prompts[0][0]
-    assert "Conteúdo insuficiente" in prompts[0][0]
+    assert "Contexto adicional prático." in revised["introduction"]
+    assert "Exemplo adicional para o capítulo dois." in revised["chapters"][1]["content"]
+    assert revised["chapters"][0]["content"] == "conteudo original"
+    assert "Próximas ações" in revised["conclusion"]
+    assert captured["label"] == "writer_revision"
+    assert "chapter_additions" in captured["prompt"]
 
 
 @pytest.mark.asyncio
@@ -103,3 +121,31 @@ async def test_ebook_that_already_passes_skips_expansion(monkeypatch):
     assert response == "writer-response"
     assert data is valid
     assert gate["approved"] is True
+
+
+@pytest.mark.asyncio
+async def test_invalid_revision_keeps_original_manuscript(monkeypatch):
+    from worker import main
+
+    original = {
+        "introduction": "texto original",
+        "chapters": [{"title": "Capítulo", "content": "conteúdo original"}],
+        "conclusion": "conclusão original",
+    }
+    calls = []
+    def fake_validate(content):
+        calls.append(content)
+        return {"approved": False, "score": 50 if len(calls) == 1 else 40,
+                "introduction_words": 0, "conclusion_words": 0,
+                "chapter_word_counts": []}
+    async def fake_complete_json_response(*args, **kwargs):
+        return ("bad-revision", {"unexpected": "schema"})
+    monkeypatch.setattr(main, "validate_ebook", fake_validate)
+    monkeypatch.setattr(main, "complete_json_response", fake_complete_json_response)
+
+    response, data, gate = await main.revise_ebook_if_needed(
+        object(), "Tema", "original-response", original
+    )
+    assert response == "original-response"
+    assert data == original
+    assert gate["score"] == 50
