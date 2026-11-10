@@ -55,6 +55,31 @@ async def complete_json_response(
         raise RuntimeError(f"{label} did not return valid JSON after one repair attempt") from exc
 
 
+
+async def revise_ebook_if_needed(gateway: Any, topic: str, writer_response: Any, writer_data: dict):
+    """Perform one targeted expansion pass when the first deterministic gate is short."""
+    initial_gate = validate_ebook(writer_data)
+    if initial_gate["approved"]:
+        return writer_response, writer_data, initial_gate
+
+    revision_prompt = (
+        f"Revise and expand this ebook about '{topic}' so it passes every deterministic quality requirement. "
+        "Return the COMPLETE ebook as valid JSON with keys introduction, chapters (array of title/content), conclusion. "
+        "Target at least 2,200 words total, 230 words in EACH chapter, 180 words in the introduction, "
+        "and 180 words in the conclusion. Preserve the useful material, add concrete steps, examples, "
+        "checklists and explanations, and do not pad or repeat. Do not return a summary.\n"
+        f"VALIDATION FINDINGS: {json.dumps(initial_gate, ensure_ascii=False)}\n"
+        f"CURRENT EBOOK JSON: {json.dumps(writer_data, ensure_ascii=False)}"
+    )
+    revised_response, revised_data = await complete_json_response(
+        gateway,
+        revision_prompt,
+        "You are the Hermes Pro developmental editor. Expand underlength sections substantively. Return only the complete valid JSON ebook.",
+        label="writer_revision",
+    )
+    revised_gate = validate_ebook(revised_data)
+    return revised_response, revised_data, revised_gate
+
 async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) -> None:
     job = await store.get_job(job_id)
     if not job or job["job_type"] != "product_generation" or job["status"] in {"completed", "cancelled", "paused", "running"}:
@@ -119,6 +144,12 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         if await checkpoint():
             return
 
+        writer, writer_data, content_gate = await revise_ebook_if_needed(
+            gateway, topic, writer, writer_data
+        )
+        if await checkpoint():
+            return
+
         await store.update_product(product_id, current_stage="reviewer")
         review_sample = build_review_excerpt(writer_data)
         review_prompt = (
@@ -148,7 +179,6 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             score = int(review_data.get("score", 0))
         except (TypeError, ValueError):
             score = 0
-        content_gate = validate_ebook(writer_data)
         ai_review_approved = bool(review_data.get("approved")) and score >= 80
         approved = ai_review_approved and content_gate["approved"]
         combined_score = min(score, int(content_gate["score"]))
