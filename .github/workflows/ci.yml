@@ -25,3 +25,17 @@ jobs:
         run: npm install
       - working-directory: frontend
         run: npm run build
+
+  source-snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Package versioned Hermes source
+        run: git archive --format=zip --output hermes-pro-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hermes-pro-source-${{ github.sha }}
+          path: hermes-pro-source.zip
+          retention-days: 90
