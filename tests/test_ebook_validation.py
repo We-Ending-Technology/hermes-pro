@@ -131,7 +131,7 @@ def test_blank_kiwify_product_id_is_normalized_to_none():
 
 
 @pytest.mark.asyncio
-async def test_short_ebook_expansion_adds_missing_chapters_and_illustrations():
+async def test_short_ebook_expansion_adds_missing_chapters_and_illustrations(monkeypatch):
     from worker import main
 
     original = {
@@ -213,8 +213,8 @@ async def test_short_ebook_expansion_adds_missing_chapters_and_illustrations():
             return ("revision-response-1", additions_round_1)
         return ("revision-response-2", additions_round_2)
 
-    main.validate_ebook = fake_validate
-    main.complete_json_response = fake_complete_json_response
+    monkeypatch.setattr(main, "validate_ebook", fake_validate)
+    monkeypatch.setattr(main, "complete_json_response", fake_complete_json_response)
 
     response, revised, gate = await main.revise_ebook_if_needed(
         object(), "Agentes de IA", "original-response", original
