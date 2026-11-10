@@ -62,14 +62,18 @@ async def supervision_tick(settings: Settings, store: PersistentStore, queue) ->
     def is_supervisor_run(job: dict[str, Any]) -> bool:
         return job.get("job_type") == "agent_run" and source_of(job).startswith("autonomous_supervision")
 
-    def is_stale(job: dict[str, Any]) -> bool:
+    def age_seconds(job: dict[str, Any]) -> float | None:
         try:
             updated = datetime.fromisoformat(str(job.get("updated_at")).replace("Z", "+00:00"))
             if updated.tzinfo is None:
                 updated = updated.replace(tzinfo=timezone.utc)
-            return (datetime.now(timezone.utc) - updated.astimezone(timezone.utc)).total_seconds() >= 600
+            return max(0, (datetime.now(timezone.utc) - updated.astimezone(timezone.utc)).total_seconds())
         except (TypeError, ValueError):
-            return False
+            return None
+
+    def is_stale(job: dict[str, Any]) -> bool:
+        age = age_seconds(job)
+        return age is not None and age >= 600
 
     failed_jobs = [
         job for job in jobs
@@ -114,7 +118,7 @@ async def supervision_tick(settings: Settings, store: PersistentStore, queue) ->
     previous = [
         job for job in jobs
         if is_supervisor_run(job)
-        and (source_of(job) == source or (source_of(job) == "autonomous_supervision" and evidence_ids and evidence_ids.issubset(set(str((job.get("payload") or {}).get("instruction") or "").split()))))
+        and (source_of(job) == source or (source_of(job) == "autonomous_supervision" and evidence_ids and all(identifier in str((job.get("payload") or {}).get("instruction") or "") for identifier in evidence_ids)))
     ]
     if previous:
         previous.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
@@ -124,7 +128,7 @@ async def supervision_tick(settings: Settings, store: PersistentStore, queue) ->
             return {"status": "already_reviewed", "run_id": str(latest["id"])}
         if status in {"pending", "running", "retrying"}:
             return {"status": "already_queued", "run_id": str(latest["id"])}
-        if status == "failed" and not is_stale({**latest, "updated_at": latest.get("updated_at")}):
+        if status == "failed" and (age_seconds(latest) or 0) < 6 * 60 * 60:
             return {"status": "retry_cooldown", "run_id": str(latest["id"])}
 
     now_dt = datetime.now(timezone.utc)
