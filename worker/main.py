@@ -104,6 +104,9 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         writer_prompt = (
             f"Using this strategy, write the ebook for topic '{topic}'. "
             f"Strategy: {json.dumps(strategy_data, ensure_ascii=False)}\n"
+            "Write a complete, practical ebook of at least 1,800 words, with 5 to 8 chapters. "
+            "Each chapter must contain at least 200 substantive words; introduction and conclusion at least 150 words each. "
+            "Include concrete examples, steps, checklists and original explanations; do not pad or repeat. "
             "Return valid JSON with keys: introduction, chapters "
             "(array of objects with title and content), conclusion."
         )
@@ -157,7 +160,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             "content_data": writer_data,
             "review": review_data,
             "quality_score": combined_score,
-            "quality_gate": content_gate,
+            "quality_gate": {**content_gate, "approved": approved, "ai_review_approved": bool(review_data.get("approved")) and score >= 80},
             "ai_provider": strategist.provider,
             "ai_model": strategist.model,
             "paused": False,
@@ -196,7 +199,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             raise RuntimeError("not all required ebook artifacts were uploaded")
         metadata["artifacts"] = artifact_urls
         metadata["artifact_status"] = "ready"
-        metadata["quality_gate"] = {**content_gate, "approved": True}
+        metadata["quality_gate"] = {**content_gate, "approved": True, "ai_review_approved": True}
         await store.update_product(product_id, status="ready_to_publish", current_stage="studio", metadata=metadata)
         await store.update_job(job_id, "completed", attempts=attempts)
         logger.info("completed product_generation job=%s product=%s artifacts=%s", job_id, product_id, list(artifact_urls))
