@@ -318,3 +318,39 @@ def test_product_metadata_merge_preserves_rebuild_history_and_previous_artifacts
     assert result["publications"] == publications
     assert result["artifact_status"] == "revision_required"
     assert result["quality_gate"]["approved"] is False
+
+
+def test_metric_only_ai_review_rejection_is_overridden_when_content_gate_passes():
+    from worker.main import normalize_review_result
+
+    review = {
+        "approved": False,
+        "score": 75,
+        "findings": [
+            "O conteúdo é excelente e bem estruturado.",
+            "A profundidade e a precisão factual atendem perfeitamente ao nicho.",
+            "Contudo, o portfólio de ilustrações possui apenas 3 briefs, abaixo do mínimo de 4.",
+            "A contagem de palavras e a extensão em páginas carecem de verificação para atingir os mínimos.",
+        ],
+    }
+    gate = {"approved": True, "score": 100, "findings": []}
+    normalized = normalize_review_result(review, gate)
+    assert normalized["approved"] is True
+    assert normalized["score"] == 90
+    assert len(normalized["ignored_metric_findings"]) == 2
+    assert len(normalized["positive_findings"]) == 2
+    assert normalized["findings"] == []
+
+
+def test_substantive_ai_review_rejection_is_not_overridden_by_metrics_gate():
+    from worker.main import normalize_review_result
+
+    review = {
+        "approved": False,
+        "score": 65,
+        "findings": ["O conteúdo é superficial e repetitivo, com exemplos insuficientes."],
+    }
+    gate = {"approved": True, "score": 100, "findings": []}
+    normalized = normalize_review_result(review, gate)
+    assert normalized["approved"] is False
+    assert normalized["score"] == 65
