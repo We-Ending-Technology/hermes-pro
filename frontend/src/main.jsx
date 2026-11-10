@@ -185,8 +185,35 @@ function Factory({ topic, setTopic, submit }) { return <Page title="Fábrica" su
 function ProductCard({ p, onClick }) { return <article className="product-card detailed" onClick={onClick}><div className="cover-placeholder"><span>H</span><small>{p.status}</small></div><div className="product-info"><span className="tag">EBOOK</span><h4>{p.title || p.topic}</h4><p>{p.topic}</p><div className="product-meta"><span>stage: {p.current_stage}</span><span>{p.metadata?.quality_score ? `${p.metadata.quality_score}/100` : "quality —"}</span></div></div></article>; }
 function Products({ items, select }) { return <Page title="Produtos" sub="Catálogo persistido no Supabase."><div className="product-grid">{items.length ? items.map(p => <ProductCard key={p.id} p={p} onClick={() => select(p)} />) : <Empty text="Nenhum produto ainda." />}</div></Page>; }
 function Jobs({ jobs, products, action }) { const productFor = j => products.find(p => p.metadata?.job_id === j.id); return <Page title="Jobs" sub="Fila real com estado e controles operacionais."><div className="job-list">{jobs.length ? jobs.map(j => { const p = productFor(j); const active = ["pending", "running", "retrying"].includes(j.status); return <article className="job" key={j.id}><div className={`job-icon ${j.status}`}>↻</div><div className="job-main"><strong>{p?.title || p?.topic || j.job_type}</strong><p>{j.error_message || `${j.job_type} • ${j.id}`}</p></div><span className={`job-status ${j.status}`}>{j.status}</span><small>{j.attempts}/{j.max_attempts}</small>{active && p && <div className="job-actions"><Button onClick={() => action(() => call(`/api/v1/products/${p.id}/pause`, { method: "POST" }), "Produção pausada.")}>Pausar</Button><Button onClick={() => action(() => call(`/api/v1/jobs/${j.id}/cancel`, { method: "POST" }), "Job cancelado.")}>Cancelar</Button></div>}{j.status === "paused" && p && <div className="job-actions"><Button primary onClick={() => action(() => call(`/api/v1/products/${p.id}/resume`, { method: "POST" }), "Produção retomada.")}>Retomar</Button></div>}</article>; }) : <Empty text="Nenhum job persistido." />}</div></Page>; }
-function Studio({ product, notify, refresh }) { const [title, setTitle] = useState(product?.title || ""); useEffect(() => setTitle(product?.title || ""), [product?.id, product?.title]); if (!product) return <Page title="Studio" sub="Selecione um produto no catálogo." />; const save = async () => { try { await call(`/api/v1/products/${product.id}`, { method: "PATCH", body: JSON.stringify({ title }) }); notify("Produto atualizado."); await refresh(); } catch (e) { notify(e.message); } }; return <Page title="Studio" sub="Edite o produto e abra os artefatos gerados."><div className="panel"><label>Título<input value={title} onChange={e => setTitle(e.target.value)} /></label><p>Status: <b>{product.status}</b> · etapa: <b>{product.current_stage}</b></p><Button primary onClick={save}>Salvar alterações</Button></div><div className="panel"><h3>Artefatos</h3>{Object.entries(product.metadata?.artifacts || {}).map(([k, v]) => <p key={k}><b>{k}:</b> <a href={v} target="_blank" rel="noreferrer">abrir arquivo</a></p>)}{!Object.keys(product.metadata?.artifacts || {}).length && <p>Os arquivos aparecerão quando o worker concluir a geração.</p>}</div></Page>; }
-function RadarView() {
+function Studio({ product, notify, refresh }) {
+  const [title, setTitle] = useState(product?.title || "");
+  useEffect(() => setTitle(product?.title || ""), [product?.id, product?.title]);
+  if (!product) return <Page title="Studio" sub="Selecione um produto no catálogo." />;
+  const save = async () => {
+    try {
+      await call("/api/v1/products/" + product.id, { method: "PATCH", body: JSON.stringify({ title }) });
+      notify("Produto atualizado.");
+      await refresh();
+    } catch (e) { notify(e.message); }
+  };
+  const rawArtifacts = product.metadata?.artifacts && Object.keys(product.metadata.artifacts).length
+    ? product.metadata.artifacts
+    : { pdf: product.metadata?.pdf_url, cover: product.metadata?.cover_url, docx: product.metadata?.document_url };
+  const artifacts = Object.entries(rawArtifacts).filter(([, value]) => typeof value === "string" && /^https?:\/\//i.test(value));
+  return <Page title="Studio" sub="Edite o produto e abra os arquivos gerados.">
+    <div className="panel">
+      <label>Título<input value={title} onChange={e => setTitle(e.target.value)} /></label>
+      <p>Status: <b>{product.status}</b> · etapa: <b>{product.current_stage}</b></p>
+      <Button primary onClick={save} disabled={["completed", "cancelled"].includes(product.status)}>Salvar alterações</Button>
+      {["completed", "cancelled"].includes(product.status) && <p className="panel-note">Este produto está finalizado; o título não pode ser alterado nesta etapa.</p>}
+    </div>
+    <div className="panel"><h3>Artefatos</h3>
+      {artifacts.map(([kind, url]) => <p key={kind}><b>{kind}:</b> <a href={url} target="_blank" rel="noreferrer">abrir arquivo</a></p>)}
+      {!artifacts.length && <p>Nenhum link de arquivo foi salvo para este produto.</p>}
+    </div>
+  </Page>;
+}
+function RadarView() { {
   const [items,setItems]=useState([]); const [busy,setBusy]=useState(false); const [notice,setNotice]=useState(""); const [drafts,setDrafts]=useState({});
   const load=async()=>{try{const data=await call("/api/v1/opportunities?limit=20");setItems(Array.isArray(data)?data:[]);return Array.isArray(data)?data:null;}catch(e){setNotice(e.message);return null;}};
   useEffect(()=>{load();},[]);
@@ -202,7 +229,55 @@ function RadarView() {
     </article>):<Empty text="Nenhuma oportunidade freelance relevante salva ainda."/>}</div>
   </Page>;
 }
-function Publish({ product, integrations }) { const hotmart = integrations.find(x => x.name?.toLowerCase().includes("hotmart")); return <Page title="Publicação" sub="Preparação comercial e sincronização do catálogo Hotmart."><div className="panel"><h3>{product?.title || product?.topic || "Nenhum produto selecionado"}</h3><p>Hotmart: <b>{hotmart?.status || "não verificada"}</b></p><p>Artefatos: <b>{Object.keys(product?.metadata?.artifacts || {}).length ? "gerados" : "pendentes"}</b></p><p>A API pública da Hotmart permite consultar/sincronizar produtos e ofertas e receber webhooks. A criação de um novo produto digital continua no painel da Hotmart; o Hermes não simula uma publicação que a API não documenta.</p></div></Page>; }
+function Publish({ product, integrations }) {
+  const [kiwifyProductId, setKiwifyProductId] = useState(product?.metadata?.publications?.kiwify?.product_id || "");
+  const [checkoutUrl, setCheckoutUrl] = useState(product?.metadata?.publications?.kiwify?.checkout_url || "");
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState("");
+  useEffect(() => {
+    setKiwifyProductId(product?.metadata?.publications?.kiwify?.product_id || "");
+    setCheckoutUrl(product?.metadata?.publications?.kiwify?.checkout_url || "");
+    setNotice("");
+  }, [product?.id]);
+  if (!product) return <Page title="Publicação" sub="Selecione um produto no catálogo." />;
+  const kiwify = product.metadata?.publications?.kiwify;
+  const saveKiwify = async event => {
+    event.preventDefault();
+    setSaving(true);
+    setNotice("");
+    try {
+      await call("/api/v1/products/" + product.id + "/publication/kiwify", {
+        method: "POST",
+        body: JSON.stringify({ product_id: kiwifyProductId.trim() || null, checkout_url: checkoutUrl.trim() })
+      });
+      setNotice("Link de checkout salvo no Hermes. A compra e a entrega continuam sendo processadas pela Kiwify.");
+    } catch (error) { setNotice(error.message); }
+    finally { setSaving(false); }
+  };
+  const rawArtifacts = product.metadata?.artifacts && Object.keys(product.metadata.artifacts).length
+    ? product.metadata.artifacts
+    : { pdf: product.metadata?.pdf_url, cover: product.metadata?.cover_url, docx: product.metadata?.document_url };
+  const artifacts = Object.entries(rawArtifacts).filter(([, value]) => typeof value === "string" && /^https?:\/\//i.test(value));
+  return <Page title="Publicação" sub="Vincule o checkout externo ao painel do Hermes.">
+    <div className="panel">
+      <h3>{product.title || product.topic}</h3>
+      <p>Status do produto: <b>{product.status}</b> · arquivos: <b>{artifacts.length ? "disponíveis" : "pendentes"}</b></p>
+      <p>O cadastro do produto e o upload do arquivo são feitos no painel da Kiwify. Aqui o Hermes registra o ID e o link de checkout para acompanhar a operação.</p>
+      <form className="factory-form" onSubmit={saveKiwify}>
+        <label>ID do produto Kiwify (opcional)<input value={kiwifyProductId} onChange={e => setKiwifyProductId(e.target.value)} placeholder="ID exibido na URL do produto" /></label>
+        <label>Link de checkout HTTPS<input type="url" required value={checkoutUrl} onChange={e => setCheckoutUrl(e.target.value)} placeholder="https://pay.kiwify.com.br/..." /></label>
+        <div className="form-footer"><span>O Hermes não recebe pagamentos.</span><Button primary type="submit" disabled={saving || !checkoutUrl.trim()}>{saving ? "Salvando…" : "Salvar checkout ↗"}</Button></div>
+      </form>
+      {notice && <p className="notice">{notice}</p>}
+      {kiwify?.checkout_url && <p><b>Checkout registrado:</b> <a href={kiwify.checkout_url} target="_blank" rel="noreferrer">abrir checkout Kiwify ↗</a> · {kiwify.status || "salvo"}</p>}
+      <p><a href="https://dashboard.kiwify.com.br/" target="_blank" rel="noreferrer">Abrir painel da Kiwify ↗</a></p>
+    </div>
+    <div className="panel"><h3>Arquivos para cadastrar na plataforma</h3>
+      {artifacts.map(([kind, url]) => <p key={kind}><b>{kind}:</b> <a href={url} target="_blank" rel="noreferrer">abrir arquivo</a></p>)}
+      {!artifacts.length && <p>Os links dos arquivos aparecerão após a geração bem-sucedida do produto.</p>}
+    </div>
+  </Page>;
+}
 function SalesView({ data, load }) { return <Page title="Vendas" sub="Dados vindos de eventos reais persistidos."><Button primary onClick={load}>Atualizar vendas</Button>{data ? <div className="metric-grid"><Metric label="Receita" value={data.revenue ?? 0}/><Metric label="Pedidos" value={data.orders ?? 0}/><Metric label="Aprovados" value={data.approved ?? 0}/><Metric label="Reembolsos" value={data.refunds ?? 0}/></div> : <Empty text="Clique em atualizar para consultar as vendas reais." />}</Page>; }
 function AnalyticsView({ data, load }) { return <Page title="Analytics" sub="Insights calculados a partir dos dados persistidos."><Button primary onClick={load}>Atualizar analytics</Button>{data ? <div className="two-col"><div className="panel"><pre>{JSON.stringify(data, null, 2)}</pre></div></div> : <Empty text="Nenhuma leitura carregada." />}</Page>; }
 function RevenueChannels({ integrations }) {
