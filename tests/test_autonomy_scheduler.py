@@ -22,6 +22,7 @@ class FakeStore:
         self.jobs = jobs or []
         self.created = []
         self.rebuilds = []
+        self.validations = []
 
     async def list_products(self):
         return self.products
@@ -50,6 +51,27 @@ class FakeStore:
         }
         self.jobs.append(job)
         self.rebuilds.append((str(product_id), attempt))
+        return updated, job
+
+
+
+    async def create_product_validation_job(self, product_id):
+        index = next(i for i, item in enumerate(self.products) if str(item.get("id")) == str(product_id))
+        product = self.products[index]
+        metadata = dict(product.get("metadata") or {})
+        attempt = int(metadata.get("validation_attempts") or 0) + 1
+        metadata["validation_attempts"] = attempt
+        metadata["artifact_status"] = "revision_required"
+        updated = {**product, "status": "queued", "metadata": metadata}
+        self.products[index] = updated
+        job = {
+            "id": f"validation-job-{len(self.validations) + 1}",
+            "job_type": "product_generation",
+            "status": "pending",
+            "payload": {"product_id": str(product_id), "topic": product.get("topic"), "reuse_existing_content": True},
+        }
+        self.jobs.append(job)
+        self.validations.append((str(product_id), attempt))
         return updated, job
 
     async def create_product_and_job(self, topic, metadata, idempotency_key):
@@ -237,3 +259,44 @@ async def test_failed_rebuild_product_gets_one_bounded_second_attempt():
     assert result["attempt"] == 2
     assert store.rebuilds == [("p-failed", 2)]
     assert queue.jobs == ["rebuild-job-1"]
+
+
+@pytest.mark.asyncio
+async def test_content_that_passed_deterministic_gate_uses_validation_only_job():
+    settings = Settings(
+        autonomy_enabled=True,
+        ai_provider="gemini",
+        gemini_api_key="test-key",
+        autonomy_max_active_products=5,
+        autonomy_max_ready_to_publish=2,
+        autonomy_max_review_required_products=3,
+    )
+    product = {
+        "id": "p-metrics-pass",
+        "status": "review_required",
+        "topic": "Sistema de loja",
+        "created_at": "2026-11-09T10:00:00Z",
+        "metadata": {
+            "artifact_status": "revision_required",
+            "rebuild_attempts": 1,
+            "quality_gate": {
+                "approved": False,
+                "findings": [],
+                "word_count": 5668,
+                "chapter_count": 8,
+                "illustration_count": 4,
+                "introduction_words": 314,
+                "conclusion_words": 307,
+                "chapter_word_counts": [{"title": f"Capítulo {i}", "words": 600} for i in range(8)],
+            },
+            "content_data": {"chapters": [{"title": f"Capítulo {i}", "content": "conteúdo"} for i in range(8)]},
+            "review": {"approved": False, "score": 75, "findings": ["faltam páginas e ilustrações"]},
+        },
+    }
+    store, queue = FakeStore([product]), FakeQueue()
+    result = await autonomy_scheduler.autonomy_tick(settings, store, queue)
+    assert result["status"] == "review_product_validation_queued"
+    assert result["product_id"] == "p-metrics-pass"
+    assert store.validations == [("p-metrics-pass", 1)]
+    assert store.rebuilds == []
+    assert queue.jobs == ["validation-job-1"]

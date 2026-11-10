@@ -97,6 +97,61 @@ class PersistentStore:
         return await self.db.update("hermes_products", values, where={"id": f"eq.{product_id}"})
 
 
+
+    async def create_product_validation_job(self, product_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Queue artifact validation for existing content that already passed deterministic editorial gates."""
+        product = await self.get_product(product_id)
+        if not product:
+            raise ValueError("product not found")
+        metadata = dict(product.get("metadata") or {})
+        attempt = int(metadata.get("validation_attempts") or 0) + 1
+        if attempt > 1:
+            raise ValueError("automatic content validation attempt limit reached")
+        topic = str(product.get("topic") or "").strip()
+        if not topic or not isinstance(metadata.get("content_data"), dict):
+            raise ValueError("existing ebook content is unavailable for validation")
+
+        now = datetime.now(timezone.utc).isoformat()
+        idempotency_key = f"content-validation:{product_id}:{attempt}"
+        existing = await self.db.select(
+            "hermes_jobs",
+            params={"select": "*", "idempotency_key": f"eq.{idempotency_key}", "limit": "1"},
+        )
+        if existing:
+            job = existing[0]
+            if job.get("status") in {"pending", "running", "retrying"}:
+                return product, job
+
+        job = await self.db.insert("hermes_jobs", {
+            "job_type": "product_generation",
+            "status": JobStatus.PENDING.value,
+            "attempts": 0,
+            "max_attempts": 3,
+            "payload": {"product_id": product_id, "topic": topic, "reuse_existing_content": True},
+            "idempotency_key": idempotency_key,
+            "created_at": now,
+            "updated_at": now,
+        })
+        metadata["validation_attempts"] = attempt
+        metadata["validation_requested_at"] = now
+        metadata["artifact_status"] = "revision_required"
+        metadata.setdefault("publication_status", "not_published")
+        quality_gate = dict(metadata.get("quality_gate") or {})
+        quality_gate["approved"] = False
+        metadata["quality_gate"] = quality_gate
+        updated = await self.db.update(
+            "hermes_products",
+            {
+                "status": "queued",
+                "current_stage": "reviewer",
+                "job_id": job["id"],
+                "metadata": metadata,
+                "updated_at": now,
+            },
+            where={"id": f"eq.{product_id}"},
+        )
+        return updated, job
+
     async def create_product_rebuild_job(self, product_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
         """Queue a bounded rebuild for an existing review_required product without losing its prior artifacts."""
         product = await self.get_product(product_id)
