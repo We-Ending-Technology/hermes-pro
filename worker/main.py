@@ -222,6 +222,38 @@ async def revise_ebook_if_needed(gateway: Any, topic: str, writer_response: Any,
 
     return best_response, best_data, best_gate
 
+def build_product_metadata(
+    existing_metadata: dict | None,
+    *,
+    strategy_data: dict,
+    content: str,
+    content_data: dict,
+    review_data: dict,
+    quality_score: int,
+    content_gate: dict,
+    ai_review_approved: bool,
+    approved: bool,
+    ai_provider: str,
+    ai_model: str,
+) -> dict:
+    """Merge generated content into existing metadata without dropping rebuild history or archived files."""
+    metadata = dict(existing_metadata or {})
+    metadata.update({
+        "strategy": strategy_data,
+        "content": content,
+        "content_data": content_data,
+        "review": review_data,
+        "quality_score": quality_score,
+        "quality_gate": {**content_gate, "approved": approved, "ai_review_approved": ai_review_approved},
+        "ai_provider": ai_provider,
+        "ai_model": ai_model,
+        "paused": False,
+        "artifact_status": "revision_required",
+    })
+    metadata.setdefault("publication_status", "not_published")
+    return metadata
+
+
 async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) -> None:
     job = await store.get_job(job_id)
     if not job or job["job_type"] != "product_generation" or job["status"] in {"completed", "cancelled", "paused", "running"}:
@@ -329,19 +361,20 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         review_findings = list(review_data.get("findings") or [])
         review_findings.extend(content_gate["findings"])
         review_data = {**review_data, "approved": approved, "findings": review_findings}
-        metadata = {
-            "strategy": strategy_data,
-            "content": writer.content,
-            "content_data": writer_data,
-            "review": review_data,
-            "quality_score": combined_score,
-            "quality_gate": {**content_gate, "approved": approved, "ai_review_approved": ai_review_approved},
-            "ai_provider": strategist.provider,
-            "ai_model": strategist.model,
-            "paused": False,
-            "artifact_status": "not_created",
-            "publication_status": "not_published",
-        }
+        current_product = await store.get_product(product_id) or {}
+        metadata = build_product_metadata(
+            current_product.get("metadata"),
+            strategy_data=strategy_data,
+            content=writer.content,
+            content_data=writer_data,
+            review_data=review_data,
+            quality_score=combined_score,
+            content_gate=content_gate,
+            ai_review_approved=ai_review_approved,
+            approved=approved,
+            ai_provider=strategist.provider,
+            ai_model=strategist.model,
+        )
         title = strategy_data.get("title") if isinstance(strategy_data, dict) else None
         subtitle = strategy_data.get("subtitle", "") if isinstance(strategy_data, dict) else ""
 
@@ -395,7 +428,17 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             await queue.enqueue(job_id)
         else:
             await store.update_job(job_id, "failed", attempts=attempts, error_message=message)
-            await store.update_product(product_id, status="failed")
+            try:
+                current_product = await store.get_product(product_id) or {}
+                failure_metadata = dict(current_product.get("metadata") or {})
+                failure_metadata["artifact_status"] = "revision_required"
+                failure_metadata.setdefault("publication_status", "not_published")
+                failure_gate = dict(failure_metadata.get("quality_gate") or {})
+                failure_gate["approved"] = False
+                failure_metadata["quality_gate"] = failure_gate
+                await store.update_product(product_id, status="failed", metadata=failure_metadata)
+            except Exception:
+                logger.exception("failed to persist product rebuild state after terminal failure")
             await notify_owner(settings, f"Hermes Pro: falha definitiva na geração do produto {topic}. Tentativas: {attempts}. Erro: {message[:300]}")
         logger.exception("product_generation failed job=%s", job_id)
 
