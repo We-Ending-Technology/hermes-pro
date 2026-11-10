@@ -161,6 +161,25 @@ async def supervision_tick(settings: Settings, store: PersistentStore, queue) ->
         },
     }
 
+def _deterministic_content_gate_passed(metadata: dict) -> bool:
+    gate = metadata.get("quality_gate") or {}
+    try:
+        chapter_counts = gate.get("chapter_word_counts") or []
+        return (
+            not gate.get("findings")
+            and int(gate.get("word_count") or 0) >= 3500
+            and int(gate.get("chapter_count") or 0) >= 8
+            and int(gate.get("illustration_count") or 0) >= 4
+            and int(gate.get("introduction_words") or 0) >= 200
+            and int(gate.get("conclusion_words") or 0) >= 200
+            and len(chapter_counts) >= 8
+            and all(int(item.get("words") or 0) >= 300 for item in chapter_counts)
+            and isinstance(metadata.get("content_data"), dict)
+        )
+    except (TypeError, ValueError, AttributeError):
+        return False
+
+
 async def autonomy_tick(settings: Settings, store: PersistentStore, queue) -> dict[str, Any]:
     """Create at most one new product per tick, subject to explicit capacity limits."""
     if not settings.autonomy_enabled:
@@ -219,23 +238,34 @@ async def autonomy_tick(settings: Settings, store: PersistentStore, queue) -> di
             rebuild_candidates.sort(key=lambda item: str(item.get("created_at") or ""))
             candidate = rebuild_candidates[0]
             try:
-                rebuilt_product, rebuild_job = await store.create_product_rebuild_job(str(candidate["id"]))
+                candidate_metadata = candidate.get("metadata") or {}
+                validation_attempts = int(candidate_metadata.get("validation_attempts") or 0)
+                if _deterministic_content_gate_passed(candidate_metadata) and validation_attempts < 1:
+                    updated_product, rebuild_job = await store.create_product_validation_job(str(candidate["id"]))
+                    result_status = "review_product_validation_queued"
+                    attempt_number = (updated_product.get("metadata") or {}).get("validation_attempts")
+                    logger.info(
+                        "review-required ebook content validation queued product=%s job=%s attempt=%s",
+                        candidate["id"], rebuild_job["id"], attempt_number,
+                    )
+                else:
+                    updated_product, rebuild_job = await store.create_product_rebuild_job(str(candidate["id"]))
+                    result_status = "review_product_rebuild_queued"
+                    attempt_number = (updated_product.get("metadata") or {}).get("rebuild_attempts")
+                    logger.info(
+                        "review-required ebook rebuild queued product=%s job=%s attempt=%s",
+                        candidate["id"], rebuild_job["id"], attempt_number,
+                    )
                 await queue.enqueue(str(rebuild_job["id"]))
-                logger.info(
-                    "review-required ebook rebuild queued product=%s job=%s attempt=%s",
-                    candidate["id"],
-                    rebuild_job["id"],
-                    (rebuilt_product.get("metadata") or {}).get("rebuild_attempts"),
-                )
                 return {
-                    "status": "review_product_rebuild_queued",
+                    "status": result_status,
                     "product_id": str(candidate["id"]),
                     "job_id": str(rebuild_job["id"]),
-                    "attempt": (rebuilt_product.get("metadata") or {}).get("rebuild_attempts"),
+                    "attempt": attempt_number,
                     "remaining_review_required": max(0, len(review_backlog) - (1 if candidate.get("status") == "review_required" else 0)),
                 }
             except Exception:
-                logger.exception("automatic review-required ebook rebuild failed product=%s", candidate.get("id"))
+                logger.exception("automatic review-required ebook validation/rebuild failed product=%s", candidate.get("id"))
                 return {"status": "review_product_rebuild_error", "product_id": str(candidate.get("id"))}
 
     if len(review_backlog) >= settings.autonomy_max_review_required_products:
