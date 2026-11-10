@@ -464,8 +464,99 @@ function ChatView({ chat, input, setInput, send }) {
 function DiagnosticsPanel({ data }) { if (!data) return <Empty text="Diagnóstico ainda não executado." />; return <div className="panel diagnostics-grid">{data.checks.map((x, i) => <div className="diag-row" key={`${x.name}-${i}`}><i className={x.status === "online" || x.status === "ready" ? "online" : "offline"}></i><strong>{x.name}</strong><span>{x.status}</span><small>{x.message || ""}</small></div>)}</div>; }
 function Integrations({ items, diagnostics, runDiagnostics }) { return <Page title="Integrações" sub="Estado das conexões sem expor segredos."><Button primary onClick={runDiagnostics}>Testar conexões</Button><DiagnosticsPanel data={diagnostics} /><div className="integration-list">{items.length ? items.map(x => <div className="panel" key={x.name}><strong>{x.name}</strong><p>{x.status}</p><small>{x.message}</small></div>) : <Empty text="Nenhuma integração retornada pelo backend." />}</div></Page>; }
 function Experiments({ products, radar }) { return <Page title="Experimentos" sub="Área para comparar temas e resultados reais."><div className="metric-grid"><Metric label="Produtos" value={products.length}/><Metric label="Radar disponível" value={radar ? "sim" : "não"}/></div><Empty text="Os experimentos usam somente produtos e análises persistidos; não há conversões inventadas." /></Page>; }
-function Agents() { return <Page title="Agentes" sub="Agentes operacionais registrados no backend."><AgentList /></Page>; }
-function AgentList() { const [items, setItems] = useState([]); const [result, setResult] = useState(null); useEffect(() => { call("/api/v1/agents").then(x => setItems(x?.agents || [])).catch(() => setItems([])); }, []); const run = async agent => { try { setResult(await call("/api/v1/agents/run", { method: "POST", body: JSON.stringify({ agent, input: "diagnóstico operacional do Hermes Pro" }) })); } catch (e) { setResult({ error: e.message }); } }; return <div className="product-grid">{items.map(agent => <div className="panel" key={agent}><h3>{agent}</h3><Button onClick={() => run(agent)}>Executar</Button></div>)}{result && <div className="panel"><pre>{JSON.stringify(result, null, 2)}</pre></div>}</div>; }
+function Agents() {
+  return <Page title="Equipe de agentes" sub="Hermes Chefe coordena Radar, Factory, Dev e Analyst. Tarefas despachadas ficam registradas e podem ser acompanhadas aqui.">
+    <AgentControlCenter />
+  </Page>;
+}
+function AgentControlCenter() {
+  const [status, setStatus] = useState(null);
+  const [runs, setRuns] = useState([]);
+  const [task, setTask] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  const load = async () => {
+    try {
+      const [nextStatus, nextRuns] = await Promise.all([
+        call("/api/v1/agents/status"),
+        call("/api/v1/agents/runs")
+      ]);
+      setStatus(nextStatus);
+      setRuns(Array.isArray(nextRuns?.runs) ? nextRuns.runs : []);
+    } catch (error) {
+      setNotice("Não foi possível atualizar a equipe: " + error.message);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const dispatch = async event => {
+    event.preventDefault();
+    const instruction = task.trim();
+    if (!instruction) return;
+    setBusy(true);
+    setNotice("");
+    try {
+      const result = await call("/api/v1/agents/dispatch", {
+        method: "POST",
+        body: JSON.stringify({ agent: "Hermes Chefe", input: { prompt: instruction } })
+      });
+      setNotice("Tarefa enviada para Hermes Chefe. ID: " + result.run_id);
+      setTask("");
+      await load();
+    } catch (error) {
+      setNotice("Falha ao despachar tarefa: " + error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <>
+    {notice && <div className="notice">{notice}</div>}
+    <div className="metric-grid">
+      <Metric label="Chefe" value={status?.chief || "verificando"} />
+      <Metric label="Worker embutido" value={status?.embedded_worker_enabled ? "ativo" : "inativo"} />
+      <Metric label="Autonomia de fábrica" value={status?.autonomy_enabled ? "ativa" : "pausada"} />
+      <Metric label="Execuções registradas" value={runs.length} />
+    </div>
+    <div className="panel">
+      <h3>Time operacional</h3>
+      <p>O Chefe divide cada tarefa entre Radar, Factory, Dev e Analyst, consolida as análises e grava o resultado. A fila é processada pelo worker; esta tela atualiza automaticamente.</p>
+      <div className="product-grid">
+        {(status?.agents || []).map(agent => <article className="panel" key={agent.name}>
+          <strong>{agent.name}</strong>
+          <p>{agent.role}</p>
+          <span className="tag">{agent.status}</span>
+        </article>)}
+      </div>
+    </div>
+    <form className="panel factory-form" onSubmit={dispatch}>
+      <label>O que o Hermes Chefe deve executar?
+        <textarea value={task} onChange={event => setTask(event.target.value)} minLength={8} required placeholder="Ex.: audite o funil de ebooks, identifique bloqueios de publicação e proponha correções verificáveis." />
+      </label>
+      <div className="form-footer"><span>Despacho persistente · 4 especialistas + Chefe · histórico salvo</span><Button primary type="submit" disabled={busy || !task.trim()}>{busy ? "Enviando…" : "Despachar para o Chefe ↗"}</Button></div>
+    </form>
+    <div className="panel">
+      <div className="section-heading"><div><h3>Histórico de execuções</h3><p className="panel-note">Atualização automática a cada 10 segundos.</p></div><Button onClick={load}>Atualizar</Button></div>
+      {runs.length ? runs.map(run => <article className="job" key={run.id}>
+        <div className={`job-icon ${run.status}`}>✦</div>
+        <div className="job-main">
+          <strong>{run.agent || "Hermes Chefe"}</strong>
+          <p>{run.input?.instruction || run.input?.prompt || "Tarefa operacional"}</p>
+          {run.error_message && <small>{run.error_message}</small>}
+          {run.output?.output && <details><summary>Ver resultado consolidado</summary><pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{run.output.output}</pre></details>}
+        </div>
+        <span className={`job-status ${run.status}`}>{run.status}</span>
+      </article>) : <Empty text="Nenhuma execução do time registrada ainda. Envie uma tarefa acima para iniciar a primeira." />}
+    </div>
+    <div className="panel-note">A autonomia de fábrica cria e-books dentro dos limites configurados. Publicação, gastos e envio de propostas continuam sujeitos às permissões e confirmações das plataformas.</div>
+  </>;
+}
 function Automation({ jobs }) { const active = useMemo(() => jobs.filter(j => ["pending", "running", "retrying"].includes(j.status)).length, [jobs]); return <Page title="Automação" sub="Visão operacional da fila e do worker."><div className="metric-grid"><Metric label="Jobs ativos" value={active}/><Metric label="Jobs totais" value={jobs.length}/></div><Empty text="A execução automática ocorre no worker; este painel não finge agendamentos que ainda não existem no backend." /></Page>; }
 function Logs({ jobs }) { return <Page title="Logs" sub="Eventos de jobs retornados pelo backend."><div className="job-list">{jobs.map(j => <div className="panel" key={j.id}><strong>{j.status}</strong><p>{j.id}</p><small>{j.error_message || "sem erro"}</small></div>)}</div></Page>; }
 function Guides() { return <Page title="Guias" sub="Operação do Hermes Pro."><div className="two-col"><div className="panel"><h3>1. Conexão</h3><p>Vercel hospeda a interface. O backend fica no Render. O cliente usa o proxy Vercel e cai para o Render diretamente quando o proxy falhar.</p></div><div className="panel"><h3>2. Produção</h3><p>Fábrica cria produto e job. Redis entrega ao worker. Gemini produz e revisa conteúdo. Supabase persiste estado e artefatos.</p></div><div className="panel"><h3>3. Hotmart</h3><p>O Hermes consulta o catálogo disponível e recebe vendas por webhook. A criação inicial do produto continua no painel Hotmart.</p></div><div className="panel"><h3>4. Se estiver offline</h3><p>Abra Integrações e execute o diagnóstico. Se Render estiver offline, o painel mostrará a conexão necessária em vez de um erro NOT_FOUND genérico.</p></div></div></Page>; }
