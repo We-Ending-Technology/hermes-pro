@@ -21,9 +21,9 @@ class QualityService:
         audience = str(product.get("audience", "")).strip()
         chapter_words = sum(item["words"] for item in validation["chapter_word_counts"])
         dimensions = {
-            "content_length": min(100, round(validation["word_count"] / validation["minimums"]["total_words"] * 100)),
-            "chapter_structure": min(100, round(validation["chapter_count"] / validation["minimums"]["chapters"] * 100)),
-            "chapter_depth": min(100, round(chapter_words / max(1, validation["chapter_count"]) / validation["minimums"]["chapter_words"] * 100)) if validation["chapter_count"] else 0,
+            "content_length": min(100, round(validation["word_count"] / validation["minimums"]["minimum_words"] * 100)),
+            "chapter_structure": min(100, round(validation["chapter_count"] / validation["minimums"]["minimum_chapters"] * 100)),
+            "chapter_depth": min(100, round(chapter_words / max(1, validation["chapter_count"]) / validation["minimums"]["minimum_chapter_words"] * 100)) if validation["chapter_count"] else 0,
             "offer_clarity": 100 if title and audience else 45,
         }
         findings = list(validation["findings"])
