@@ -245,7 +245,7 @@ def build_pdf(
 
     story = []
     if cover_bytes:
-        story.append(ReportLabImage(io.BytesIO(cover_bytes), width=doc.width, height=doc.height, kind="proportional"))
+        story.append(ReportLabImage(io.BytesIO(cover_bytes), width=doc.width - 12, height=doc.height - 12, kind="proportional"))
         story.append(PageBreak())
 
     story.append(Paragraph(html.escape(title), title_style))
@@ -265,7 +265,7 @@ def build_pdf(
             story.append(Paragraph(html.escape(paragraph).replace("\n", "<br/>"), body_style))
         if index < len(illustrations):
             story.append(Spacer(1, 8))
-            story.append(ReportLabImage(io.BytesIO(illustrations[index]), width=doc.width, height=doc.width * 0.49, kind="proportional"))
+            story.append(ReportLabImage(io.BytesIO(illustrations[index]), width=doc.width - 12, height=(doc.width - 12) * 0.49, kind="proportional"))
             caption = str(briefs[index].get("caption") or briefs[index].get("title") or "")
             if caption:
                 story.append(Paragraph(html.escape(caption), subtitle_style))
