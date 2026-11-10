@@ -1,4 +1,7 @@
 from dataclasses import dataclass
+from typing import Any
+
+from .ebook_validation import validate_ebook
 
 @dataclass(frozen=True)
 class QualityReport:
@@ -9,28 +12,32 @@ class QualityReport:
     safe_fixes: list[str]
 
 class QualityService:
-    def evaluate(self, product: dict) -> QualityReport:
-        text = str(product.get("content", ""))
+    def evaluate(self, product: dict[str, Any]) -> QualityReport:
+        content_data = product.get("content_data")
+        if not isinstance(content_data, dict):
+            content_data = product.get("content") if isinstance(product.get("content"), dict) else {}
+        validation = validate_ebook(content_data)
         title = str(product.get("title", "")).strip()
+        audience = str(product.get("audience", "")).strip()
+        chapter_words = sum(item["words"] for item in validation["chapter_word_counts"])
         dimensions = {
-            "structure": 100 if product.get("chapters") else 45,
-            "readability": 85 if len(text) >= 500 else 45,
-            "coherence": 80 if len(text.split()) >= 100 else 50,
-            "originality_risk_signal": 85 if len(text) >= 1000 else 65,
-            "formatting": 90 if product.get("format", "pdf") in {"pdf", "docx"} else 60,
-            "offer_clarity": 85 if title and product.get("audience") else 50,
+            "content_length": min(100, round(validation["word_count"] / validation["minimums"]["total_words"] * 100)),
+            "chapter_structure": min(100, round(validation["chapter_count"] / validation["minimums"]["chapters"] * 100)),
+            "chapter_depth": min(100, round(chapter_words / max(1, validation["chapter_count"]) / validation["minimums"]["chapter_words"] * 100)) if validation["chapter_count"] else 0,
+            "offer_clarity": 100 if title and audience else 45,
         }
-        score = round(sum(dimensions.values()) / len(dimensions))
-        findings: list[str] = []
-        fixes: list[str] = []
-        if not product.get("chapters"):
-            findings.append("Estrutura sem capítulos detectáveis."); fixes.append("Gerar ou revisar sumário e títulos de capítulos.")
-        if len(text) < 500:
-            findings.append("Conteúdo curto para uma avaliação editorial robusta."); fixes.append("Expandir exemplos e explicações sem repetir ideias.")
-        if not product.get("audience"):
-            findings.append("Público-alvo não está definido."); fixes.append("Preencher público e problema principal.")
-        if not findings:
-            findings.append("Nenhum bloqueio determinístico encontrado nos campos avaliados.")
-        return QualityReport(score, "approved" if score >= 80 else "revision_required", dimensions, findings, fixes)
+        findings = list(validation["findings"])
+        fixes = ["Expand the content with original explanations, examples and actionable steps."] if findings else []
+        if not title:
+            findings.append("Título do produto ausente.")
+            fixes.append("Definir um título específico e claro.")
+        if not audience:
+            findings.append("Público-alvo não definido.")
+            fixes.append("Definir o leitor e o problema que o ebook resolve.")
+        score = min(validation["score"], 100 if title and audience else 70)
+        approved = validation["approved"] and bool(title) and bool(audience) and score >= 80
+        if approved:
+            findings.append("Conteúdo passou pelos critérios mínimos determinísticos; revisão editorial humana continua recomendada.")
+        return QualityReport(score, "approved" if approved else "revision_required", dimensions, findings, fixes)
 
 quality_service = QualityService()
