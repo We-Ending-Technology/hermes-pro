@@ -269,6 +269,7 @@ function Studio({ product, notify, refresh }) {
   const content = product.metadata?.content_data || {};
   const chapters = Array.isArray(content.chapters) ? content.chapters : [];
   const review = product.metadata?.review || {};
+  const qualityGate = product.metadata?.quality_gate || {};
   const hasContent = Boolean(content.introduction || chapters.length || content.conclusion);
 
   return <Page title="Studio" sub="Veja a capa, leia o conteúdo e abra os arquivos reais do produto.">
@@ -279,6 +280,7 @@ function Studio({ product, notify, refresh }) {
         <label>Título<input value={title} onChange={e => setTitle(e.target.value)} /></label>
         <p>Status: <b>{product.status}</b> · etapa: <b>{product.current_stage}</b></p>
         {product.metadata?.quality_score != null && <p>Nota de revisão: <b>{product.metadata.quality_score}/100</b></p>}
+        {qualityGate.word_count != null && <p>Extensão: <b>{qualityGate.word_count}</b> palavras · mínimo comercial: <b>{qualityGate.minimums?.total_words || 1800}</b></p>}
         <Button primary onClick={save} disabled={["completed", "cancelled"].includes(product.status)}>Salvar alterações</Button>
       </div>
       <div className="panel">
@@ -293,7 +295,7 @@ function Studio({ product, notify, refresh }) {
       <p>Este conteúdo não passou pelo critério de qualidade e ainda não pode ser publicado.</p>
       {review.score != null && <p>Nota: <b>{review.score}/100</b></p>}
       {Array.isArray(review.findings) && <ul>{review.findings.map((finding, i) => <li key={i}>{finding}</li>)}</ul>}
-      <p className="panel-note">Nenhum arquivo final foi criado para este produto.</p>
+      <p className="panel-note">Este produto está bloqueado para publicação. Arquivos já existentes podem ser consultados, mas não podem ser vinculados a um checkout até a aprovação do quality gate.</p>
     </div>}
     <div className="panel">
       <div className="section-heading"><div><h3>Leitura do ebook</h3><p className="panel-note">{chapters.length} capítulos · conteúdo salvo no Hermes</p></div>
