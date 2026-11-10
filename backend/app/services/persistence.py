@@ -104,6 +104,7 @@ class PersistentStore:
             raise ValueError("product not found")
 
         metadata = dict(product.get("metadata") or {})
+        # The scheduler caps this metadata counter to prevent endless automatic rebuilds.
         attempt = int(metadata.get("rebuild_attempts") or 0) + 1
         now = datetime.now(timezone.utc).isoformat()
         idempotency_key = f"review-rebuild:{product_id}:{attempt}"
