@@ -84,7 +84,17 @@ class GeminiAdapter(ConfiguredProviderAdapter):
         headers = {"x-goog-api-key": self.api_key, "Content-Type": "application/json"}
         async with httpx.AsyncClient(timeout=45) as client:
             response = await _post_with_retries(
-                client, url, headers=headers, json={"contents": contents}
+                client,
+                url,
+                headers=headers,
+                json={
+                    "contents": contents,
+                    "generationConfig": {
+                        "responseMimeType": "application/json",
+                        "temperature": 0.2,
+                        "maxOutputTokens": 8192,
+                    },
+                },
             )
             data = response.json()
         try:
