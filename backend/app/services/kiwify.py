@@ -26,12 +26,12 @@ def normalize_kiwify_event(payload: dict[str, Any]) -> dict[str, Any]:
         event_type = "SUBSCRIPTION_TRIAL_CANCELLED"
     elif "subscription" in combined and any(term in combined for term in ("trial_started", "trial_start")):
         event_type = "SUBSCRIPTION_TRIAL_STARTED"
+    elif "subscription" in combined and any(term in combined for term in ("cancel", "canceled", "cancelled")):
+        event_type = "SUBSCRIPTION_CANCELLED"
     elif "subscription" in combined and any(term in combined for term in ("renew", "renov", "paid")):
         event_type = "SUBSCRIPTION_RENEWED"
     elif "subscription" in combined and any(term in combined for term in ("late", "expired", "unpaid")):
         event_type = "SUBSCRIPTION_LATE"
-    elif "subscription" in combined and any(term in combined for term in ("cancel", "canceled", "cancelled")):
-        event_type = "SUBSCRIPTION_CANCELLED"
     elif raw_status in {"refused", "rejected", "declined"} or raw_event == "order_rejected":
         event_type = "PURCHASE_REFUSED"
     elif raw_status in {"paid", "approved", "complete", "completed"} or any(

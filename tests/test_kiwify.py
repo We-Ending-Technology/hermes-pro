@@ -10,7 +10,7 @@ def test_normalizes_approved_order_from_cents():
     })
     assert event == {
         "event_type": "PURCHASE_APPROVED",
-        "external_id": "order-123:purchase_approved",
+        "external_id": "order-123:order_approved",
         "amount": 124.24,
         "currency": "BRL",
     }
