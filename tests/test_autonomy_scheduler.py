@@ -66,6 +66,9 @@ class FakeQueue:
     async def enqueue(self, job_id):
         self.jobs.append(job_id)
 
+    async def depths(self):
+        return {"product": len(self.jobs), "agent": 0}
+
 
 def test_json_object_accepts_markdown_fence():
     parsed = autonomy_scheduler._json_object(chr(96) * 3 + "json" + chr(10) + "{\"topic\":\"Tema válido\"}" + chr(10) + chr(96) * 3)

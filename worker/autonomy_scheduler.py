@@ -221,11 +221,16 @@ async def autonomy_tick(settings: Settings, store: PersistentStore, queue) -> di
             try:
                 rebuilt_product, rebuild_job = await store.create_product_rebuild_job(str(candidate["id"]))
                 await queue.enqueue(str(rebuild_job["id"]))
+                try:
+                    queue_depths = await queue.depths()
+                except Exception:
+                    queue_depths = {"product": "unknown", "agent": "unknown"}
                 logger.info(
-                    "review-required ebook rebuild queued product=%s job=%s attempt=%s",
+                    "review-required ebook rebuild queued product=%s job=%s attempt=%s queue_depths=%s",
                     candidate["id"],
                     rebuild_job["id"],
                     (rebuilt_product.get("metadata") or {}).get("rebuild_attempts"),
+                    queue_depths,
                 )
                 return {
                     "status": "review_product_rebuild_queued",
