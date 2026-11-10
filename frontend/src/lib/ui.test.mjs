@@ -22,3 +22,21 @@ test("status tone maps known states to stable UI semantics", () => {
   assert.equal(statusTone("failed"), "danger");
   assert.equal(statusTone("unknown"), "neutral");
 });
+
+
+test("private API access token is memory-only and can be cleared", async () => {
+  const { setAdminToken, clearAdminToken, hasAdminToken } = await import("../api.js");
+  clearAdminToken();
+  assert.equal(hasAdminToken(), false);
+  setAdminToken("test-key");
+  assert.equal(hasAdminToken(), true);
+  clearAdminToken();
+  assert.equal(hasAdminToken(), false);
+});
+
+test("frontend authentication never opens a blocking browser prompt", () => {
+  const api = readFileSync(new URL("../api.js", import.meta.url), "utf8");
+  const app = readFileSync(new URL("../main.jsx", import.meta.url), "utf8");
+  assert.doesNotMatch(api + app, /window\\.prompt\\s*\\(/);
+  assert.match(api, /X-Hermes-API-Key/);
+});
