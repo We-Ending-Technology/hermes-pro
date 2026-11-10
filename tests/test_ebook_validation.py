@@ -2,7 +2,7 @@ from backend.app.services.ebook_validation import validate_ebook
 from backend.app.schemas_ext import is_kiwify_publishable_product
 
 def _valid_content():
-    paragraph = " ".join(["conteudo original pratico com exemplo e explicacao detalhada"] * 35)
+    paragraph = " ".join(["conteudo original pratico com exemplo e explicacao detalhada"] * 40)
     return {
         "introduction": paragraph,
         "chapters": [{"title": f"Capitulo {index}", "content": paragraph} for index in range(1, 6)],
