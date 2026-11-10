@@ -103,3 +103,38 @@ async def test_autonomy_tick_stops_when_daily_limit_is_reached(monkeypatch):
     assert result["status"] == "daily_limit_reached"
     assert store.created == []
     assert queue.jobs == []
+
+@pytest.mark.asyncio
+async def test_review_required_products_are_not_counted_as_publish_ready(monkeypatch):
+    monkeypatch.setattr(autonomy_scheduler, "build_ai_gateway", lambda settings: FakeGateway())
+    settings = Settings(
+        autonomy_enabled=True,
+        ai_provider="gemini",
+        gemini_api_key="test-key",
+        autonomy_max_daily_products=3,
+        autonomy_max_active_products=5,
+        autonomy_max_ready_to_publish=2,
+        autonomy_max_review_required_products=3,
+    )
+    store = FakeStore([{"id": "p-1", "status": "review_required", "topic": "Ebook curto"}])
+    queue = FakeQueue()
+    result = await autonomy_scheduler.autonomy_tick(settings, store, queue)
+    assert result["status"] == "product_queued"
+    assert queue.jobs == ["job-1"]
+
+@pytest.mark.asyncio
+async def test_review_required_backlog_has_a_separate_limit():
+    settings = Settings(
+        autonomy_enabled=True,
+        ai_provider="gemini",
+        gemini_api_key="test-key",
+        autonomy_max_active_products=5,
+        autonomy_max_ready_to_publish=2,
+        autonomy_max_review_required_products=3,
+    )
+    store = FakeStore([{"id": f"p-{i}", "status": "review_required"} for i in range(4)])
+    queue = FakeQueue()
+    result = await autonomy_scheduler.autonomy_tick(settings, store, queue)
+    assert result == {"status": "review_backlog_full", "review_required": 4}
+    assert store.created == []
+    assert queue.jobs == []
