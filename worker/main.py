@@ -271,8 +271,8 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         writer_prompt = (
             f"Using this strategy, write the ebook for topic '{topic}'. "
             f"Strategy: {json.dumps(strategy_data, ensure_ascii=False)}\n"
-            "Write a complete, practical ebook of at least 3,500 words, with 8 to 10 chapters. "
-            "Each chapter must contain at least 300 substantive words; introduction and conclusion at least 200 words each. "
+            "Write a complete, practical ebook targeting at least 4,000 words, with 8 to 10 chapters. "
+            "Each chapter must contain at least 350 substantive words; introduction and conclusion at least 250 words each. "
             "Include concrete examples, step-by-step procedures, checklists, templates and original explanations; do not pad or repeat. "
             "Create at least four original, topic-specific illustration briefs, each with title, description, caption, alt_text, chapter_index and 3-4 practical steps. "
             "Return valid JSON with keys: introduction, chapters (array of objects with title and content), conclusion, illustrations."
