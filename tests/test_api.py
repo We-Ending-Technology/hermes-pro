@@ -72,7 +72,7 @@ def test_unicode_api_key_header_returns_401_not_internal_server_error():
     with TestClient(app) as client:
         response = client.get(
             "/api/v1/dashboard",
-            headers={"X-Hermes-API-Key": "chave-ação-inválida"},
+            headers=[(b"X-Hermes-API-Key", b"chave-\xff-invalida")],
         )
     assert response.status_code == 401
     assert response.json()["detail"] == "Acesso privado: chave inválida ou ausente."
