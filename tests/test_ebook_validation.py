@@ -1,38 +1,107 @@
+import pytest
+from pydantic import ValidationError
+
+from backend.app.schemas_ext import (
+    KiwifyPublicationRequest,
+    is_kiwify_publishable_product,
+)
+from backend.app.services.artifacts import build_artifacts, validate_artifacts
 from backend.app.services.ebook_validation import validate_ebook
-from backend.app.schemas_ext import is_kiwify_publishable_product
+
 
 def _valid_content():
-    paragraph = " ".join(["conteudo original pratico com exemplo e explicacao detalhada"] * 40)
+    paragraph = " ".join(["conteudo original pratico com exemplo e explicacao detalhada"] * 60)
+    illustrations = [
+        {
+            "title": f"Fluxo visual {index}",
+            "description": f"Diagrama específico do tema que explica a etapa {index} e sua aplicação prática.",
+            "caption": f"Etapa {index}: aplicação prática.",
+            "alt_text": f"Infográfico com quatro etapas do processo {index}.",
+            "chapter_index": index - 1,
+            "steps": [
+                "Identifique o objetivo e o contexto",
+                "Organize os recursos e as prioridades",
+                "Execute a atividade com método",
+                "Revise os resultados e faça ajustes",
+            ],
+        }
+        for index in range(1, 5)
+    ]
     return {
         "introduction": paragraph,
-        "chapters": [{"title": f"Capitulo {index}", "content": paragraph} for index in range(1, 6)],
+        "chapters": [
+            {"title": f"Capítulo {index}", "content": paragraph}
+            for index in range(1, 9)
+        ],
         "conclusion": paragraph,
+        "illustrations": illustrations,
     }
 
-def test_complete_ebook_passes_deterministic_gate():
+
+def test_complete_ebook_passes_commercial_content_gate():
     result = validate_ebook(_valid_content())
     assert result["approved"] is True
-    assert result["word_count"] >= 1800
-    assert result["chapter_count"] == 5
+    assert result["word_count"] >= 3500
+    assert result["chapter_count"] >= 8
+    assert result["illustration_count"] == 4
+    assert result["required_standard"]["minimum_pages"] == 10
+
 
 def test_short_ebook_is_rejected_even_if_ai_reviewer_would_approve():
-    short = {"introduction": "texto curto", "chapters": [{"title": "Capitulo", "content": "poucas palavras"}], "conclusion": "fim"}
+    short = {
+        "introduction": "texto curto",
+        "chapters": [{"title": "Capítulo", "content": "poucas palavras"}],
+        "conclusion": "fim",
+        "illustrations": [],
+    }
     result = validate_ebook(short)
     assert result["approved"] is False
     assert result["score"] < 80
     assert any("Conteúdo insuficiente" in finding for finding in result["findings"])
+    assert any("Ilustrações insuficientes" in finding for finding in result["findings"])
 
-def test_checkout_requires_quality_gate_and_all_artifacts():
+
+def test_missing_internal_illustrations_block_approval():
+    content = _valid_content()
+    content["illustrations"] = content["illustrations"][:2]
+    result = validate_ebook(content)
+    assert result["approved"] is False
+    assert result["illustration_count"] == 2
+    assert any("Ilustrações insuficientes" in finding for finding in result["findings"])
+
+
+def test_artifact_pipeline_embeds_four_illustrations_and_reaches_ten_pages():
+    content = _valid_content()
+    artifacts = build_artifacts("Guia de Teste", "Manual ilustrado", __import__("json").dumps(content, ensure_ascii=False))
+    gate = validate_artifacts(artifacts)
+    assert gate["approved"] is True, gate["findings"]
+    assert gate["page_count"] >= 10
+    assert gate["illustration_count"] >= 4
+    assert gate["pdf_image_count"] >= 5
+    assert gate["docx_image_count"] >= 5
+
+
+def test_publication_requires_content_and_artifact_quality_gate():
     product = {
         "status": "ready_to_publish",
         "metadata": {
             "artifact_status": "ready",
             "quality_score": 95,
-            "quality_gate": {"approved": True},
-            "artifacts": {"pdf": "https://storage/pdf", "docx": "https://storage/docx", "cover": "https://storage/cover"},
+            "quality_gate": {"approved": True, "page_count": 10, "illustration_count": 4},
+            "artifacts": {
+                "pdf": "https://storage/pdf",
+                "docx": "https://storage/docx",
+                "cover": "https://storage/cover",
+            },
         },
     }
     assert is_kiwify_publishable_product(product) is True
+    product["metadata"]["quality_gate"]["page_count"] = 9
+    assert is_kiwify_publishable_product(product) is False
+    product["metadata"]["quality_gate"]["page_count"] = 10
+    product["metadata"]["quality_gate"]["illustration_count"] = 3
+    assert is_kiwify_publishable_product(product) is False
+    product["metadata"]["quality_gate"]["illustration_count"] = 4
     product["metadata"]["quality_gate"]["approved"] = False
     assert is_kiwify_publishable_product(product) is False
     product["metadata"]["quality_gate"]["approved"] = True
@@ -42,27 +111,48 @@ def test_checkout_requires_quality_gate_and_all_artifacts():
     assert is_kiwify_publishable_product(product) is False
 
 
-import pytest
+def test_publication_request_requires_https_checkout_url():
+    request = KiwifyPublicationRequest(
+        product_id="kiwify-product-123",
+        checkout_url="https://pay.kiwify.com.br/example",
+    )
+    assert request.product_id == "kiwify-product-123"
+    assert str(request.checkout_url).startswith("https://")
+    with pytest.raises(ValidationError):
+        KiwifyPublicationRequest(checkout_url="http://example.com/checkout")
+
+
+def test_blank_kiwify_product_id_is_normalized_to_none():
+    request = KiwifyPublicationRequest(
+        product_id="   ",
+        checkout_url="https://pay.kiwify.com.br/example",
+    )
+    assert request.product_id is None
 
 
 @pytest.mark.asyncio
-async def test_short_ebook_gets_targeted_section_additions_merged(monkeypatch):
+async def test_short_ebook_expansion_adds_missing_chapters_and_illustrations(monkeypatch):
     from worker import main
 
     original = {
-        "introduction": "introducao original",
+        "introduction": "introdução original",
         "chapters": [
-            {"title": "Capitulo 1", "content": "conteudo original"},
-            {"title": "Capitulo 2", "content": "conteudo original 2"},
+            {"title": "Capítulo 1", "content": "conteúdo original"},
+            {"title": "Capítulo 2", "content": "conteúdo original 2"},
         ],
-        "conclusion": "conclusao original",
+        "conclusion": "conclusão original",
+        "illustrations": [],
     }
+    new_chapters = [
+        {"title": f"Novo capítulo {index}", "content": f"Conteúdo prático e original do capítulo {index}."}
+        for index in range(1, 7)
+    ]
     additions = {
         "introduction_addition": "Contexto adicional prático.",
-        "chapter_additions": [
-            {"index": 1, "content": "Exemplo adicional para o capítulo dois."}
-        ],
+        "chapter_additions": [{"index": 1, "content": "Exemplo adicional para o capítulo dois."}],
+        "new_chapters": new_chapters,
         "conclusion_addition": "Próximas ações e síntese final.",
+        "illustrations": _valid_content()["illustrations"],
     }
     gate_calls = []
 
@@ -72,17 +162,28 @@ async def test_short_ebook_gets_targeted_section_additions_merged(monkeypatch):
             return {
                 "approved": False,
                 "score": 60,
-                "findings": ["Conclusão curta."],
+                "word_count": 700,
+                "chapter_count": 2,
+                "illustration_count": 0,
+                "findings": ["Conteúdo insuficiente."],
                 "introduction_words": 100,
                 "conclusion_words": 100,
                 "chapter_word_counts": [
-                    {"title": "Capitulo 1", "words": 250},
-                    {"title": "Capitulo 2", "words": 120},
+                    {"title": "Capítulo 1", "words": 250},
+                    {"title": "Capítulo 2", "words": 120},
                 ],
             }
-        return {"approved": True, "score": 100, "word_count": 2000, "findings": []}
+        return {
+            "approved": True,
+            "score": 100,
+            "word_count": 3600,
+            "chapter_count": 8,
+            "illustration_count": 4,
+            "findings": [],
+        }
 
     captured = {}
+
     async def fake_complete_json_response(gateway, prompt, system, *, label, fallback=None):
         captured["prompt"] = prompt
         captured["label"] = label
@@ -99,10 +200,12 @@ async def test_short_ebook_gets_targeted_section_additions_merged(monkeypatch):
     assert gate["approved"] is True
     assert "Contexto adicional prático." in revised["introduction"]
     assert "Exemplo adicional para o capítulo dois." in revised["chapters"][1]["content"]
-    assert revised["chapters"][0]["content"] == "conteudo original"
+    assert len(revised["chapters"]) == 8
+    assert len(revised["illustrations"]) == 4
     assert "Próximas ações" in revised["conclusion"]
     assert captured["label"] == "writer_revision"
-    assert "chapter_additions" in captured["prompt"]
+    assert "new_chapters" in captured["prompt"]
+    assert "illustrations" in captured["prompt"]
 
 
 @pytest.mark.asyncio
@@ -111,10 +214,11 @@ async def test_ebook_that_already_passes_skips_expansion(monkeypatch):
 
     valid = _valid_content()
     monkeypatch.setattr(main, "validate_ebook", lambda _content: {"approved": True, "score": 100})
+
     async def unexpected(*args, **kwargs):
         pytest.fail("expansion must not run for a valid ebook")
-    monkeypatch.setattr(main, "complete_json_response", unexpected)
 
+    monkeypatch.setattr(main, "complete_json_response", unexpected)
     response, data, gate = await main.revise_ebook_if_needed(
         object(), "Tema", "writer-response", valid
     )
@@ -133,16 +237,26 @@ async def test_invalid_revision_keeps_original_manuscript(monkeypatch):
         "conclusion": "conclusão original",
     }
     calls = []
+
     def fake_validate(content):
         calls.append(content)
-        return {"approved": False, "score": 50 if len(calls) == 1 else 40,
-                "introduction_words": 0, "conclusion_words": 0,
-                "chapter_word_counts": []}
+        return {
+            "approved": False,
+            "score": 50 if len(calls) == 1 else 40,
+            "word_count": 20,
+            "chapter_count": 1,
+            "illustration_count": 0,
+            "introduction_words": 0,
+            "conclusion_words": 0,
+            "chapter_word_counts": [],
+            "findings": ["insuficiente"],
+        }
+
     async def fake_complete_json_response(*args, **kwargs):
         return ("bad-revision", {"unexpected": "schema"})
+
     monkeypatch.setattr(main, "validate_ebook", fake_validate)
     monkeypatch.setattr(main, "complete_json_response", fake_complete_json_response)
-
     response, data, gate = await main.revise_ebook_if_needed(
         object(), "Tema", "original-response", original
     )

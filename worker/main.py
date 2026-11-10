@@ -9,10 +9,19 @@ from backend.app.ai_gateway.factory import build_ai_gateway
 from backend.app.core.config import get_settings
 from backend.app.db.supabase import SupabaseREST
 from backend.app.queue import JobQueue
-from backend.app.services.artifacts import build_artifacts
-from backend.app.services.ebook_validation import validate_ebook
+from backend.app.services.artifacts import build_artifacts, validate_artifacts
+from backend.app.services.ebook_validation import (
+    MIN_CHAPTERS,
+    MIN_CHAPTER_WORDS,
+    MIN_CONCLUSION_WORDS,
+    MIN_ILLUSTRATIONS,
+    MIN_INTRODUCTION_WORDS,
+    MIN_TOTAL_WORDS,
+    validate_ebook,
+)
 from backend.app.services.persistence import PersistentStore
 from backend.app.services.storage import SupabaseStorage
+from backend.app.services.telegram import TelegramNotifier
 from worker.agent_jobs import process_agent
 from worker.autonomy_scheduler import autonomy_tick, supervision_tick
 from worker.json_utils import build_review_excerpt, is_ebook_payload, parse_json_object
@@ -22,6 +31,16 @@ logger = logging.getLogger("hermes.worker")
 MAX_ATTEMPTS = 3
 RECOVERY_INTERVAL_SECONDS = 300
 ARTIFACT_BUCKETS = {"cover": "covers", "docx": "exports", "pdf": "ebooks"}
+
+
+async def notify_owner(settings: Any, message: str) -> None:
+    """Send operational alerts when Telegram credentials are configured."""
+    try:
+        sent = await TelegramNotifier(settings).send(message)
+        if not sent:
+            logger.debug("Telegram notification skipped: integration is not configured")
+    except Exception:
+        logger.exception("Telegram notification failed")
 
 
 async def complete_json_response(
@@ -64,36 +83,44 @@ async def complete_json_response(
 
 
 async def revise_ebook_if_needed(gateway: Any, topic: str, writer_response: Any, writer_data: dict):
-    """Expand only underlength sections and merge them into the original manuscript."""
+    """Expand the manuscript until the commercial content and illustration gates pass."""
     initial_gate = validate_ebook(writer_data)
     if initial_gate["approved"]:
         return writer_response, writer_data, initial_gate
 
     chapter_counts = initial_gate.get("chapter_word_counts") or []
     needs = []
-    if int(initial_gate.get("introduction_words", 0)) < 180:
-        needs.append({"section": "introduction", "target_words": 190})
+    if int(initial_gate.get("word_count", 0)) < MIN_TOTAL_WORDS:
+        needs.append({"section": "overall_content", "target_total_words": MIN_TOTAL_WORDS + 400})
+    if int(initial_gate.get("introduction_words", 0)) < MIN_INTRODUCTION_WORDS:
+        needs.append({"section": "introduction", "target_words": 260})
     for index, item in enumerate(chapter_counts):
-        if int(item.get("words", 0)) < 230:
+        if int(item.get("words", 0)) < MIN_CHAPTER_WORDS:
             needs.append({
                 "section": "chapter",
                 "index": index,
                 "title": item.get("title", f"Capítulo {index + 1}"),
-                "target_words": 240,
+                "target_words": 400,
             })
-    if int(initial_gate.get("conclusion_words", 0)) < 180:
-        needs.append({"section": "conclusion", "target_words": 190})
-
-    if not needs:
-        return writer_response, writer_data, initial_gate
+    missing_chapters = max(0, MIN_CHAPTERS - len(chapter_counts))
+    if missing_chapters:
+        needs.append({"section": "new_chapters", "count": missing_chapters, "target_words_each": 400})
+    if int(initial_gate.get("conclusion_words", 0)) < MIN_CONCLUSION_WORDS:
+        needs.append({"section": "conclusion", "target_words": 260})
+    if int(initial_gate.get("illustration_count", 0)) < MIN_ILLUSTRATIONS:
+        needs.append({"section": "illustrations", "count": MIN_ILLUSTRATIONS})
 
     prompt = (
         f"Amplie o ebook sobre '{topic}' sem reescrever o manuscrito inteiro. "
         "Retorne SOMENTE JSON válido com as chaves: introduction_addition (string), "
-        "chapter_additions (array de objetos {index, content}), conclusion_addition (string). "
-        "Crie um complemento substantivo para cada seção solicitada, com exemplos, passos e explicações. "
-        "Não repita o texto existente. Para capítulos, use exatamente o índice informado. "
-        "Se uma seção não foi solicitada, devolva string vazia ou array vazio.\n"
+        "chapter_additions (array de objetos {index, content}), new_chapters "
+        "(array de objetos {title, content}), conclusion_addition (string) e illustrations "
+        "(array de objetos {title, description, caption, alt_text, chapter_index, steps}). "
+        "Crie complementos substantivos com exemplos, passos, checklists e explicações; "
+        "não repita o texto existente. Complete pelo menos 8 capítulos e 3.500 palavras no total. "
+        "As quatro ilustrações devem ser briefs específicos do tema, com 3 ou 4 etapas em steps; "
+        "elas serão renderizadas como infográficos originais dentro do PDF e DOCX. "
+        "Não invente fontes, estatísticas ou resultados de mercado. "
         f"SEÇÕES QUE PRECISAM DE EXPANSÃO: {json.dumps(needs, ensure_ascii=False)}\n"
         f"MANUSCRITO ATUAL: {json.dumps(writer_data, ensure_ascii=False)}"
     )
@@ -129,11 +156,44 @@ async def revise_ebook_if_needed(gateway: Any, topic: str, writer_response: Any,
                     existing = str(chapters[index].get("content", "")).rstrip()
                     chapters[index]["content"] = (existing + "\n\n" + addition.strip()).strip()
 
+    new_chapters = additions.get("new_chapters")
+    if isinstance(new_chapters, list):
+        chapters = merged.setdefault("chapters", [])
+        existing_titles = {
+            str(chapter.get("title") or "").strip().casefold()
+            for chapter in chapters if isinstance(chapter, dict)
+        }
+        for chapter in new_chapters:
+            if len(chapters) >= MIN_CHAPTERS:
+                break
+            if not isinstance(chapter, dict):
+                continue
+            title_value = str(chapter.get("title") or "").strip()
+            content_value = str(chapter.get("content") or "").strip()
+            if not title_value or not content_value or title_value.casefold() in existing_titles:
+                continue
+            chapters.append({"title": title_value, "content": content_value})
+            existing_titles.add(title_value.casefold())
+
+    def valid_brief(item: Any) -> bool:
+        return isinstance(item, dict) and all(
+            isinstance(item.get(key), str) and item[key].strip()
+            for key in ("title", "description", "caption", "alt_text")
+        )
+
+    existing_illustrations = [
+        item for item in merged.get("illustrations", [])
+        if valid_brief(item)
+    ] if isinstance(merged.get("illustrations"), list) else []
+    new_illustrations = additions.get("illustrations")
+    if isinstance(new_illustrations, list):
+        existing_illustrations.extend(item for item in new_illustrations if valid_brief(item))
+    merged["illustrations"] = existing_illustrations[:MIN_ILLUSTRATIONS]
+
     revised_gate = validate_ebook(merged)
     if revised_gate["approved"] or int(revised_gate.get("score", 0)) > int(initial_gate.get("score", 0)):
         return revision_response, merged, revised_gate
     return writer_response, writer_data, initial_gate
-
 
 async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) -> None:
     job = await store.get_job(job_id)
@@ -158,11 +218,11 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             return True
         return False
 
+    settings = get_settings()
     try:
         if await checkpoint():
             return
         await store.update_job(job_id, "running", attempts=attempts, error_message=None)
-        settings = get_settings()
         gateway = build_ai_gateway(settings)
         await store.update_product(product_id, status="generating", current_stage="topic")
 
@@ -184,11 +244,11 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         writer_prompt = (
             f"Using this strategy, write the ebook for topic '{topic}'. "
             f"Strategy: {json.dumps(strategy_data, ensure_ascii=False)}\n"
-            "Write a complete, practical ebook of at least 1,800 words, with 5 to 8 chapters. "
-            "Each chapter must contain at least 200 substantive words; introduction and conclusion at least 150 words each. "
-            "Include concrete examples, steps, checklists and original explanations; do not pad or repeat. "
-            "Return valid JSON with keys: introduction, chapters "
-            "(array of objects with title and content), conclusion."
+            "Write a complete, practical ebook of at least 3,500 words, with 8 to 10 chapters. "
+            "Each chapter must contain at least 300 substantive words; introduction and conclusion at least 200 words each. "
+            "Include concrete examples, step-by-step procedures, checklists, templates and original explanations; do not pad or repeat. "
+            "Create at least four original, topic-specific illustration briefs, each with title, description, caption, alt_text, chapter_index and 3-4 practical steps. "
+            "Return valid JSON with keys: introduction, chapters (array of objects with title and content), conclusion, illustrations."
         )
         writer, writer_data = await complete_json_response(
             gateway,
@@ -209,12 +269,13 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         await store.update_product(product_id, current_stage="reviewer")
         review_sample = build_review_excerpt(writer_data)
         review_prompt = (
-            f"Review this proposed ebook for topic '{topic}'. Assess factual accuracy, "
-            "structure, completeness and readability. Return valid JSON with keys: "
-            "score (integer 0-100), findings (array of strings), approved (boolean). "
-            "Approval requires score >= 80. Do not infer market demand.\n"
+            f"Review this proposed ebook for topic '{topic}'. Assess factual accuracy, structure, depth, completeness, readability and whether its illustration briefs are useful and specific. "
+            "The commercial gate requires at least 3,500 words, 8 chapters, 4 internal illustrations, and a final PDF of at least 10 pages. "
+            "Return valid JSON with keys: score (integer 0-100), findings (array of strings), approved (boolean). "
+            "Do not approve superficial, repetitive or unsupported content. Do not infer market demand.\n"
             f"STRATEGY: {json.dumps(strategy_data, ensure_ascii=False)[:3500]}\n"
-            f"REPRESENTATIVE EBOOK EXCERPTS: {review_sample}"
+            f"REPRESENTATIVE EBOOK EXCERPTS: {review_sample}\n"
+            f"ILLUSTRATION BRIEFS: {json.dumps(writer_data.get('illustrations', []), ensure_ascii=False)[:2500]}"
         )
         _, review_data = await complete_json_response(
             gateway,
@@ -261,10 +322,15 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             await store.update_product(product_id, status="review_required", current_stage="reviewer", title=title, metadata=metadata)
             await store.update_job(job_id, "completed", attempts=attempts)
             logger.info("product requires review job=%s product=%s score=%s words=%s", job_id, product_id, combined_score, content_gate["word_count"])
+            pending = "; ".join(content_gate.get("findings") or []) or "revisão editorial"
+            await notify_owner(settings, f"Hermes Pro: produto bloqueado para revisão. Tema: {topic}. Palavras: {content_gate['word_count']}. Pendências: {pending}.")
             return
 
         await store.update_product(product_id, status="generating_artifacts", current_stage="studio", title=title, metadata=metadata)
         artifacts = build_artifacts(title or topic, subtitle, json.dumps(writer_data, ensure_ascii=False))
+        artifact_gate = validate_artifacts(artifacts)
+        if not artifact_gate["approved"]:
+            raise RuntimeError("artifact quality gate failed: " + "; ".join(artifact_gate.get("findings") or []))
         expected_signatures = {"cover": bytes.fromhex("89504e470d0a1a0a"), "docx": bytes.fromhex("504b0304"), "pdf": b"%PDF-"}
         if set(artifacts) != set(expected_signatures):
             raise RuntimeError("artifact set is incomplete; expected cover, docx and pdf")
@@ -286,18 +352,24 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             raise RuntimeError("not all required ebook artifacts were uploaded")
         metadata["artifacts"] = artifact_urls
         metadata["artifact_status"] = "ready"
-        metadata["quality_gate"] = {**content_gate, "approved": True, "ai_review_approved": True}
+        metadata["quality_gate"] = {**content_gate, **artifact_gate, "approved": True, "ai_review_approved": True}
+        metadata["artifact_validation"] = artifact_gate
         await store.update_product(product_id, status="ready_to_publish", current_stage="studio", metadata=metadata)
         await store.update_job(job_id, "completed", attempts=attempts)
-        logger.info("completed product_generation job=%s product=%s artifacts=%s", job_id, product_id, list(artifact_urls))
+        logger.info("completed product_generation job=%s product=%s artifacts=%s pages=%s illustrations=%s", job_id, product_id, list(artifact_urls), artifact_gate["page_count"], artifact_gate["illustration_count"])
+        await notify_owner(settings, f"Hermes Pro: ebook pronto para publicação (ainda não publicado). Produto: {title or topic}. {content_gate['word_count']} palavras, {artifact_gate['page_count']} páginas, {artifact_gate['illustration_count']} ilustrações.")
     except Exception as exc:
         message = str(exc)[:1000]
         if attempts < MAX_ATTEMPTS:
             await store.update_job(job_id, "retrying", attempts=attempts, error_message=message)
+            delay = min(60, 5 * (2 ** (attempts - 1)))
+            logger.warning("product retry scheduled job=%s attempt=%s delay_seconds=%s", job_id, attempts, delay)
+            await asyncio.sleep(delay)
             await queue.enqueue(job_id)
         else:
             await store.update_job(job_id, "failed", attempts=attempts, error_message=message)
             await store.update_product(product_id, status="failed")
+            await notify_owner(settings, f"Hermes Pro: falha definitiva na geração do produto {topic}. Tentativas: {attempts}. Erro: {message[:300]}")
         logger.exception("product_generation failed job=%s", job_id)
 
 
