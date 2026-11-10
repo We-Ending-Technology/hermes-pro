@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     autonomy_enabled: bool = Field(default=False, validation_alias="AUTONOMY_ENABLED")
     embedded_worker_enabled: bool = Field(default=False, validation_alias="EMBEDDED_WORKER_ENABLED")
     autonomy_interval_seconds: int = Field(default=900, validation_alias="AUTONOMY_INTERVAL_SECONDS")
+    autonomy_agent_interval_seconds: int = Field(default=3600, validation_alias="AUTONOMY_AGENT_INTERVAL_SECONDS")
     autonomy_max_daily_products: int = Field(default=3, ge=0, le=100, validation_alias="AUTONOMY_MAX_DAILY_PRODUCTS")
     autonomy_max_active_products: int = Field(default=1, ge=1, le=20, validation_alias="AUTONOMY_MAX_ACTIVE_PRODUCTS")
     autonomy_max_ready_to_publish: int = Field(default=3, ge=0, le=100, validation_alias="AUTONOMY_MAX_READY_TO_PUBLISH")
@@ -45,6 +46,13 @@ class Settings(BaseSettings):
     def validate_autonomy_interval(cls, value: int) -> int:
         if value < 60:
             raise ValueError("AUTONOMY_INTERVAL_SECONDS must be at least 60")
+        return value
+
+    @field_validator("autonomy_agent_interval_seconds")
+    @classmethod
+    def validate_autonomy_agent_interval(cls, value: int) -> int:
+        if value < 300:
+            raise ValueError("AUTONOMY_AGENT_INTERVAL_SECONDS must be at least 300")
         return value
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
