@@ -285,7 +285,7 @@ function SalesView({ data, load }) {
     <Button primary onClick={load}>Atualizar vendas</Button>
     {data ? <>
       <div className="metric-grid">
-        <Metric label="Receita líquida" value={money(data.revenue)} />
+        <Metric label="Faturamento (BRL)" value={money(data.revenue)} />
         <Metric label="Pedidos líquidos" value={data.orders ?? "—"} />
         <Metric label="Ticket médio" value={money(data.ticket)} />
         <Metric label="Status" value={data.status || "—"} />

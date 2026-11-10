@@ -48,8 +48,16 @@ class SalesService:
                 "message": f"Falha ao consultar vendas reais: {exc}",
             }
 
-        approved = [r for r in rows if str(r.get("event_type", "")).upper() in APPROVED_EVENTS]
-        reversals = [r for r in rows if str(r.get("event_type", "")).upper() in REVERSAL_EVENTS]
+        # Never add USD/EUR/etc. into a BRL total. Unknown currencies are
+        # excluded too, rather than silently assuming they are BRL.
+        brl_rows = [r for r in rows if str(r.get("currency") or "").upper() == "BRL"]
+        excluded_currencies = sorted({
+            str(r.get("currency") or "SEM_MOEDA").upper()
+            for r in rows
+            if str(r.get("currency") or "").upper() != "BRL"
+        })
+        approved = [r for r in brl_rows if str(r.get("event_type", "")).upper() in APPROVED_EVENTS]
+        reversals = [r for r in brl_rows if str(r.get("event_type", "")).upper() in REVERSAL_EVENTS]
         revenue = sum(float(r.get("amount") or 0) for r in approved) - sum(
             float(r.get("amount") or 0) for r in reversals
         )
@@ -62,7 +70,11 @@ class SalesService:
             "orders": orders,
             "ticket": round(ticket, 2),
             "status": "ok",
-            "message": "Vendas aprovadas e estornos recebidos por webhook Hotmart/Kiwify.",
+            "message": (
+                "Faturamento bruto em BRL, antes de taxas, comissões, impostos e custos de aquisição. "
+                "Não é lucro."
+                + (f" Moedas excluídas deste total: {', '.join(excluded_currencies)}." if excluded_currencies else "")
+            ),
         }
 
 
