@@ -83,97 +83,22 @@ async def complete_json_response(
 
 
 async def revise_ebook_if_needed(gateway: Any, topic: str, writer_response: Any, writer_data: dict):
-    """Expand the manuscript until the commercial content and illustration gates pass."""
-    initial_gate = validate_ebook(writer_data)
-    if initial_gate["approved"]:
-        return writer_response, writer_data, initial_gate
+    """Run up to two targeted editorial passes; never approve content that misses deterministic gates."""
+    best_response = writer_response
+    best_data = json.loads(json.dumps(writer_data, ensure_ascii=False))
+    best_gate = validate_ebook(best_data)
+    if best_gate["approved"]:
+        return best_response, best_data, best_gate
 
-    chapter_counts = initial_gate.get("chapter_word_counts") or []
-    needs = []
-    if int(initial_gate.get("word_count", 0)) < MIN_TOTAL_WORDS:
-        needs.append({"section": "overall_content", "target_total_words": MIN_TOTAL_WORDS + 400})
-    if int(initial_gate.get("introduction_words", 0)) < MIN_INTRODUCTION_WORDS:
-        needs.append({"section": "introduction", "target_words": 260})
-    for index, item in enumerate(chapter_counts):
-        if int(item.get("words", 0)) < MIN_CHAPTER_WORDS:
-            needs.append({
-                "section": "chapter",
-                "index": index,
-                "title": item.get("title", f"Capítulo {index + 1}"),
-                "target_words": 400,
-            })
-    missing_chapters = max(0, MIN_CHAPTERS - len(chapter_counts))
-    if missing_chapters:
-        needs.append({"section": "new_chapters", "count": missing_chapters, "target_words_each": 400})
-    if int(initial_gate.get("conclusion_words", 0)) < MIN_CONCLUSION_WORDS:
-        needs.append({"section": "conclusion", "target_words": 260})
-    if int(initial_gate.get("illustration_count", 0)) < MIN_ILLUSTRATIONS:
-        needs.append({"section": "illustrations", "count": MIN_ILLUSTRATIONS})
-
-    prompt = (
-        f"Amplie o ebook sobre '{topic}' sem reescrever o manuscrito inteiro. "
-        "Retorne SOMENTE JSON válido com as chaves: introduction_addition (string), "
-        "chapter_additions (array de objetos {index, content}), new_chapters "
-        "(array de objetos {title, content}), conclusion_addition (string) e illustrations "
-        "(array de objetos {title, description, caption, alt_text, chapter_index, steps}). "
-        "Crie complementos substantivos com exemplos, passos, checklists e explicações; "
-        "não repita o texto existente. Complete pelo menos 8 capítulos e 3.500 palavras no total. "
-        "As quatro ilustrações devem ser briefs específicos do tema, com 3 ou 4 etapas em steps; "
-        "elas serão renderizadas como infográficos originais dentro do PDF e DOCX. "
-        "Não invente fontes, estatísticas ou resultados de mercado. "
-        f"SEÇÕES QUE PRECISAM DE EXPANSÃO: {json.dumps(needs, ensure_ascii=False)}\n"
-        f"MANUSCRITO ATUAL: {json.dumps(writer_data, ensure_ascii=False)}"
-    )
-    revision_response, additions = await complete_json_response(
-        gateway,
-        prompt,
-        "Você é editor técnico. Retorne apenas o JSON de complementos solicitado, sem markdown e sem envolver o JSON em cercas de código.",
-        label="writer_revision",
-    )
-
-    if not isinstance(additions, dict):
-        return writer_response, writer_data, initial_gate
-
-    merged = json.loads(json.dumps(writer_data, ensure_ascii=False))
-    intro_addition = additions.get("introduction_addition")
-    if isinstance(intro_addition, str) and intro_addition.strip():
-        merged["introduction"] = (str(merged.get("introduction", "")).rstrip() + "\n\n" + intro_addition.strip()).strip()
-
-    conclusion_addition = additions.get("conclusion_addition")
-    if isinstance(conclusion_addition, str) and conclusion_addition.strip():
-        merged["conclusion"] = (str(merged.get("conclusion", "")).rstrip() + "\n\n" + conclusion_addition.strip()).strip()
-
-    chapter_additions = additions.get("chapter_additions")
-    if isinstance(chapter_additions, list):
-        chapters = merged.get("chapters")
-        if isinstance(chapters, list):
-            for item in chapter_additions:
-                if not isinstance(item, dict):
-                    continue
-                index = item.get("index")
-                addition = item.get("content")
-                if isinstance(index, int) and 0 <= index < len(chapters) and isinstance(addition, str) and addition.strip():
-                    existing = str(chapters[index].get("content", "")).rstrip()
-                    chapters[index]["content"] = (existing + "\n\n" + addition.strip()).strip()
-
-    new_chapters = additions.get("new_chapters")
-    if isinstance(new_chapters, list):
-        chapters = merged.setdefault("chapters", [])
-        existing_titles = {
-            str(chapter.get("title") or "").strip().casefold()
-            for chapter in chapters if isinstance(chapter, dict)
-        }
-        for chapter in new_chapters:
-            if len(chapters) >= MIN_CHAPTERS:
-                break
-            if not isinstance(chapter, dict):
-                continue
-            title_value = str(chapter.get("title") or "").strip()
-            content_value = str(chapter.get("content") or "").strip()
-            if not title_value or not content_value or title_value.casefold() in existing_titles:
-                continue
-            chapters.append({"title": title_value, "content": content_value})
-            existing_titles.add(title_value.casefold())
+    def gate_key(gate: dict) -> tuple:
+        return (
+            bool(gate.get("approved")),
+            int(gate.get("score", 0)),
+            -len(gate.get("findings") or []),
+            int(gate.get("word_count", 0)),
+            int(gate.get("chapter_count", 0)),
+            int(gate.get("illustration_count", 0)),
+        )
 
     def valid_brief(item: Any) -> bool:
         return isinstance(item, dict) and all(
@@ -181,19 +106,121 @@ async def revise_ebook_if_needed(gateway: Any, topic: str, writer_response: Any,
             for key in ("title", "description", "caption", "alt_text")
         )
 
-    existing_illustrations = [
-        item for item in merged.get("illustrations", [])
-        if valid_brief(item)
-    ] if isinstance(merged.get("illustrations"), list) else []
-    new_illustrations = additions.get("illustrations")
-    if isinstance(new_illustrations, list):
-        existing_illustrations.extend(item for item in new_illustrations if valid_brief(item))
-    merged["illustrations"] = existing_illustrations[:MIN_ILLUSTRATIONS]
+    for round_index in range(2):
+        chapter_counts = best_gate.get("chapter_word_counts") or []
+        needs = []
+        if int(best_gate.get("word_count", 0)) < MIN_TOTAL_WORDS:
+            needs.append({"section": "overall_content", "target_total_words": MIN_TOTAL_WORDS + 500})
+        if int(best_gate.get("introduction_words", 0)) < MIN_INTRODUCTION_WORDS:
+            needs.append({"section": "introduction", "target_words": 260})
+        for index, item in enumerate(chapter_counts):
+            current_words = int(item.get("words", 0))
+            if current_words < MIN_CHAPTER_WORDS:
+                needs.append({
+                    "section": "chapter",
+                    "index": index,
+                    "title": item.get("title", f"Capítulo {index + 1}"),
+                    "current_words": current_words,
+                    "target_final_words": 380,
+                    "minimum_addition_words": max(120, 380 - current_words),
+                })
+        missing_chapters = max(0, MIN_CHAPTERS - len(chapter_counts))
+        if missing_chapters:
+            needs.append({"section": "new_chapters", "count": missing_chapters, "target_words_each": 400})
+        if int(best_gate.get("conclusion_words", 0)) < MIN_CONCLUSION_WORDS:
+            needs.append({"section": "conclusion", "target_words": 260})
+        if int(best_gate.get("illustration_count", 0)) < MIN_ILLUSTRATIONS:
+            needs.append({"section": "illustrations", "count": MIN_ILLUSTRATIONS})
 
-    revised_gate = validate_ebook(merged)
-    if revised_gate["approved"] or int(revised_gate.get("score", 0)) > int(initial_gate.get("score", 0)):
-        return revision_response, merged, revised_gate
-    return writer_response, writer_data, initial_gate
+        prompt = (
+            f"Rodada editorial {round_index + 1} para o ebook sobre '{topic}'. "
+            "Amplie o manuscrito sem reescrever, resumir ou remover conteúdo existente. "
+            "Retorne SOMENTE JSON válido com as chaves: introduction_addition (string), "
+            "chapter_additions (array de objetos {index, content}), new_chapters "
+            "(array de objetos {title, content}), conclusion_addition (string) e illustrations "
+            "(array de objetos {title, description, caption, alt_text, chapter_index, steps}). "
+            "REGRA CRÍTICA: cada capítulo listado em needs deve terminar com pelo menos 380 palavras. "
+            "A adição de cada capítulo deve conter, no mínimo, o número de palavras indicado em minimum_addition_words; "
+            "não devolva um parágrafo curto. O manuscrito final deve ter pelo menos 4.000 palavras, "
+            "8 capítulos completos e quatro briefs de ilustração específicos do tema. "
+            "Use exemplos, procedimentos, checklists, critérios de decisão e aplicações reais. "
+            "Não invente fontes, estatísticas, pesquisas ou resultados de mercado. "
+            f"PENDÊNCIAS EXATAS: {json.dumps(needs, ensure_ascii=False)}\n"
+            f"MANUSCRITO ATUAL: {json.dumps(best_data, ensure_ascii=False)}"
+        )
+        try:
+            revision_response, additions = await complete_json_response(
+                gateway,
+                prompt,
+                "Você é editor técnico rigoroso. Retorne apenas o JSON de complementos solicitado, sem markdown e sem texto externo.",
+                label=f"writer_revision_round_{round_index + 1}",
+            )
+        except Exception as exc:
+            logger.warning("ebook revision round %s failed: %s", round_index + 1, str(exc)[:240])
+            break
+
+        if not isinstance(additions, dict):
+            continue
+
+        merged = json.loads(json.dumps(best_data, ensure_ascii=False))
+        intro_addition = additions.get("introduction_addition")
+        if isinstance(intro_addition, str) and intro_addition.strip():
+            merged["introduction"] = (str(merged.get("introduction", "")).rstrip() + "\n\n" + intro_addition.strip()).strip()
+
+        conclusion_addition = additions.get("conclusion_addition")
+        if isinstance(conclusion_addition, str) and conclusion_addition.strip():
+            merged["conclusion"] = (str(merged.get("conclusion", "")).rstrip() + "\n\n" + conclusion_addition.strip()).strip()
+
+        chapter_additions = additions.get("chapter_additions")
+        if isinstance(chapter_additions, list):
+            chapters = merged.get("chapters")
+            if isinstance(chapters, list):
+                for item in chapter_additions:
+                    if not isinstance(item, dict):
+                        continue
+                    index = item.get("index")
+                    addition = item.get("content")
+                    if isinstance(index, int) and 0 <= index < len(chapters) and isinstance(addition, str) and addition.strip():
+                        existing = str(chapters[index].get("content", "")).rstrip()
+                        chapters[index]["content"] = (existing + "\n\n" + addition.strip()).strip()
+
+        new_chapters = additions.get("new_chapters")
+        if isinstance(new_chapters, list):
+            chapters = merged.setdefault("chapters", [])
+            existing_titles = {
+                str(chapter.get("title") or "").strip().casefold()
+                for chapter in chapters if isinstance(chapter, dict)
+            }
+            for chapter in new_chapters:
+                if len(chapters) >= MIN_CHAPTERS:
+                    break
+                if not isinstance(chapter, dict):
+                    continue
+                title_value = str(chapter.get("title") or "").strip()
+                content_value = str(chapter.get("content") or "").strip()
+                if not title_value or not content_value or title_value.casefold() in existing_titles:
+                    continue
+                chapters.append({"title": title_value, "content": content_value})
+                existing_titles.add(title_value.casefold())
+
+        existing_illustrations = [
+            item for item in merged.get("illustrations", [])
+            if valid_brief(item)
+        ] if isinstance(merged.get("illustrations"), list) else []
+        new_illustrations = additions.get("illustrations")
+        if isinstance(new_illustrations, list):
+            existing_illustrations.extend(item for item in new_illustrations if valid_brief(item))
+        merged["illustrations"] = existing_illustrations[:MIN_ILLUSTRATIONS]
+
+        revised_gate = validate_ebook(merged)
+        if gate_key(revised_gate) > gate_key(best_gate):
+            best_response = revision_response
+            best_data = merged
+            best_gate = revised_gate
+        if best_gate["approved"]:
+            return best_response, best_data, best_gate
+
+    return best_response, best_data, best_gate
 
 async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) -> None:
     job = await store.get_job(job_id)
