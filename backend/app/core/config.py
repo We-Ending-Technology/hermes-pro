@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     autonomy_max_daily_products: int = Field(default=3, ge=0, le=100, validation_alias="AUTONOMY_MAX_DAILY_PRODUCTS")
     autonomy_max_active_products: int = Field(default=1, ge=1, le=20, validation_alias="AUTONOMY_MAX_ACTIVE_PRODUCTS")
     autonomy_max_ready_to_publish: int = Field(default=3, ge=0, le=100, validation_alias="AUTONOMY_MAX_READY_TO_PUBLISH")
+    autonomy_max_review_required_products: int = Field(default=3, ge=1, le=100, validation_alias="AUTONOMY_MAX_REVIEW_REQUIRED_PRODUCTS")
     gemini_api_key: str | None = Field(default=None, validation_alias="GEMINI_API_KEY")
     gemini_model: str = Field(default="gemini-3.8-flash", validation_alias="GEMINI_MODEL")
     supabase_url: str | None = Field(default=None, validation_alias="SUPABASE_URL")
