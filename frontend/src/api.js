@@ -1,4 +1,4 @@
-const DIRECT_API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-commercial.onrender.com";
+const DIRECT_API = import.meta.env?.VITE_API_URL || "https://hermes-pro-api-commercial.onrender.com";
 const PROXY_API = "";
 
 // The private API key exists only in this page's JavaScript memory.
@@ -48,7 +48,7 @@ async function request(base, path, options = {}) {
 }
 
 export async function call(path, options = {}) {
-  const bases = import.meta.env.DEV ? [DIRECT_API] : [PROXY_API, DIRECT_API].filter(Boolean);
+  const bases = import.meta.env?.DEV ? [DIRECT_API] : [PROXY_API, DIRECT_API].filter(Boolean);
   let lastError;
   for (const base of bases) {
     try { return await request(base, path, options); } catch (error) { lastError = error; }
