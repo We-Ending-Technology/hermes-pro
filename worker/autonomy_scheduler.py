@@ -49,15 +49,18 @@ def _normalise_topic(value: str) -> str:
 
 
 async def supervision_tick(settings: Settings, store: PersistentStore, queue) -> dict[str, Any]:
-    """Queue one persistent Chief review only when the system has actionable exceptions."""
+    """Queue one persistent Chief review only when actionable exceptions exist."""
     if not settings.autonomy_enabled:
         return {"status": "disabled"}
 
     jobs = await store.list_jobs()
     products = await store.list_products()
+
+    def source_of(job: dict[str, Any]) -> str:
+        return str((job.get("payload") or {}).get("source") or "")
+
     def is_supervisor_run(job: dict[str, Any]) -> bool:
-        payload = job.get("payload") or {}
-        return job.get("job_type") == "agent_run" and payload.get("source") == "autonomous_supervision"
+        return job.get("job_type") == "agent_run" and source_of(job).startswith("autonomous_supervision")
 
     def is_stale(job: dict[str, Any]) -> bool:
         try:
@@ -102,7 +105,31 @@ async def supervision_tick(settings: Settings, store: PersistentStore, queue) ->
         ],
     }
     fingerprint = hashlib.sha256(json.dumps(evidence, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:32]
-    now = datetime.now(timezone.utc).isoformat()
+    source = "autonomous_supervision:" + fingerprint
+    evidence_ids = {
+        str(item["id"])
+        for group in evidence.values()
+        for item in group
+    }
+    previous = [
+        job for job in jobs
+        if is_supervisor_run(job)
+        and (source_of(job) == source or (source_of(job) == "autonomous_supervision" and evidence_ids and evidence_ids.issubset(set(str((job.get("payload") or {}).get("instruction") or "").split()))))
+    ]
+    if previous:
+        previous.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+        latest = previous[0]
+        status = latest.get("status")
+        if status == "completed":
+            return {"status": "already_reviewed", "run_id": str(latest["id"])}
+        if status in {"pending", "running", "retrying"}:
+            return {"status": "already_queued", "run_id": str(latest["id"])}
+        if status == "failed" and not is_stale({**latest, "updated_at": latest.get("updated_at")}):
+            return {"status": "retry_cooldown", "run_id": str(latest["id"])}
+
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
+    retry_window = int(now_dt.timestamp() // (6 * 60 * 60))
     instruction = (
         "Faça uma auditoria operacional do Hermes Pro usando somente estas evidências do banco. "
         "Identifique causa provável, prioridade, ação corretiva e como validar. "
@@ -112,16 +139,22 @@ async def supervision_tick(settings: Settings, store: PersistentStore, queue) ->
     )
     job = await store.create_agent_job(
         instruction,
-        source="autonomous_supervision",
+        source=source,
         now=now,
-        idempotency_key="autonomy-chief:" + fingerprint,
+        idempotency_key="autonomy-chief:" + fingerprint + ":" + str(retry_window),
     )
     if job.get("status") in {"completed", "failed", "cancelled"}:
         return {"status": "already_reviewed", "run_id": str(job["id"])}
     await queue.enqueue_agent(str(job["id"]))
-    return {"status": "supervision_queued", "run_id": str(job["id"]), "evidence_counts": {
-        "failed_jobs": len(failed_jobs), "review_required_products": len(review_products), "queued_or_retrying_jobs": len(stale_jobs)
-    }}
+    return {
+        "status": "supervision_queued",
+        "run_id": str(job["id"]),
+        "evidence_counts": {
+            "failed_jobs": len(failed_jobs),
+            "review_required_products": len(review_products),
+            "queued_or_retrying_jobs": len(stale_jobs),
+        },
+    }
 
 async def autonomy_tick(settings: Settings, store: PersistentStore, queue) -> dict[str, Any]:
     """Create at most one new product per tick, subject to explicit capacity limits."""
