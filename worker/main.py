@@ -149,7 +149,8 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         except (TypeError, ValueError):
             score = 0
         content_gate = validate_ebook(writer_data)
-        approved = bool(review_data.get("approved")) and score >= 80 and content_gate["approved"]
+        ai_review_approved = bool(review_data.get("approved")) and score >= 80
+        approved = ai_review_approved and content_gate["approved"]
         combined_score = min(score, int(content_gate["score"]))
         review_findings = list(review_data.get("findings") or [])
         review_findings.extend(content_gate["findings"])
@@ -160,7 +161,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             "content_data": writer_data,
             "review": review_data,
             "quality_score": combined_score,
-            "quality_gate": {**content_gate, "approved": approved, "ai_review_approved": bool(review_data.get("approved")) and score >= 80},
+            "quality_gate": {**content_gate, "approved": approved, "ai_review_approved": ai_review_approved},
             "ai_provider": strategist.provider,
             "ai_model": strategist.model,
             "paused": False,
