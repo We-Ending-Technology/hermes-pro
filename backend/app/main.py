@@ -20,7 +20,7 @@ from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
 from .queue import JobQueue
 from .schemas import *
-from .schemas_ext import KiwifyPublicationRequest, ProductUpdateRequest, is_kiwify_publishable_status
+from .schemas_ext import KiwifyPublicationRequest, ProductUpdateRequest, is_kiwify_publishable_product
 from .services.analytics import analytics_service
 from .services.autonomy import AutonomyService
 from .services.integrations import integration_service
@@ -325,8 +325,11 @@ async def save_kiwify_publication(product_id: str, request: KiwifyPublicationReq
     row = await store.get_product(product_id)
     if not row:
         raise HTTPException(status_code=404, detail="product not found")
-    if not is_kiwify_publishable_status(row.get("status")):
-        raise HTTPException(status_code=409, detail="product must be ready_to_publish before linking a checkout")
+    if not is_kiwify_publishable_product(row):
+        raise HTTPException(
+            status_code=409,
+            detail="Produto bloqueado: precisa passar pelo quality gate, ter nota mínima 80 e PDF, DOCX e capa válidos antes de vincular checkout.",
+        )
 
     metadata = dict(row.get("metadata") or {})
     publications = dict(metadata.get("publications") or {})
