@@ -175,10 +175,81 @@ function Factory({ topic, setTopic, submit }) { return <Page title="Fábrica" su
 function ProductCard({ p, onClick }) { return <article className="product-card detailed" onClick={onClick}><div className="cover-placeholder"><span>H</span><small>{p.status}</small></div><div className="product-info"><span className="tag">EBOOK</span><h4>{p.title || p.topic}</h4><p>{p.topic}</p><div className="product-meta"><span>stage: {p.current_stage}</span><span>{p.metadata?.quality_score ? `${p.metadata.quality_score}/100` : "quality —"}</span></div></div></article>; }
 function Products({ items, select }) { return <Page title="Produtos" sub="Catálogo persistido no Supabase."><div className="product-grid">{items.length ? items.map(p => <ProductCard key={p.id} p={p} onClick={() => select(p)} />) : <Empty text="Nenhum produto ainda." />}</div></Page>; }
 function Jobs({ jobs, products, action }) { const productFor = j => products.find(p => p.metadata?.job_id === j.id); return <Page title="Jobs" sub="Fila real com estado e controles operacionais."><div className="job-list">{jobs.length ? jobs.map(j => { const p = productFor(j); const active = ["pending", "running", "retrying"].includes(j.status); return <article className="job" key={j.id}><div className={`job-icon ${j.status}`}>↻</div><div className="job-main"><strong>{p?.title || p?.topic || j.job_type}</strong><p>{j.error_message || `${j.job_type} • ${j.id}`}</p></div><span className={`job-status ${j.status}`}>{j.status}</span><small>{j.attempts}/{j.max_attempts}</small>{active && p && <div className="job-actions"><Button onClick={() => action(() => call(`/api/v1/products/${p.id}/pause`, { method: "POST" }), "Produção pausada.")}>Pausar</Button><Button onClick={() => action(() => call(`/api/v1/jobs/${j.id}/cancel`, { method: "POST" }), "Job cancelado.")}>Cancelar</Button></div>}{j.status === "paused" && p && <div className="job-actions"><Button primary onClick={() => action(() => call(`/api/v1/products/${p.id}/resume`, { method: "POST" }), "Produção retomada.")}>Retomar</Button></div>}</article>; }) : <Empty text="Nenhum job persistido." />}</div></Page>; }
-function Studio({ product, notify, refresh }) { const [title, setTitle] = useState(product?.title || ""); useEffect(() => setTitle(product?.title || ""), [product?.id, product?.title]); if (!product) return <Page title="Studio" sub="Selecione um produto no catálogo." />; const save = async () => { try { await call(`/api/v1/products/${product.id}`, { method: "PATCH", body: JSON.stringify({ title }) }); notify("Produto atualizado."); await refresh(); } catch (e) { notify(e.message); } }; return <Page title="Studio" sub="Edite o produto e abra os artefatos gerados."><div className="panel"><label>Título<input value={title} onChange={e => setTitle(e.target.value)} /></label><p>Status: <b>{product.status}</b> · etapa: <b>{product.current_stage}</b></p><Button primary onClick={save}>Salvar alterações</Button></div><div className="panel"><h3>Artefatos</h3>{Object.entries(product.metadata?.artifacts || {}).map(([k, v]) => <p key={k}><b>{k}:</b> <a href={v} target="_blank" rel="noreferrer">abrir arquivo</a></p>)}{!Object.keys(product.metadata?.artifacts || {}).length && <p>Os arquivos aparecerão quando o worker concluir a geração.</p>}</div></Page>; }
+function Studio({ product, notify, refresh }) {
+  const [title, setTitle] = useState(product?.title || "");
+  useEffect(() => setTitle(product?.title || ""), [product?.id, product?.title]);
+  if (!product) return <Page title="Studio" sub="Selecione um produto no catálogo." />;
+  const save = async () => {
+    try {
+      await call("/api/v1/products/" + product.id, { method: "PATCH", body: JSON.stringify({ title }) });
+      notify("Produto atualizado.");
+      await refresh();
+    } catch (e) { notify(e.message); }
+  };
+  const storedArtifacts = product.metadata?.artifacts || {};
+  const artifactEntries = Object.entries(storedArtifacts).length
+    ? Object.entries(storedArtifacts)
+    : [
+        ["PDF", product.metadata?.pdf_url],
+        ["DOCX", product.metadata?.document_url || product.metadata?.docx_url],
+        ["Capa", product.metadata?.cover_url],
+      ].filter(([, url]) => Boolean(url));
+  return <Page title="Studio" sub="Edite o produto e abra os arquivos realmente salvos no armazenamento.">
+    <div className="panel">
+      <label>Título<input value={title} onChange={e => setTitle(e.target.value)} /></label>
+      <p>Status: <b>{product.status}</b> · etapa: <b>{product.current_stage}</b></p>
+      <Button primary onClick={save}>Salvar alterações</Button>
+    </div>
+    <div className="panel">
+      <h3>Arquivos do produto</h3>
+      {artifactEntries.map(([key, value]) => <p key={key}><b>{key}:</b> <a href={value} target="_blank" rel="noreferrer">abrir arquivo ↗</a></p>)}
+      {!artifactEntries.length && <p>Os arquivos aparecerão quando o worker concluir a geração.</p>}
+    </div>
+  </Page>;
+}
 function RadarView({ data, run }) { return <Page title="Radar" sub="Análise de oportunidade sem promessa de resultado."><Button primary onClick={run}>Analisar oportunidade</Button>{data && <div className="two-col"><div className="panel"><h3>Score {data.score}/100</h3><p>Confiança {data.confidence}%</p>{Object.entries(data.dimensions || {}).map(([k, v]) => <div className="health" key={k}><span>{k}</span><strong>{v}</strong></div>)}</div><div className="panel"><h3>Findings</h3>{(data.findings || []).map(x => <p key={x}>• {x}</p>)}</div></div>}</Page>; }
-function Publish({ product, integrations }) { const hotmart = integrations.find(x => x.name?.toLowerCase().includes("hotmart")); return <Page title="Publicação" sub="Preparação comercial e sincronização do catálogo Hotmart."><div className="panel"><h3>{product?.title || product?.topic || "Nenhum produto selecionado"}</h3><p>Hotmart: <b>{hotmart?.status || "não verificada"}</b></p><p>Artefatos: <b>{Object.keys(product?.metadata?.artifacts || {}).length ? "gerados" : "pendentes"}</b></p><p>A API pública da Hotmart permite consultar/sincronizar produtos e ofertas e receber webhooks. A criação de um novo produto digital continua no painel da Hotmart; o Hermes não simula uma publicação que a API não documenta.</p></div></Page>; }
-function SalesView({ data, load }) { return <Page title="Vendas" sub="Dados vindos de eventos reais persistidos."><Button primary onClick={load}>Atualizar vendas</Button>{data ? <div className="metric-grid"><Metric label="Receita" value={data.revenue ?? 0}/><Metric label="Pedidos" value={data.orders ?? 0}/><Metric label="Aprovados" value={data.approved ?? 0}/><Metric label="Reembolsos" value={data.refunds ?? 0}/></div> : <Empty text="Clique em atualizar para consultar as vendas reais." />}</Page>; }
+function Publish({ product, integrations }) {
+  const getIntegration = name => integrations.find(x => x.name?.toLowerCase().includes(name));
+  const kiwify = getIntegration("kiwify");
+  const hotmart = getIntegration("hotmart");
+  const storedArtifacts = product?.metadata?.artifacts || {};
+  const artifactEntries = Object.entries(storedArtifacts).length
+    ? Object.entries(storedArtifacts)
+    : [
+        ["PDF", product?.metadata?.pdf_url],
+        ["DOCX", product?.metadata?.document_url || product?.metadata?.docx_url],
+        ["Capa", product?.metadata?.cover_url],
+      ].filter(([, url]) => Boolean(url));
+  const statusLabel = status => status === "connected" ? "configurado" : status || "não verificado";
+  return <Page title="Publicação" sub="Arquivos prontos, checkout e recebimento de vendas pela Kiwify.">
+    <div className="panel">
+      <h3>{product?.title || product?.topic || "Nenhum produto selecionado"}</h3>
+      <p>Kiwify — webhook: <b>{statusLabel(kiwify?.status)}</b></p>
+      <p>Hotmart — webhook: <b>{statusLabel(hotmart?.status)}</b></p>
+      <p>Arquivos disponíveis: <b>{artifactEntries.length ? "sim" : "não"}</b></p>
+      {artifactEntries.map(([key, value]) => <p key={key}><b>{key}:</b> <a href={value} target="_blank" rel="noreferrer">abrir arquivo ↗</a></p>)}
+      <p>O Hermes recebe e registra eventos de venda da Kiwify. O cadastro do produto, preço, entrega do PDF e criação do checkout precisam ser concluídos na conta Kiwify; esta tela não inventa um link de pagamento nem declara um produto publicado sem confirmação da plataforma.</p>
+    </div>
+  </Page>;
+}
+function SalesView({ data, load }) {
+  const money = value => value == null ? "—" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value));
+  return <Page title="Vendas" sub="Receita calculada a partir de eventos reais da Kiwify e Hotmart.">
+    <Button primary onClick={load}>Atualizar vendas</Button>
+    {data ? <>
+      <div className="metric-grid">
+        <Metric label="Receita líquida" value={money(data.revenue)} />
+        <Metric label="Pedidos líquidos" value={data.orders ?? "—"} />
+        <Metric label="Ticket médio" value={money(data.ticket)} />
+        <Metric label="Status" value={data.status || "—"} />
+      </div>
+      <div className="panel" style={{ marginTop: 14 }}>
+        <p>{data.message || "Sem observações."}</p>
+        {data.status === "error" && <p role="alert">A consulta falhou. Os valores não foram substituídos por estimativas.</p>}
+      </div>
+    </> : <Empty text="Clique em atualizar para consultar as vendas reais." />}
+  </Page>;
+}
 function AnalyticsView({ data, load }) { return <Page title="Analytics" sub="Insights calculados a partir dos dados persistidos."><Button primary onClick={load}>Atualizar analytics</Button>{data ? <div className="two-col"><div className="panel"><pre>{JSON.stringify(data, null, 2)}</pre></div></div> : <Empty text="Nenhuma leitura carregada." />}</Page>; }
 function ChatView({ chat, input, setInput, send }) { return <Page title="Hermes" sub="Assistente operacional conectado ao AI Gateway."><div className="panel chat-panel"><div className="chat-history">{chat.length ? chat.map((m, i) => <div className={`bubble ${m.role}`} key={i}><span>{m.role === "user" ? "Você" : "Hermes"}</span><p>{m.text}</p>{m.meta && <small>{m.meta}</small>}</div>) : <p>Envie uma instrução. Se o Gemini estiver indisponível, o erro será mostrado claramente.</p>}</div><form className="chat-form" onSubmit={send}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Fale com Hermes…"/><Button primary type="submit">Enviar ↗</Button></form></div></Page>; }
 function DiagnosticsPanel({ data }) { if (!data) return <Empty text="Diagnóstico ainda não executado." />; return <div className="panel diagnostics-grid">{data.checks.map((x, i) => <div className="diag-row" key={`${x.name}-${i}`}><i className={x.status === "online" || x.status === "ready" ? "online" : "offline"}></i><strong>{x.name}</strong><span>{x.status}</span><small>{x.message || ""}</small></div>)}</div>; }
