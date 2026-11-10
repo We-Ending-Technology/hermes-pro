@@ -55,9 +55,24 @@ async def supervision_tick(settings: Settings, store: PersistentStore, queue) ->
 
     jobs = await store.list_jobs()
     products = await store.list_products()
+    def is_supervisor_run(job: dict[str, Any]) -> bool:
+        payload = job.get("payload") or {}
+        return job.get("job_type") == "agent_run" and payload.get("source") == "autonomous_supervision"
+
+    def is_stale(job: dict[str, Any]) -> bool:
+        try:
+            updated = datetime.fromisoformat(str(job.get("updated_at")).replace("Z", "+00:00"))
+            if updated.tzinfo is None:
+                updated = updated.replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - updated.astimezone(timezone.utc)).total_seconds() >= 600
+        except (TypeError, ValueError):
+            return False
+
     failed_jobs = [
         job for job in jobs
-        if job.get("status") == "failed" and job.get("job_type") in {"product_generation", "agent_run"}
+        if job.get("status") == "failed"
+        and job.get("job_type") in {"product_generation", "agent_run"}
+        and not is_supervisor_run(job)
     ][:5]
     review_products = [
         product for product in products if product.get("status") == "review_required"
@@ -66,7 +81,8 @@ async def supervision_tick(settings: Settings, store: PersistentStore, queue) ->
         job for job in jobs
         if job.get("status") in {"pending", "retrying"}
         and job.get("job_type") in {"product_generation", "agent_run"}
-        and job.get("updated_at")
+        and not is_supervisor_run(job)
+        and is_stale(job)
     ][:5]
     if not failed_jobs and not review_products and not stale_jobs:
         return {"status": "no_actionable_findings"}
