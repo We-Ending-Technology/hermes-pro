@@ -106,12 +106,13 @@ class PersistentStore:
             "created_at": now,
             "updated_at": now,
         })
+        # hermes_agent_runs is keyed by id; keep that id equal to the queue job id.
+        # This matches the deployed Supabase schema and avoids writing nonexistent job_id/source columns.
         await self.db.insert("hermes_agent_runs", {
-            "job_id": row["id"],
+            "id": row["id"],
             "agent": "Hermes Chefe",
-            "source": source,
             "status": "pending",
-            "instruction": instruction,
+            "input": {"instruction": instruction, "source": source},
             "output": {},
             "created_at": now,
         })
