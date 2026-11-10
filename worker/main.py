@@ -15,7 +15,7 @@ from backend.app.services.persistence import PersistentStore
 from backend.app.services.storage import SupabaseStorage
 from worker.agent_jobs import process_agent
 from worker.autonomy_scheduler import autonomy_tick, supervision_tick
-from worker.json_utils import build_review_excerpt, parse_json_object
+from worker.json_utils import build_review_excerpt, is_ebook_payload, parse_json_object
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hermes.worker")
@@ -31,11 +31,18 @@ async def complete_json_response(
     *,
     label: str,
     fallback: dict | None = None,
+    validator: Any | None = None,
 ):
     """Request structured JSON, repair one malformed response, and fail closed when needed."""
     result = await gateway.complete(prompt, system=system)
+    def parse_result(response: Any) -> dict:
+        data = parse_json_object(response.content)
+        if validator is not None and not validator(data):
+            raise ValueError(f"{label} response did not match its required JSON schema")
+        return data
+
     try:
-        return result, parse_json_object(result.content)
+        return result, parse_result(result)
     except ValueError as exc:
         logger.warning("%s returned invalid JSON (%s); requesting one repair", label, str(exc)[:180])
 
@@ -47,7 +54,7 @@ async def complete_json_response(
     )
     repaired = await gateway.complete(repair_prompt, system=system)
     try:
-        return repaired, parse_json_object(repaired.content)
+        return repaired, parse_result(repaired)
     except ValueError as exc:
         if fallback is not None:
             logger.error("%s remained invalid after repair; applying fail-closed fallback", label)
@@ -188,6 +195,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             writer_prompt,
             "You are the Hermes Pro writer. Return only valid JSON. Produce original, useful educational content and do not fabricate citations.",
             label="writer",
+            validator=is_ebook_payload,
         )
         if await checkpoint():
             return
