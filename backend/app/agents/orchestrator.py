@@ -4,6 +4,7 @@ from typing import Any
 
 from ..ai_gateway.factory import build_ai_gateway
 from ..core.config import Settings
+from .specialist import SpecialistAgent
 
 
 SPECIALISTS: tuple[tuple[str, str], ...] = (
@@ -45,12 +46,9 @@ async def run_chief(input_text: str, settings: Settings) -> dict[str, Any]:
     findings: dict[str, str] = {}
 
     for name, instructions in SPECIALISTS:
-        response = await gateway.complete(
-            f"Tarefa recebida do usuário:\n{input_text}\n\n"
-            "Produza uma análise objetiva, com fatos, hipóteses, riscos e ações recomendadas.",
-            system=f"{instructions} Você integra o time Hermes Pro. Seja conciso e verificável.",
-        )
-        findings[name] = response.content
+        specialist = SpecialistAgent(name, instructions, gateway)
+        response = await specialist.run({"prompt": input_text})
+        findings[name] = response["analysis"]
 
     specialist_context = "\n\n".join(
         f"## {name}\n{content}" for name, content in findings.items()

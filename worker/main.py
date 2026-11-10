@@ -10,10 +10,11 @@ from backend.app.core.config import get_settings
 from backend.app.db.supabase import SupabaseREST
 from backend.app.queue import JobQueue
 from backend.app.services.artifacts import build_artifacts
+from backend.app.services.ebook_validation import validate_ebook
 from backend.app.services.persistence import PersistentStore
 from backend.app.services.storage import SupabaseStorage
 from worker.agent_jobs import process_agent
-from worker.autonomy_scheduler import autonomy_tick
+from worker.autonomy_scheduler import autonomy_tick, supervision_tick
 from worker.json_utils import build_review_excerpt, parse_json_object
 
 logging.basicConfig(level=logging.INFO)
@@ -103,6 +104,9 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         writer_prompt = (
             f"Using this strategy, write the ebook for topic '{topic}'. "
             f"Strategy: {json.dumps(strategy_data, ensure_ascii=False)}\n"
+            "Write a complete, practical ebook of at least 1,800 words, with 5 to 8 chapters. "
+            "Each chapter must contain at least 200 substantive words; introduction and conclusion at least 150 words each. "
+            "Include concrete examples, steps, checklists and original explanations; do not pad or repeat. "
             "Return valid JSON with keys: introduction, chapters "
             "(array of objects with title and content), conclusion."
         )
@@ -144,16 +148,25 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             score = int(review_data.get("score", 0))
         except (TypeError, ValueError):
             score = 0
-        approved = bool(review_data.get("approved")) and score >= 80
+        content_gate = validate_ebook(writer_data)
+        ai_review_approved = bool(review_data.get("approved")) and score >= 80
+        approved = ai_review_approved and content_gate["approved"]
+        combined_score = min(score, int(content_gate["score"]))
+        review_findings = list(review_data.get("findings") or [])
+        review_findings.extend(content_gate["findings"])
+        review_data = {**review_data, "approved": approved, "findings": review_findings}
         metadata = {
             "strategy": strategy_data,
             "content": writer.content,
             "content_data": writer_data,
             "review": review_data,
-            "quality_score": score,
+            "quality_score": combined_score,
+            "quality_gate": {**content_gate, "approved": approved, "ai_review_approved": ai_review_approved},
             "ai_provider": strategist.provider,
             "ai_model": strategist.model,
             "paused": False,
+            "artifact_status": "not_created",
+            "publication_status": "not_published",
         }
         title = strategy_data.get("title") if isinstance(strategy_data, dict) else None
         subtitle = strategy_data.get("subtitle", "") if isinstance(strategy_data, dict) else ""
@@ -161,11 +174,17 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         if not approved:
             await store.update_product(product_id, status="review_required", current_stage="reviewer", title=title, metadata=metadata)
             await store.update_job(job_id, "completed", attempts=attempts)
-            logger.info("product requires review job=%s product=%s score=%s", job_id, product_id, score)
+            logger.info("product requires review job=%s product=%s score=%s words=%s", job_id, product_id, combined_score, content_gate["word_count"])
             return
 
         await store.update_product(product_id, status="generating_artifacts", current_stage="studio", title=title, metadata=metadata)
-        artifacts = build_artifacts(title or topic, subtitle, writer.content)
+        artifacts = build_artifacts(title or topic, subtitle, json.dumps(writer_data, ensure_ascii=False))
+        expected_signatures = {"cover": bytes.fromhex("89504e470d0a1a0a"), "docx": bytes.fromhex("504b0304"), "pdf": b"%PDF-"}
+        if set(artifacts) != set(expected_signatures):
+            raise RuntimeError("artifact set is incomplete; expected cover, docx and pdf")
+        for kind, (_, artifact_bytes, _) in artifacts.items():
+            if not artifact_bytes.startswith(expected_signatures[kind]):
+                raise RuntimeError("artifact validation failed for " + kind)
         artifact_urls: dict[str, str] = {}
         for kind, (path, content, content_type) in artifacts.items():
             if await checkpoint():
@@ -176,8 +195,12 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             storage = SupabaseStorage(settings, bucket=bucket)
             artifact_urls[kind] = await storage.upload(f"{product_id}/{path}", content, content_type)
 
+        required_artifacts = {"cover", "docx", "pdf"}
+        if set(artifact_urls) != required_artifacts:
+            raise RuntimeError("not all required ebook artifacts were uploaded")
         metadata["artifacts"] = artifact_urls
         metadata["artifact_status"] = "ready"
+        metadata["quality_gate"] = {**content_gate, "approved": True, "ai_review_approved": True}
         await store.update_product(product_id, status="ready_to_publish", current_stage="studio", metadata=metadata)
         await store.update_job(job_id, "completed", attempts=attempts)
         logger.info("completed product_generation job=%s product=%s artifacts=%s", job_id, product_id, list(artifact_urls))
@@ -217,11 +240,16 @@ async def run() -> None:
     logger.info("Hermes Pro worker started; autonomous=%s", settings.autonomy_enabled)
     loop = asyncio.get_running_loop()
     last_autonomy_tick = 0.0
+    last_supervision_tick = 0.0
+    last_heartbeat = 0.0
     last_recovery = loop.time()
     try:
         try:
             await asyncio.wait_for(recover_pending(store, queue), timeout=60)
             logger.info("initial job recovery complete")
+            await queue.redis.ping()
+            await store.record_worker_health("ok", "worker started; Redis PING succeeded")
+            last_heartbeat = loop.time()
         except Exception:
             logger.exception("initial job recovery failed or timed out; worker will continue")
         while True:
@@ -234,6 +262,26 @@ async def run() -> None:
                 except Exception:
                     logger.exception("autonomy tick failed; worker will continue")
                 last_autonomy_tick = loop.time()
+
+            if settings.autonomy_enabled and (now - last_supervision_tick) >= settings.autonomy_agent_interval_seconds:
+                try:
+                    outcome = await asyncio.wait_for(supervision_tick(settings, store, queue), timeout=90)
+                    logger.info("autonomous chief supervision: %s", outcome)
+                except Exception:
+                    logger.exception("autonomous chief supervision failed; worker will continue")
+                last_supervision_tick = loop.time()
+
+            if (now - last_heartbeat) >= 30:
+                try:
+                    await queue.redis.ping()
+                    await store.record_worker_health("ok", "worker loop alive; Redis PING succeeded")
+                except Exception as exc:
+                    logger.exception("worker heartbeat failed")
+                    try:
+                        await store.record_worker_health("error", "worker heartbeat failed: " + str(exc)[:350])
+                    except Exception:
+                        logger.exception("could not persist worker heartbeat failure")
+                last_heartbeat = loop.time()
 
             if now - last_recovery >= RECOVERY_INTERVAL_SECONDS:
                 try:

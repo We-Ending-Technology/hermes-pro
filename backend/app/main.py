@@ -13,13 +13,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from .ai_gateway.factory import build_ai_gateway
 from .agents.diagnostic import DiagnosticAgent
 from .agents.registry import AgentRegistry
-from .agents.stubs import AGENT_NAMES, PassThroughAgent
+from .agents.orchestrator import SPECIALISTS
+from .agents.specialist import ChiefAgent, SpecialistAgent
 from .api_commercial import router as commercial_router
 from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
 from .queue import JobQueue
 from .schemas import *
-from .schemas_ext import KiwifyPublicationRequest, ProductUpdateRequest, is_kiwify_publishable_status
+from .schemas_ext import KiwifyPublicationRequest, ProductUpdateRequest, is_kiwify_publishable_product
 from .services.analytics import analytics_service
 from .services.autonomy import AutonomyService
 from .services.integrations import integration_service
@@ -57,8 +58,9 @@ async def _run_embedded_worker() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     registry.register(DiagnosticAgent(ai_gateway))
-    for agent_name in AGENT_NAMES:
-        registry.register(PassThroughAgent(agent_name))
+    registry.register(ChiefAgent(settings))
+    for agent_name, instructions in SPECIALISTS:
+        registry.register(SpecialistAgent(agent_name, instructions, ai_gateway))
 
     worker_task = None
     if settings.embedded_worker_enabled:
@@ -158,16 +160,53 @@ async def list_agents(): return {"agents": registry.names()}
 async def agents_status():
     provider = settings.ai_provider.strip().lower()
     if provider == "gemini":
-        ready = bool(settings.gemini_api_key or settings.ai_api_key)
-        blocked_reason = "blocked_missing_GEMINI_API_KEY"
+        ai_ready = bool(settings.gemini_api_key or settings.ai_api_key)
     elif provider == "openai":
-        ready = bool(settings.openai_api_key)
-        blocked_reason = "blocked_missing_OPENAI_API_KEY"
+        ai_ready = bool(settings.openai_api_key)
     else:
-        ready = False
-        blocked_reason = "blocked_non_production_AI_PROVIDER"
+        ai_ready = False
+
+    try:
+        redis_ready = bool(await queue.redis.ping())
+    except Exception:
+        redis_ready = False
+
+    worker_row = None
+    try:
+        rows = await store.db.select(
+            "hermes_system_health",
+            params={"select": "status,message,checked_at", "component": "eq.worker", "limit": "1"},
+        )
+        worker_row = rows[0] if rows else None
+    except Exception:
+        worker_row = None
+
+    worker_age_seconds = None
+    if worker_row and worker_row.get("checked_at"):
+        try:
+            checked_at = datetime.fromisoformat(str(worker_row["checked_at"]).replace("Z", "+00:00"))
+            worker_age_seconds = max(0, (datetime.now(timezone.utc) - checked_at).total_seconds())
+        except (TypeError, ValueError):
+            worker_age_seconds = None
+    worker_ready = bool(
+        settings.embedded_worker_enabled
+        and worker_row
+        and worker_row.get("status") == "ok"
+        and worker_age_seconds is not None
+        and worker_age_seconds <= 180
+    )
+    ready = ai_ready and redis_ready and worker_ready
+    if not ai_ready:
+        chief_status = "blocked_ai_provider_not_configured"
+    elif not redis_ready:
+        chief_status = "blocked_redis_unavailable"
+    elif not worker_ready:
+        chief_status = "blocked_worker_heartbeat_missing_or_stale"
+    else:
+        chief_status = "ready"
+
     return {
-        "chief": "ready" if ready else blocked_reason,
+        "chief": chief_status,
         "agents": [
             {"name": "Hermes Chefe", "role": "orchestrator", "status": "ready" if ready else "blocked"},
             {"name": "Hermes Radar", "role": "research", "status": "ready" if ready else "blocked"},
@@ -175,10 +214,16 @@ async def agents_status():
             {"name": "Hermes Dev", "role": "engineering", "status": "ready" if ready else "blocked"},
             {"name": "Hermes Analyst", "role": "analysis", "status": "ready" if ready else "blocked"},
         ],
+        "ai_provider": provider,
+        "ai_ready": ai_ready,
+        "queue_status": "ready" if redis_ready else "unavailable",
+        "worker_status": "ready" if worker_ready else "unavailable",
+        "worker_last_seen_at": worker_row.get("checked_at") if worker_row else None,
+        "worker_age_seconds": round(worker_age_seconds) if worker_age_seconds is not None else None,
         "autonomy_enabled": settings.autonomy_enabled,
         "embedded_worker_enabled": settings.embedded_worker_enabled,
+        "supervision_interval_seconds": settings.autonomy_agent_interval_seconds,
     }
-
 
 @app.get("/api/v1/agents/runs")
 async def agent_runs():
@@ -187,9 +232,21 @@ async def agent_runs():
 
 @app.post("/api/v1/agents/dispatch")
 async def dispatch_agent(request: AgentRunRequest):
-    prompt = str(request.input.get("prompt", request.input))
-    job = await autonomy.create_job(f"Execute this Hermes task autonomously: {prompt}", source="api")
-    await queue.enqueue_agent(str(job["id"]))
+    prompt = str(request.input.get("prompt", "")).strip()
+    if len(prompt) < 8:
+        raise HTTPException(status_code=422, detail="A tarefa precisa ter pelo menos 8 caracteres.")
+    health = await agents_status()
+    if health["chief"] != "ready":
+        raise HTTPException(status_code=503, detail={"message": "Hermes Chefe indisponível; tarefa não foi enfileirada.", "checks": health})
+    try:
+        job = await autonomy.create_job(
+            "Execute esta tarefa pelo time Hermes e entregue evidências e recomendações: " + prompt,
+            source="api",
+        )
+        await queue.enqueue_agent(str(job["id"]))
+    except Exception as exc:
+        logger.exception("failed to dispatch Hermes Chief task")
+        raise HTTPException(status_code=503, detail="Não foi possível persistir/enfileirar a tarefa.") from exc
     return {"run_id": str(job["id"]), "agent": "Hermes Chefe", "status": "queued", "output": {}}
 
 
@@ -268,8 +325,11 @@ async def save_kiwify_publication(product_id: str, request: KiwifyPublicationReq
     row = await store.get_product(product_id)
     if not row:
         raise HTTPException(status_code=404, detail="product not found")
-    if not is_kiwify_publishable_status(row.get("status")):
-        raise HTTPException(status_code=409, detail="product must be ready_to_publish before linking a checkout")
+    if not is_kiwify_publishable_product(row):
+        raise HTTPException(
+            status_code=409,
+            detail="Produto bloqueado: precisa passar pelo quality gate, ter nota mínima 80 e PDF, DOCX e capa válidos antes de vincular checkout.",
+        )
 
     metadata = dict(row.get("metadata") or {})
     publications = dict(metadata.get("publications") or {})

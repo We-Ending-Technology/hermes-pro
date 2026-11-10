@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import datetime, timezone
@@ -46,6 +47,81 @@ def _created_today(product: dict[str, Any], today) -> bool:
 def _normalise_topic(value: str) -> str:
     return " ".join(value.casefold().split())
 
+
+async def supervision_tick(settings: Settings, store: PersistentStore, queue) -> dict[str, Any]:
+    """Queue one persistent Chief review only when the system has actionable exceptions."""
+    if not settings.autonomy_enabled:
+        return {"status": "disabled"}
+
+    jobs = await store.list_jobs()
+    products = await store.list_products()
+    def is_supervisor_run(job: dict[str, Any]) -> bool:
+        payload = job.get("payload") or {}
+        return job.get("job_type") == "agent_run" and payload.get("source") == "autonomous_supervision"
+
+    def is_stale(job: dict[str, Any]) -> bool:
+        try:
+            updated = datetime.fromisoformat(str(job.get("updated_at")).replace("Z", "+00:00"))
+            if updated.tzinfo is None:
+                updated = updated.replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - updated.astimezone(timezone.utc)).total_seconds() >= 600
+        except (TypeError, ValueError):
+            return False
+
+    failed_jobs = [
+        job for job in jobs
+        if job.get("status") == "failed"
+        and job.get("job_type") in {"product_generation", "agent_run"}
+        and not is_supervisor_run(job)
+    ][:5]
+    review_products = [
+        product for product in products if product.get("status") == "review_required"
+    ][:5]
+    stale_jobs = [
+        job for job in jobs
+        if job.get("status") in {"pending", "retrying"}
+        and job.get("job_type") in {"product_generation", "agent_run"}
+        and not is_supervisor_run(job)
+        and is_stale(job)
+    ][:5]
+    if not failed_jobs and not review_products and not stale_jobs:
+        return {"status": "no_actionable_findings"}
+
+    evidence = {
+        "failed_jobs": [
+            {"id": str(job.get("id")), "type": job.get("job_type"), "error": str(job.get("error_message") or "")[:300], "updated_at": job.get("updated_at")}
+            for job in failed_jobs
+        ],
+        "review_required_products": [
+            {"id": str(product.get("id")), "title": product.get("title"), "topic": product.get("topic"), "updated_at": product.get("updated_at"), "quality_score": (product.get("metadata") or {}).get("quality_score")}
+            for product in review_products
+        ],
+        "queued_or_retrying_jobs": [
+            {"id": str(job.get("id")), "type": job.get("job_type"), "status": job.get("status"), "updated_at": job.get("updated_at")}
+            for job in stale_jobs
+        ],
+    }
+    fingerprint = hashlib.sha256(json.dumps(evidence, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:32]
+    now = datetime.now(timezone.utc).isoformat()
+    instruction = (
+        "Faça uma auditoria operacional do Hermes Pro usando somente estas evidências do banco. "
+        "Identifique causa provável, prioridade, ação corretiva e como validar. "
+        "Não altere produtos, não publique, não gaste dinheiro e não invente que corrigiu algo. "
+        "Se um ebook estiver em review_required, explique o bloqueio editorial e como reescrever. "
+        "Evidências: " + json.dumps(evidence, ensure_ascii=False)
+    )
+    job = await store.create_agent_job(
+        instruction,
+        source="autonomous_supervision",
+        now=now,
+        idempotency_key="autonomy-chief:" + fingerprint,
+    )
+    if job.get("status") in {"completed", "failed", "cancelled"}:
+        return {"status": "already_reviewed", "run_id": str(job["id"])}
+    await queue.enqueue_agent(str(job["id"]))
+    return {"status": "supervision_queued", "run_id": str(job["id"]), "evidence_counts": {
+        "failed_jobs": len(failed_jobs), "review_required_products": len(review_products), "queued_or_retrying_jobs": len(stale_jobs)
+    }}
 
 async def autonomy_tick(settings: Settings, store: PersistentStore, queue) -> dict[str, Any]:
     """Create at most one new product per tick, subject to explicit capacity limits."""
