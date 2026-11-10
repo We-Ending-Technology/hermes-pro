@@ -17,12 +17,40 @@ class FakeGateway:
 
 
 class FakeStore:
-    def __init__(self, products=None):
+    def __init__(self, products=None, jobs=None):
         self.products = products or []
+        self.jobs = jobs or []
         self.created = []
+        self.rebuilds = []
 
     async def list_products(self):
         return self.products
+
+    async def list_jobs(self):
+        return self.jobs
+
+    async def create_product_rebuild_job(self, product_id):
+        index = next(i for i, item in enumerate(self.products) if str(item.get("id")) == str(product_id))
+        product = self.products[index]
+        metadata = dict(product.get("metadata") or {})
+        attempt = int(metadata.get("rebuild_attempts") or 0) + 1
+        metadata["rebuild_attempts"] = attempt
+        metadata["artifact_status"] = "revision_required"
+        metadata["publication_status"] = "not_published"
+        quality_gate = dict(metadata.get("quality_gate") or {})
+        quality_gate.update({"approved": False, "rebuild_pending": True})
+        metadata["quality_gate"] = quality_gate
+        updated = {**product, "status": "queued", "metadata": metadata}
+        self.products[index] = updated
+        job = {
+            "id": f"rebuild-job-{len(self.rebuilds) + 1}",
+            "job_type": "product_generation",
+            "status": "pending",
+            "payload": {"product_id": str(product_id), "topic": product.get("topic")},
+        }
+        self.jobs.append(job)
+        self.rebuilds.append((str(product_id), attempt))
+        return updated, job
 
     async def create_product_and_job(self, topic, metadata, idempotency_key):
         product = {"id": "product-1", "topic": topic}
@@ -105,7 +133,7 @@ async def test_autonomy_tick_stops_when_daily_limit_is_reached(monkeypatch):
     assert queue.jobs == []
 
 @pytest.mark.asyncio
-async def test_review_required_products_are_not_counted_as_publish_ready(monkeypatch):
+async def test_review_required_product_is_rebuilt_before_new_product_discovery(monkeypatch):
     monkeypatch.setattr(autonomy_scheduler, "build_ai_gateway", lambda settings: FakeGateway())
     settings = Settings(
         autonomy_enabled=True,
@@ -116,14 +144,24 @@ async def test_review_required_products_are_not_counted_as_publish_ready(monkeyp
         autonomy_max_ready_to_publish=2,
         autonomy_max_review_required_products=3,
     )
-    store = FakeStore([{"id": "p-1", "status": "review_required", "topic": "Ebook curto"}])
-    queue = FakeQueue()
+    product = {
+        "id": "p-1",
+        "status": "review_required",
+        "topic": "Ebook curto",
+        "created_at": "2026-11-09T10:00:00Z",
+        "metadata": {"artifact_status": "revision_required", "quality_gate": {"approved": False}},
+    }
+    store, queue = FakeStore([product]), FakeQueue()
     result = await autonomy_scheduler.autonomy_tick(settings, store, queue)
-    assert result["status"] == "product_queued"
-    assert queue.jobs == ["job-1"]
+    assert result["status"] == "review_product_rebuild_queued"
+    assert result["product_id"] == "p-1"
+    assert store.rebuilds == [("p-1", 1)]
+    assert store.products[0]["status"] == "queued"
+    assert queue.jobs == ["rebuild-job-1"]
+
 
 @pytest.mark.asyncio
-async def test_review_required_backlog_has_a_separate_limit():
+async def test_review_backlog_rebuilds_oldest_product_first():
     settings = Settings(
         autonomy_enabled=True,
         ai_provider="gemini",
@@ -132,9 +170,43 @@ async def test_review_required_backlog_has_a_separate_limit():
         autonomy_max_ready_to_publish=2,
         autonomy_max_review_required_products=3,
     )
-    store = FakeStore([{"id": f"p-{i}", "status": "review_required"} for i in range(4)])
+    products = [
+        {"id": "newer", "status": "review_required", "topic": "Tema mais novo", "created_at": "2026-11-10T10:00:00Z", "metadata": {"artifact_status": "revision_required", "quality_gate": {"approved": False}}},
+        {"id": "older", "status": "review_required", "topic": "Tema mais antigo", "created_at": "2026-11-08T10:00:00Z", "metadata": {"artifact_status": "revision_required", "quality_gate": {"approved": False}}},
+    ]
+    store, queue = FakeStore(products), FakeQueue()
+    result = await autonomy_scheduler.autonomy_tick(settings, store, queue)
+    assert result["status"] == "review_product_rebuild_queued"
+    assert result["product_id"] == "older"
+    assert queue.jobs == ["rebuild-job-1"]
+
+
+@pytest.mark.asyncio
+async def test_review_required_backlog_limit_applies_after_rebuild_attempts_are_exhausted():
+    settings = Settings(
+        autonomy_enabled=True,
+        ai_provider="gemini",
+        gemini_api_key="test-key",
+        autonomy_max_active_products=5,
+        autonomy_max_ready_to_publish=2,
+        autonomy_max_review_required_products=3,
+    )
+    store = FakeStore([
+        {
+            "id": f"p-{i}",
+            "status": "review_required",
+            "topic": f"Tema {i}",
+            "metadata": {
+                "artifact_status": "revision_required",
+                "quality_gate": {"approved": False},
+                "rebuild_attempts": autonomy_scheduler.MAX_AUTOMATIC_REBUILDS_PER_PRODUCT,
+            },
+        }
+        for i in range(4)
+    ])
     queue = FakeQueue()
     result = await autonomy_scheduler.autonomy_tick(settings, store, queue)
     assert result == {"status": "review_backlog_full", "review_required": 4}
+    assert store.rebuilds == []
     assert store.created == []
     assert queue.jobs == []

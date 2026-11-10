@@ -96,6 +96,71 @@ class PersistentStore:
         if metadata is not None: values["metadata"] = metadata
         return await self.db.update("hermes_products", values, where={"id": f"eq.{product_id}"})
 
+
+    async def create_product_rebuild_job(self, product_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Queue a bounded rebuild for an existing review_required product without losing its prior artifacts."""
+        product = await self.get_product(product_id)
+        if not product:
+            raise ValueError("product not found")
+
+        metadata = dict(product.get("metadata") or {})
+        attempt = int(metadata.get("rebuild_attempts") or 0) + 1
+        now = datetime.now(timezone.utc).isoformat()
+        idempotency_key = f"review-rebuild:{product_id}:{attempt}"
+        existing = await self.db.select(
+            "hermes_jobs",
+            params={"select": "*", "idempotency_key": f"eq.{idempotency_key}", "limit": "1"},
+        )
+        if existing:
+            job = existing[0]
+            if job.get("status") in {"pending", "running", "retrying"}:
+                return product, job
+
+        topic = str(product.get("topic") or "").strip()
+        if not topic:
+            raise ValueError("product topic is required for rebuild")
+
+        job = await self.db.insert("hermes_jobs", {
+            "job_type": "product_generation",
+            "status": JobStatus.PENDING.value,
+            "attempts": 0,
+            "max_attempts": 3,
+            "payload": {"product_id": product_id, "topic": topic, "rebuild": True},
+            "idempotency_key": idempotency_key,
+            "created_at": now,
+            "updated_at": now,
+        })
+        metadata["rebuild_attempts"] = attempt
+        metadata["rebuild_requested_at"] = now
+        previous_artifacts = metadata.pop("artifacts", None)
+        if previous_artifacts:
+            metadata["previous_artifacts"] = previous_artifacts
+        metadata.pop("artifact_validation", None)
+        publications = dict(metadata.get("publications") or {})
+        if isinstance(publications.get("kiwify"), dict):
+            kiwify_publication = dict(publications["kiwify"])
+            kiwify_publication.update({"status": "relink_required", "verified": False, "updated_at": now})
+            publications["kiwify"] = kiwify_publication
+            metadata["publications"] = publications
+        metadata["artifact_status"] = "revision_required"
+        metadata["publication_status"] = "not_published"
+        quality_gate = dict(metadata.get("quality_gate") or {})
+        quality_gate["approved"] = False
+        quality_gate["rebuild_pending"] = True
+        metadata["quality_gate"] = quality_gate
+        updated = await self.db.update(
+            "hermes_products",
+            {
+                "status": "queued",
+                "current_stage": PIPELINE_STAGES[0],
+                "job_id": job["id"],
+                "metadata": metadata,
+                "updated_at": now,
+            },
+            where={"id": f"eq.{product_id}"},
+        )
+        return updated, job
+
     async def create_agent_job(
         self,
         instruction: str,

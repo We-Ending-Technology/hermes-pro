@@ -8,12 +8,13 @@ from typing import Any
 
 from backend.app.ai_gateway.factory import build_ai_gateway
 from backend.app.core.config import Settings
+from backend.app.schemas_ext import is_kiwify_publishable_product
 from backend.app.services.persistence import PersistentStore
 
 logger = logging.getLogger("hermes.autonomy")
 
 ACTIVE_PRODUCT_STATUSES = {"queued", "generating", "generating_artifacts"}
-READY_PRODUCT_STATUSES = {"ready_to_publish"}
+MAX_AUTOMATIC_REBUILDS_PER_PRODUCT = 2
 
 
 def _json_object(raw: str) -> dict[str, Any]:
@@ -182,10 +183,60 @@ async def autonomy_tick(settings: Settings, store: PersistentStore, queue) -> di
         return {"status": "capacity_full", "active_products": len(active)}
 
     review_backlog = [p for p in products if p.get("status") == "review_required"]
+    if review_backlog:
+        jobs = await store.list_jobs()
+        active_product_ids = {
+            str((job.get("payload") or {}).get("product_id"))
+            for job in jobs
+            if job.get("job_type") == "product_generation"
+            and job.get("status") in {"pending", "running", "retrying"}
+            and (job.get("payload") or {}).get("product_id")
+        }
+        rebuild_candidates = []
+        for product in review_backlog:
+            metadata = product.get("metadata") or {}
+            quality_gate = metadata.get("quality_gate") or {}
+            try:
+                rebuild_attempts = int(metadata.get("rebuild_attempts") or 0)
+            except (TypeError, ValueError):
+                rebuild_attempts = MAX_AUTOMATIC_REBUILDS_PER_PRODUCT
+            if (
+                metadata.get("artifact_status") == "revision_required"
+                and quality_gate.get("approved") is False
+                and rebuild_attempts < MAX_AUTOMATIC_REBUILDS_PER_PRODUCT
+                and not metadata.get("paused")
+                and str(product.get("id")) not in active_product_ids
+                and str(product.get("topic") or "").strip()
+            ):
+                rebuild_candidates.append(product)
+
+        if rebuild_candidates:
+            rebuild_candidates.sort(key=lambda item: str(item.get("created_at") or ""))
+            candidate = rebuild_candidates[0]
+            try:
+                rebuilt_product, rebuild_job = await store.create_product_rebuild_job(str(candidate["id"]))
+                await queue.enqueue(str(rebuild_job["id"]))
+                logger.info(
+                    "review-required ebook rebuild queued product=%s job=%s attempt=%s",
+                    candidate["id"],
+                    rebuild_job["id"],
+                    (rebuilt_product.get("metadata") or {}).get("rebuild_attempts"),
+                )
+                return {
+                    "status": "review_product_rebuild_queued",
+                    "product_id": str(candidate["id"]),
+                    "job_id": str(rebuild_job["id"]),
+                    "attempt": (rebuilt_product.get("metadata") or {}).get("rebuild_attempts"),
+                    "remaining_review_required": max(0, len(review_backlog) - 1),
+                }
+            except Exception:
+                logger.exception("automatic review-required ebook rebuild failed product=%s", candidate.get("id"))
+                return {"status": "review_product_rebuild_error", "product_id": str(candidate.get("id"))}
+
     if len(review_backlog) >= settings.autonomy_max_review_required_products:
         return {"status": "review_backlog_full", "review_required": len(review_backlog)}
 
-    ready = [p for p in products if p.get("status") in READY_PRODUCT_STATUSES]
+    ready = [p for p in products if is_kiwify_publishable_product(p)]
     if len(ready) >= settings.autonomy_max_ready_to_publish:
         return {"status": "publication_backlog_full", "ready_to_publish": len(ready)}
 
