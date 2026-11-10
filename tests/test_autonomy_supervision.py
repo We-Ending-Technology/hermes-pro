@@ -43,6 +43,6 @@ async def test_supervision_queues_persistent_chief_run_for_review_required_produ
     result = await supervision_tick(SimpleNamespace(autonomy_enabled=True), store, queue)
     assert result["status"] == "supervision_queued"
     assert result["run_id"] == "chief-run-1"
-    assert store.created[0][1] == "autonomous_supervision"
+    assert store.created[0][1].startswith("autonomous_supervision:")
     assert store.created[0][2].startswith("autonomy-chief:")
     assert queue.jobs == ["chief-run-1"]
