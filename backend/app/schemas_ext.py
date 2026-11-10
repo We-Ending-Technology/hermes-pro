@@ -1,12 +1,11 @@
 from typing import Any
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel, Field, HttpUrl, field_validator
+
 
 class ProductUpdateRequest(BaseModel):
     title: str | None = Field(default=None, max_length=240)
     metadata: dict[str, Any] | None = None
-
-
-from pydantic import HttpUrl, field_validator
 
 
 class KiwifyPublicationRequest(BaseModel):
@@ -28,10 +27,16 @@ class KiwifyPublicationRequest(BaseModel):
 
 
 def is_kiwify_publishable_product(product: dict) -> bool:
-    """Fail closed: legacy status labels alone never authorize a checkout link."""
+    """Fail closed: a checkout link is allowed only for a fully validated commercial ebook."""
     metadata = product.get("metadata") or {}
     artifacts = metadata.get("artifacts") or {}
     quality_gate = metadata.get("quality_gate") or {}
+    try:
+        page_count = int(quality_gate.get("page_count") or 0)
+        illustration_count = int(quality_gate.get("illustration_count") or 0)
+        quality_score = int(metadata.get("quality_score") or 0)
+    except (TypeError, ValueError):
+        return False
     return (
         product.get("status") == "ready_to_publish"
         and metadata.get("artifact_status") == "ready"
@@ -40,6 +45,7 @@ def is_kiwify_publishable_product(product: dict) -> bool:
             for kind in ("pdf", "docx", "cover")
         )
         and quality_gate.get("approved") is True
-        and str(metadata.get("quality_score") or "").isdigit()
-        and int(metadata.get("quality_score") or 0) >= 80
+        and page_count >= 10
+        and illustration_count >= 4
+        and quality_score >= 80
     )
