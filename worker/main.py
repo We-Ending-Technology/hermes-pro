@@ -57,28 +57,76 @@ async def complete_json_response(
 
 
 async def revise_ebook_if_needed(gateway: Any, topic: str, writer_response: Any, writer_data: dict):
-    """Perform one targeted expansion pass when the first deterministic gate is short."""
+    """Expand only underlength sections and merge them into the original manuscript."""
     initial_gate = validate_ebook(writer_data)
     if initial_gate["approved"]:
         return writer_response, writer_data, initial_gate
 
-    revision_prompt = (
-        f"Revise and expand this ebook about '{topic}' so it passes every deterministic quality requirement. "
-        "Return the COMPLETE ebook as valid JSON with keys introduction, chapters (array of title/content), conclusion. "
-        "Target at least 2,200 words total, 230 words in EACH chapter, 180 words in the introduction, "
-        "and 180 words in the conclusion. Preserve the useful material, add concrete steps, examples, "
-        "checklists and explanations, and do not pad or repeat. Do not return a summary.\n"
-        f"VALIDATION FINDINGS: {json.dumps(initial_gate, ensure_ascii=False)}\n"
-        f"CURRENT EBOOK JSON: {json.dumps(writer_data, ensure_ascii=False)}"
+    chapter_counts = initial_gate.get("chapter_word_counts") or []
+    needs = []
+    if int(initial_gate.get("introduction_words", 0)) < 180:
+        needs.append({"section": "introduction", "target_words": 190})
+    for index, item in enumerate(chapter_counts):
+        if int(item.get("words", 0)) < 230:
+            needs.append({
+                "section": "chapter",
+                "index": index,
+                "title": item.get("title", f"Capítulo {index + 1}"),
+                "target_words": 240,
+            })
+    if int(initial_gate.get("conclusion_words", 0)) < 180:
+        needs.append({"section": "conclusion", "target_words": 190})
+
+    if not needs:
+        return writer_response, writer_data, initial_gate
+
+    prompt = (
+        f"Amplie o ebook sobre '{topic}' sem reescrever o manuscrito inteiro. "
+        "Retorne SOMENTE JSON válido com as chaves: introduction_addition (string), "
+        "chapter_additions (array de objetos {index, content}), conclusion_addition (string). "
+        "Crie um complemento substantivo para cada seção solicitada, com exemplos, passos e explicações. "
+        "Não repita o texto existente. Para capítulos, use exatamente o índice informado. "
+        "Se uma seção não foi solicitada, devolva string vazia ou array vazio.\n"
+        f"SEÇÕES QUE PRECISAM DE EXPANSÃO: {json.dumps(needs, ensure_ascii=False)}\n"
+        f"MANUSCRITO ATUAL: {json.dumps(writer_data, ensure_ascii=False)}"
     )
-    revised_response, revised_data = await complete_json_response(
+    revision_response, additions = await complete_json_response(
         gateway,
-        revision_prompt,
-        "You are the Hermes Pro developmental editor. Expand underlength sections substantively. Return only the complete valid JSON ebook.",
+        prompt,
+        "Você é editor técnico. Retorne apenas o JSON de complementos solicitado, sem markdown e sem envolver o JSON em cercas de código.",
         label="writer_revision",
     )
-    revised_gate = validate_ebook(revised_data)
-    return revised_response, revised_data, revised_gate
+
+    if not isinstance(additions, dict):
+        return writer_response, writer_data, initial_gate
+
+    merged = json.loads(json.dumps(writer_data, ensure_ascii=False))
+    intro_addition = additions.get("introduction_addition")
+    if isinstance(intro_addition, str) and intro_addition.strip():
+        merged["introduction"] = (str(merged.get("introduction", "")).rstrip() + "\n\n" + intro_addition.strip()).strip()
+
+    conclusion_addition = additions.get("conclusion_addition")
+    if isinstance(conclusion_addition, str) and conclusion_addition.strip():
+        merged["conclusion"] = (str(merged.get("conclusion", "")).rstrip() + "\n\n" + conclusion_addition.strip()).strip()
+
+    chapter_additions = additions.get("chapter_additions")
+    if isinstance(chapter_additions, list):
+        chapters = merged.get("chapters")
+        if isinstance(chapters, list):
+            for item in chapter_additions:
+                if not isinstance(item, dict):
+                    continue
+                index = item.get("index")
+                addition = item.get("content")
+                if isinstance(index, int) and 0 <= index < len(chapters) and isinstance(addition, str) and addition.strip():
+                    existing = str(chapters[index].get("content", "")).rstrip()
+                    chapters[index]["content"] = (existing + "\n\n" + addition.strip()).strip()
+
+    revised_gate = validate_ebook(merged)
+    if revised_gate["approved"] or int(revised_gate.get("score", 0)) > int(initial_gate.get("score", 0)):
+        return revision_response, merged, revised_gate
+    return writer_response, writer_data, initial_gate
+
 
 async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) -> None:
     job = await store.get_job(job_id)
