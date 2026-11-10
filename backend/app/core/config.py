@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     hotmart_client_id: str | None = Field(default=None, validation_alias="HOTMART_CLIENT_ID")
     hotmart_client_secret: str | None = Field(default=None, validation_alias="HOTMART_CLIENT_SECRET")
     hotmart_webhook_token: str | None = Field(default=None, validation_alias="HOTMART_WEBHOOK_TOKEN")
+    kiwify_webhook_token: str | None = Field(default=None, validation_alias="KIWIFY_WEBHOOK_TOKEN")
     telegram_bot_token: str | None = Field(default=None, validation_alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: str | None = Field(default=None, validation_alias="TELEGRAM_CHAT_ID")
     hermes_api_key: str | None = Field(default=None, validation_alias="HERMES_API_KEY")

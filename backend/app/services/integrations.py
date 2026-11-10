@@ -19,6 +19,7 @@ class IntegrationService:
             {"name": "Supabase", "status": "connected" if supabase_configured else "not_configured", "message": supabase_message},
             {"name": "Redis", "status": "configured" if redis_configured else "not_configured", "message": "URL configurada" if redis_configured else "Defina REDIS_URL com a conexão privada do Render Key Value."},
             {"name": "Hotmart", "status": "connected" if settings.hotmart_client_id and settings.hotmart_client_secret else "not_configured", "message": "OAuth configurado; sincronização disponível" if settings.hotmart_client_id and settings.hotmart_client_secret else "Defina HOTMART_CLIENT_ID e HOTMART_CLIENT_SECRET."},
+            {"name": "Kiwify", "status": "connected" if settings.kiwify_webhook_token else "not_configured", "message": "Webhook protegido configurado; aguardando eventos de venda." if settings.kiwify_webhook_token else "Configure o token do webhook Kiwify no Render."},
             {"name": "Telegram", "status": "connected" if settings.telegram_bot_token and settings.telegram_chat_id else "not_configured", "message": "Notificações configuradas" if settings.telegram_bot_token and settings.telegram_chat_id else "Defina TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID."},
         ]
 

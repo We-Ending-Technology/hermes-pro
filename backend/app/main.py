@@ -81,7 +81,7 @@ app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan, docs_
 
 @app.middleware("http")
 async def require_private_api_key(request: Request, call_next):
-    public_paths = {"/", "/health", "/ready", "/api/v1/webhooks/hotmart"}
+    public_paths = {"/", "/health", "/ready", "/api/v1/webhooks/hotmart", "/api/v1/webhooks/kiwify"}
     if request.method == "OPTIONS" or request.url.path in public_paths:
         return await call_next(request)
     if not settings.hermes_api_key:

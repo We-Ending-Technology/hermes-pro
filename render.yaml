@@ -56,6 +56,8 @@ services:
         sync: false
       - key: HOTMART_WEBHOOK_TOKEN
         sync: false
+      - key: KIWIFY_WEBHOOK_TOKEN
+        sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_CHAT_ID

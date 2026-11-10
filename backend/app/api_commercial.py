@@ -9,6 +9,7 @@ from redis.asyncio import Redis
 from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
 from .services.hotmart import HotmartClient, HotmartError
+from .services.kiwify import normalize_kiwify_event, sanitize_kiwify_payload
 from .services.integrations import integration_service
 from .services.persistence import PersistentStore
 from .services.telegram import TelegramNotifier
@@ -81,7 +82,7 @@ async def ready() -> dict[str, Any]:
         },
     ]
 
-    for name in ("Hotmart", "Telegram"):
+    for name in ("Hotmart", "Kiwify", "Telegram"):
         item = configured[name.lower()]
         checks.append({
             "name": name,
@@ -137,3 +138,48 @@ async def hotmart_webhook(request: Request, x_hotmart_hottok: str | None = Heade
             raise HTTPException(status_code=503, detail=str(exc)) from exc
     await telegram.send(f"Hermes Pro / Hotmart\nEvento: {event_type}\nValor: {amount} {currency or ''}".strip())
     return {"ok": True, "event": event_type}
+
+
+
+@router.post("/api/v1/webhooks/kiwify")
+async def kiwify_webhook(request: Request) -> dict[str, Any]:
+    """Receive Kiwify sale events using a per-webhook URL token.
+
+    Kiwify's product webhooks are JSON POSTs. The URL token protects this
+    endpoint because the webhook UI does not provide a custom auth header.
+    """
+    expected = settings.kiwify_webhook_token or ""
+    received = request.query_params.get("token", "")
+    if not expected:
+        raise HTTPException(status_code=503, detail="Kiwify webhook token is not configured")
+    if not hmac.compare_digest(received, expected):
+        raise HTTPException(status_code=401, detail="invalid Kiwify webhook token")
+
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="invalid JSON payload") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="webhook payload must be a JSON object")
+
+    try:
+        event = normalize_kiwify_event(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        await store.append_event(
+            "kiwify",
+            event["event_type"],
+            sanitize_kiwify_payload(payload),
+            external_id=event["external_id"],
+            amount=event["amount"],
+            currency=event["currency"],
+        )
+    except SupabaseError as exc:
+        message = str(exc).lower()
+        if "duplicate" in message or "unique" in message or "23505" in message:
+            return {"ok": True, "duplicate": True, "event": event["event_type"]}
+        raise HTTPException(status_code=503, detail="could not persist Kiwify event; webhook may be retried") from exc
+
+    return {"ok": True, "duplicate": False, "event": event["event_type"]}
