@@ -36,9 +36,10 @@ def is_kiwify_publishable_product(product: dict) -> bool:
         product.get("status") == "ready_to_publish"
         and metadata.get("artifact_status") == "ready"
         and all(
-            isinstance(artifacts.get(kind), str) and artifacts.get(kind, "").startswith("http")
+            isinstance(artifacts.get(kind), str) and artifacts.get(kind, "").startswith("https://")
             for kind in ("pdf", "docx", "cover")
         )
         and quality_gate.get("approved") is True
+        and str(metadata.get("quality_score") or "").isdigit()
         and int(metadata.get("quality_score") or 0) >= 80
     )
