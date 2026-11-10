@@ -4,7 +4,7 @@
   "outputDirectory": "frontend/dist",
   "framework": "vite",
   "rewrites": [
-    { "source": "/health", "destination": "https://hermes-pro-api-commercial.onrender.com/health" },
-    { "source": "/api/:path*", "destination": "https://hermes-pro-api-commercial.onrender.com/api/:path*" }
+    { "source": "/health", "destination": "https://hermes-pro-api-m7wd.onrender.com/health" },
+    { "source": "/api/:path*", "destination": "https://hermes-pro-api-m7wd.onrender.com/api/:path*" }
   ]
 }

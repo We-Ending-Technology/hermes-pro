@@ -32,3 +32,8 @@ For each product:
 6. Test the Kiwify webhook and verify that the matching sale event appears in Hermes.
 
 Never mark a product as published or a sale as approved without confirmation from Kiwify.
+
+
+## Save the checkout in Hermes
+
+After creating the Kiwify product and retrieving its official checkout link, open Hermes → Publicação, select the completed ebook, and save the checkout URL. The app stores it under `metadata.publications.kiwify` with `verified=false`. This means the checkout is linked in Hermes, not that a test or paid order has been confirmed.

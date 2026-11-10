@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 import hmac
@@ -19,7 +19,7 @@ from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
 from .queue import JobQueue
 from .schemas import *
-from .schemas_ext import ProductUpdateRequest
+from .schemas_ext import KiwifyPublicationRequest, ProductUpdateRequest
 from .services.analytics import analytics_service
 from .services.autonomy import AutonomyService
 from .services.integrations import integration_service
@@ -261,6 +261,28 @@ async def get_product(product_id: str):
     row = await store.get_product(product_id)
     if not row: raise HTTPException(status_code=404, detail="product not found")
     return product_response(row)
+
+
+@app.post("/api/v1/products/{product_id}/publication/kiwify", response_model=ProductResponse)
+async def save_kiwify_publication(product_id: str, request: KiwifyPublicationRequest):
+    row = await store.get_product(product_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="product not found")
+    if row.get("status") != "completed":
+        raise HTTPException(status_code=409, detail="only completed products can be linked to a checkout")
+
+    metadata = dict(row.get("metadata") or {})
+    publications = dict(metadata.get("publications") or {})
+    publications["kiwify"] = {
+        "product_id": request.product_id,
+        "checkout_url": str(request.checkout_url),
+        "status": "checkout_configured",
+        "verified": False,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    metadata["publications"] = publications
+    updated = await store.update_product(product_id, metadata=metadata)
+    return product_response(updated)
 
 
 @app.patch("/api/v1/products/{product_id}", response_model=ProductResponse)

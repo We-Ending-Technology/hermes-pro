@@ -129,7 +129,7 @@ function App() {
       {view === "Produtos" && <Products items={products} select={selectProduct} />}
       {view === "Jobs" && <Jobs jobs={jobs} products={products} action={action} />}
       {view === "Studio" && <Studio product={selected || products[0]} notify={setNotice} refresh={refresh} />}
-      {view === "Publicação" && <Publish product={selected || products[0]} integrations={integrations} />}
+      {view === "Publicação" && <Publish product={selected || products[0]} integrations={integrations} refresh={refresh} notify={setNotice} />}
       {view === "Vendas" && <SalesView data={sales} load={loadSales} />}
       {view === "Analytics" && <AnalyticsView data={analytics} load={loadAnalytics} />}
       {view === "Experimentos" && <Experiments products={products} radar={radar} />}
@@ -208,10 +208,20 @@ function Studio({ product, notify, refresh }) {
   </Page>;
 }
 function RadarView({ data, run }) { return <Page title="Radar" sub="Análise de oportunidade sem promessa de resultado."><Button primary onClick={run}>Analisar oportunidade</Button>{data && <div className="two-col"><div className="panel"><h3>Score {data.score}/100</h3><p>Confiança {data.confidence}%</p>{Object.entries(data.dimensions || {}).map(([k, v]) => <div className="health" key={k}><span>{k}</span><strong>{v}</strong></div>)}</div><div className="panel"><h3>Findings</h3>{(data.findings || []).map(x => <p key={x}>• {x}</p>)}</div></div>}</Page>; }
-function Publish({ product, integrations }) {
+function Publish({ product, integrations, refresh, notify }) {
   const getIntegration = name => integrations.find(x => x.name?.toLowerCase().includes(name));
   const kiwify = getIntegration("kiwify");
   const hotmart = getIntegration("hotmart");
+  const saved = product?.metadata?.publications?.kiwify || {};
+  const [productId, setProductId] = useState(saved.product_id || "");
+  const [checkoutUrl, setCheckoutUrl] = useState(saved.checkout_url || "");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    const publication = product?.metadata?.publications?.kiwify || {};
+    setProductId(publication.product_id || "");
+    setCheckoutUrl(publication.checkout_url || "");
+  }, [product?.id, product?.metadata?.publications?.kiwify?.product_id, product?.metadata?.publications?.kiwify?.checkout_url]);
+
   const storedArtifacts = product?.metadata?.artifacts || {};
   const artifactEntries = Object.entries(storedArtifacts).length
     ? Object.entries(storedArtifacts)
@@ -220,15 +230,52 @@ function Publish({ product, integrations }) {
         ["DOCX", product?.metadata?.document_url || product?.metadata?.docx_url],
         ["Capa", product?.metadata?.cover_url],
       ].filter(([, url]) => Boolean(url));
-  const statusLabel = status => status === "connected" ? "configurado" : status || "não verificado";
-  return <Page title="Publicação" sub="Arquivos prontos, checkout e recebimento de vendas pela Kiwify.">
+
+  const saveCheckout = async event => {
+    event.preventDefault();
+    if (!product?.id || !checkoutUrl.trim()) return;
+    setSaving(true);
+    try {
+      await call("/api/v1/products/" + product.id + "/publication/kiwify", {
+        method: "POST",
+        body: JSON.stringify({
+          product_id: productId.trim() || null,
+          checkout_url: checkoutUrl.trim()
+        })
+      });
+      notify?.("Checkout Kiwify salvo no produto. A URL ainda não foi validada por uma compra real.");
+      await refresh?.();
+    } catch (error) {
+      notify?.(error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!product) return <Page title="Publicação" sub="Selecione um produto concluído no catálogo." />;
+
+  return <Page title="Publicação" sub="Associe o checkout real da Kiwify ao ebook pronto.">
     <div className="panel">
-      <h3>{product?.title || product?.topic || "Nenhum produto selecionado"}</h3>
-      <p>Kiwify — webhook: <b>{statusLabel(kiwify?.status)}</b></p>
-      <p>Hotmart — webhook: <b>{statusLabel(hotmart?.status)}</b></p>
+      <h3>{product.title || product.topic}</h3>
+      <p>Kiwify — webhook: <b>{kiwify?.status === "connected" ? "configurado" : "não configurado"}</b></p>
+      <p>Hotmart — webhook: <b>{hotmart?.status || "não verificada"}</b></p>
       <p>Arquivos disponíveis: <b>{artifactEntries.length ? "sim" : "não"}</b></p>
       {artifactEntries.map(([key, value]) => <p key={key}><b>{key}:</b> <a href={value} target="_blank" rel="noreferrer">abrir arquivo ↗</a></p>)}
-      <p>O Hermes recebe e registra eventos de venda da Kiwify. O cadastro do produto, preço, entrega do PDF e criação do checkout precisam ser concluídos na conta Kiwify; esta tela não inventa um link de pagamento nem declara um produto publicado sem confirmação da plataforma.</p>
+    </div>
+    <form className="factory-form" onSubmit={saveCheckout}>
+      <h3>Vincular produto da Kiwify</h3>
+      <p>Cadastre primeiro o produto na Kiwify, configure a entrega do PDF e copie o link oficial da aba Links.</p>
+      <label>ID do produto (opcional)<input value={productId} onChange={event => setProductId(event.target.value)} placeholder="ID mostrado nos dados do produto" /></label>
+      <label>Link de checkout HTTPS<input type="url" required value={checkoutUrl} onChange={event => setCheckoutUrl(event.target.value)} placeholder="https://pay.kiwify.com.br/..." /></label>
+      <div className="form-footer">
+        <span>Somente produtos concluídos · link salvo, não verificado</span>
+        <Button primary type="submit" disabled={saving || product.status !== "completed"}>{saving ? "Salvando…" : "Salvar checkout"}</Button>
+      </div>
+      {saved.checkout_url && <p>Checkout registrado: <a href={saved.checkout_url} target="_blank" rel="noreferrer">abrir checkout ↗</a> · <b>não testado</b></p>}
+      {product.status !== "completed" && <p>Finalize a geração do ebook antes de vincular o checkout.</p>}
+    </form>
+    <div className="panel">
+      <p>O Hermes recebe eventos de venda, reembolso e chargeback da Kiwify. O cadastro, preço e entrega do produto são configurados na conta Kiwify; o Hermes não declara uma venda antes de receber o evento confirmado pela plataforma.</p>
     </div>
   </Page>;
 }
