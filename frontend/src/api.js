@@ -72,9 +72,13 @@ export async function diagnose() {
       try {
         const ready = await request(candidate.base, "/ready");
         const blocking = new Set(ready.blocking_integrations || []);
-        for (const item of ready.integrations || ready.checks || []) {
+        const rawChecks = ready.integrations || ready.checks || [];
+        const normalizedChecks = Array.isArray(rawChecks)
+          ? rawChecks
+          : Object.entries(rawChecks).map(([name, status]) => ({ name, status, message: status }));
+        for (const item of normalizedChecks) {
           const status = item.status || "not_configured";
-          checks.push({ name: item.name, status: (status === "connected" || status === "configured" || status === "ready") ? "ready" : blocking.has(item.name) ? "not_configured" : "optional", latency_ms: Date.now() - t, message: item.message || status });
+          checks.push({ name: item.name, status: (status === "connected" || status === "configured" || status === "ready" || status === "ok") ? "ready" : blocking.has(item.name) ? "not_configured" : "optional", latency_ms: Date.now() - t, message: item.message || status });
         }
         checks.push({ name: "Readiness", status: ready.status === "ready" || ready.status === "ready_with_credentials" ? "ready" : "optional", latency_ms: Date.now() - t, message: ready.next_step || "Estado de prontidão retornado pelo backend." });
       } catch (error) {
