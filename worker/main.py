@@ -243,6 +243,9 @@ async def run() -> None:
         try:
             await asyncio.wait_for(recover_pending(store, queue), timeout=60)
             logger.info("initial job recovery complete")
+            await queue.redis.ping()
+            await store.record_worker_health("ok", "worker started; Redis PING succeeded")
+            last_heartbeat = loop.time()
         except Exception:
             logger.exception("initial job recovery failed or timed out; worker will continue")
         while True:
