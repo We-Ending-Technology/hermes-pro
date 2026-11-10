@@ -476,7 +476,11 @@ async def run() -> None:
             await asyncio.wait_for(recover_pending(store, queue), timeout=60)
             logger.info("initial job recovery complete")
             await queue.redis.ping()
-            await store.record_worker_health("ok", "worker started; Redis PING succeeded")
+            depths = await queue.depths()
+            await store.record_worker_health(
+                "ok",
+                f"worker started; Redis PING succeeded; product_queue={depths['product']}; agent_queue={depths['agent']}",
+            )
             last_heartbeat = loop.time()
         except Exception:
             logger.exception("initial job recovery failed or timed out; worker will continue")
@@ -502,7 +506,11 @@ async def run() -> None:
             if (now - last_heartbeat) >= 30:
                 try:
                     await queue.redis.ping()
-                    await store.record_worker_health("ok", "worker loop alive; Redis PING succeeded")
+                    depths = await queue.depths()
+                    await store.record_worker_health(
+                        "ok",
+                        f"worker loop alive; Redis PING succeeded; product_queue={depths['product']}; agent_queue={depths['agent']}",
+                    )
                 except Exception as exc:
                     logger.exception("worker heartbeat failed")
                     try:
@@ -520,10 +528,12 @@ async def run() -> None:
 
             agent_job_id = await queue.dequeue_agent(timeout=1)
             if agent_job_id:
+                logger.info("dequeued agent job=%s", agent_job_id)
                 await process_agent(agent_job_id, store, settings, queue)
                 continue
             job_id = await queue.dequeue(timeout=5)
             if job_id:
+                logger.info("dequeued product job=%s", job_id)
                 await process_product(job_id, store, queue)
     finally:
         await queue.close()
