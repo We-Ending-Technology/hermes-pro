@@ -89,7 +89,12 @@ async def require_private_api_key(request: Request, call_next):
     if not settings.hermes_api_key:
         return JSONResponse({"detail": "Private API access is not configured."}, status_code=503)
     supplied = request.headers.get("X-Hermes-API-Key", "")
-    if not hmac.compare_digest(supplied, settings.hermes_api_key):
+    expected = str(settings.hermes_api_key or "")
+    try:
+        valid_key = hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8"))
+    except (AttributeError, UnicodeError):
+        valid_key = False
+    if not supplied or not valid_key:
         return JSONResponse({"detail": "Acesso privado: chave inválida ou ausente."}, status_code=401)
     return await call_next(request)
 
