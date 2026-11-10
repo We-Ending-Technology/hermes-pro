@@ -147,12 +147,20 @@ async def test_short_ebook_expansion_adds_missing_chapters_and_illustrations(mon
         {"title": f"Novo capítulo {index}", "content": f"Conteúdo prático e original do capítulo {index}."}
         for index in range(1, 7)
     ]
-    additions = {
+    additions_round_1 = {
         "introduction_addition": "Contexto adicional prático.",
         "chapter_additions": [{"index": 1, "content": "Exemplo adicional para o capítulo dois."}],
         "new_chapters": new_chapters,
         "conclusion_addition": "Próximas ações e síntese final.",
         "illustrations": _valid_content()["illustrations"],
+    }
+    additions_round_2 = {
+        "chapter_additions": [
+            {"index": index, "content": "segunda rodada com análise, exemplo prático, critérios de decisão e passos adicionais para completar o capítulo com profundidade suficiente."}
+            for index in (1, 3, 4, 5, 6, 7)
+        ],
+        "new_chapters": [],
+        "illustrations": [],
     }
     gate_calls = []
 
@@ -173,21 +181,37 @@ async def test_short_ebook_expansion_adds_missing_chapters_and_illustrations(mon
                     {"title": "Capítulo 2", "words": 120},
                 ],
             }
+        if len(gate_calls) == 2:
+            return {
+                "approved": False,
+                "score": 79,
+                "word_count": 3200,
+                "chapter_count": 8,
+                "illustration_count": 4,
+                "findings": ["Conteúdo insuficiente.", "Capítulos curtos."],
+                "introduction_words": 240,
+                "conclusion_words": 220,
+                "chapter_word_counts": [
+                    {"title": f"Capítulo {index}", "words": 400 if index in (1, 3) else 250}
+                    for index in range(1, 9)
+                ],
+            }
         return {
             "approved": True,
             "score": 100,
-            "word_count": 3600,
+            "word_count": 4200,
             "chapter_count": 8,
             "illustration_count": 4,
             "findings": [],
         }
 
-    captured = {}
-
+    captured = {"prompts": [], "labels": []}
     async def fake_complete_json_response(gateway, prompt, system, *, label, fallback=None):
-        captured["prompt"] = prompt
-        captured["label"] = label
-        return ("revision-response", additions)
+        captured["prompts"].append(prompt)
+        captured["labels"].append(label)
+        if len(captured["prompts"]) == 1:
+            return ("revision-response-1", additions_round_1)
+        return ("revision-response-2", additions_round_2)
 
     monkeypatch.setattr(main, "validate_ebook", fake_validate)
     monkeypatch.setattr(main, "complete_json_response", fake_complete_json_response)
@@ -196,17 +220,17 @@ async def test_short_ebook_expansion_adds_missing_chapters_and_illustrations(mon
         object(), "Agentes de IA", "original-response", original
     )
 
-    assert response == "revision-response"
+    assert response == "revision-response-2"
     assert gate["approved"] is True
     assert "Contexto adicional prático." in revised["introduction"]
     assert "Exemplo adicional para o capítulo dois." in revised["chapters"][1]["content"]
     assert len(revised["chapters"]) == 8
     assert len(revised["illustrations"]) == 4
     assert "Próximas ações" in revised["conclusion"]
-    assert captured["label"] == "writer_revision"
-    assert "new_chapters" in captured["prompt"]
-    assert "illustrations" in captured["prompt"]
-
+    assert "segunda rodada" in revised["chapters"][7]["content"]
+    assert captured["labels"] == ["writer_revision_round_1", "writer_revision_round_2"]
+    assert "new_chapters" in captured["prompts"][0]
+    assert "minimum_addition_words" in captured["prompts"][1]
 
 @pytest.mark.asyncio
 async def test_ebook_that_already_passes_skips_expansion(monkeypatch):
@@ -263,3 +287,34 @@ async def test_invalid_revision_keeps_original_manuscript(monkeypatch):
     assert response == "original-response"
     assert data == original
     assert gate["score"] == 50
+
+
+def test_product_metadata_merge_preserves_rebuild_history_and_previous_artifacts():
+    from worker.main import build_product_metadata
+
+    previous_artifacts = {"pdf": "https://storage/old.pdf", "docx": "https://storage/old.docx"}
+    publications = {"kiwify": {"status": "relink_required", "verified": False}}
+    existing = {
+        "rebuild_attempts": 1,
+        "rebuild_requested_at": "2026-11-10T20:24:00Z",
+        "previous_artifacts": previous_artifacts,
+        "publications": publications,
+    }
+    result = build_product_metadata(
+        existing,
+        strategy_data={"title": "Novo título"},
+        content="conteúdo novo",
+        content_data={"chapters": []},
+        review_data={"approved": False, "score": 92},
+        quality_score=79,
+        content_gate={"approved": False, "word_count": 3449, "findings": ["curto"]},
+        ai_review_approved=True,
+        approved=False,
+        ai_provider="gemini",
+        ai_model="gemini-flash",
+    )
+    assert result["rebuild_attempts"] == 1
+    assert result["previous_artifacts"] == previous_artifacts
+    assert result["publications"] == publications
+    assert result["artifact_status"] == "revision_required"
+    assert result["quality_gate"]["approved"] is False
