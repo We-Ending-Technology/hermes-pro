@@ -131,7 +131,7 @@ def test_blank_kiwify_product_id_is_normalized_to_none():
 
 
 @pytest.mark.asyncio
-async def test_short_ebook_expansion_adds_missing_chapters_and_illustrations(monkeypatch):
+async def test_short_ebook_expansion_adds_missing_chapters_and_illustrations():
     from worker import main
 
     original = {
@@ -147,12 +147,20 @@ async def test_short_ebook_expansion_adds_missing_chapters_and_illustrations(mon
         {"title": f"Novo capítulo {index}", "content": f"Conteúdo prático e original do capítulo {index}."}
         for index in range(1, 7)
     ]
-    additions = {
+    additions_round_1 = {
         "introduction_addition": "Contexto adicional prático.",
         "chapter_additions": [{"index": 1, "content": "Exemplo adicional para o capítulo dois."}],
         "new_chapters": new_chapters,
         "conclusion_addition": "Próximas ações e síntese final.",
         "illustrations": _valid_content()["illustrations"],
+    }
+    additions_round_2 = {
+        "chapter_additions": [
+            {"index": index, "content": "segunda rodada com análise, exemplo prático, critérios de decisão e passos adicionais para completar o capítulo com profundidade suficiente."}
+            for index in (1, 3, 4, 5, 6, 7)
+        ],
+        "new_chapters": [],
+        "illustrations": [],
     }
     gate_calls = []
 
@@ -173,40 +181,56 @@ async def test_short_ebook_expansion_adds_missing_chapters_and_illustrations(mon
                     {"title": "Capítulo 2", "words": 120},
                 ],
             }
+        if len(gate_calls) == 2:
+            return {
+                "approved": False,
+                "score": 79,
+                "word_count": 3200,
+                "chapter_count": 8,
+                "illustration_count": 4,
+                "findings": ["Conteúdo insuficiente.", "Capítulos curtos."],
+                "introduction_words": 240,
+                "conclusion_words": 220,
+                "chapter_word_counts": [
+                    {"title": f"Capítulo {index}", "words": 400 if index in (1, 3) else 250}
+                    for index in range(1, 9)
+                ],
+            }
         return {
             "approved": True,
             "score": 100,
-            "word_count": 3600,
+            "word_count": 4200,
             "chapter_count": 8,
             "illustration_count": 4,
             "findings": [],
         }
 
-    captured = {}
-
+    captured = {"prompts": [], "labels": []}
     async def fake_complete_json_response(gateway, prompt, system, *, label, fallback=None):
-        captured["prompt"] = prompt
-        captured["label"] = label
-        return ("revision-response", additions)
+        captured["prompts"].append(prompt)
+        captured["labels"].append(label)
+        if len(captured["prompts"]) == 1:
+            return ("revision-response-1", additions_round_1)
+        return ("revision-response-2", additions_round_2)
 
-    monkeypatch.setattr(main, "validate_ebook", fake_validate)
-    monkeypatch.setattr(main, "complete_json_response", fake_complete_json_response)
+    main.validate_ebook = fake_validate
+    main.complete_json_response = fake_complete_json_response
 
     response, revised, gate = await main.revise_ebook_if_needed(
         object(), "Agentes de IA", "original-response", original
     )
 
-    assert response == "revision-response"
+    assert response == "revision-response-2"
     assert gate["approved"] is True
     assert "Contexto adicional prático." in revised["introduction"]
     assert "Exemplo adicional para o capítulo dois." in revised["chapters"][1]["content"]
     assert len(revised["chapters"]) == 8
     assert len(revised["illustrations"]) == 4
     assert "Próximas ações" in revised["conclusion"]
-    assert captured["label"] == "writer_revision"
-    assert "new_chapters" in captured["prompt"]
-    assert "illustrations" in captured["prompt"]
-
+    assert "segunda rodada" in revised["chapters"][7]["content"]
+    assert captured["labels"] == ["writer_revision_round_1", "writer_revision_round_2"]
+    assert "new_chapters" in captured["prompts"][0]
+    assert "minimum_addition_words" in captured["prompts"][1]
 
 @pytest.mark.asyncio
 async def test_ebook_that_already_passes_skips_expansion(monkeypatch):
