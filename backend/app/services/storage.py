@@ -47,12 +47,31 @@ class SupabaseStorage:
                 headers={**self._headers(), "Content-Type": "application/json"},
                 json={"id": self.bucket, "name": self.bucket, "public": False},
             )
-            if response.status_code == 409:
+
+            # Supabase Storage can return HTTP 400 with an embedded 409
+            # BucketAlreadyExists payload. Treat that as an existing bucket,
+            # then explicitly enforce private visibility with the update API.
+            duplicate = response.status_code == 409
+            if response.status_code == 400:
+                try:
+                    payload = response.json()
+                except ValueError:
+                    payload = {}
+                duplicate = (
+                    payload.get("code") == "BucketAlreadyExists"
+                    or (
+                        str(payload.get("statusCode")) == "409"
+                        and payload.get("error") == "Duplicate"
+                    )
+                )
+
+            if duplicate:
                 response = await client.put(
                     f"{self.storage_base}/bucket/{self.bucket}",
                     headers={**self._headers(), "Content-Type": "application/json"},
                     json={"public": False},
                 )
+
             if response.status_code not in {200, 201}:
                 raise StorageError(f"Private storage bucket setup failed: {response.status_code} {response.text[:300]}")
 
