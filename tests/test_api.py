@@ -66,3 +66,13 @@ def test_kiwify_webhook_requires_official_hmac_signature(monkeypatch):
     assert response.json()["event"] == "PURCHASE_APPROVED"
     assert invalid.status_code == 401
     append_event.assert_awaited_once()
+
+
+def test_unicode_api_key_header_returns_401_not_internal_server_error():
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/v1/dashboard",
+            headers={"X-Hermes-API-Key": "chave-ação-inválida"},
+        )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Acesso privado: chave inválida ou ausente."
