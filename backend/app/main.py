@@ -193,7 +193,7 @@ async def agents_status():
         and worker_row
         and worker_row.get("status") == "ok"
         and worker_age_seconds is not None
-        and worker_age_seconds <= 90
+        and worker_age_seconds <= 180
     )
     ready = ai_ready and redis_ready and worker_ready
     if not ai_ready:
