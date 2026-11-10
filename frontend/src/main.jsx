@@ -213,6 +213,7 @@ function Publish({ product, integrations, refresh, notify }) {
   const kiwify = getIntegration("kiwify");
   const hotmart = getIntegration("hotmart");
   const saved = product?.metadata?.publications?.kiwify || {};
+  const isPublishable = ["ready_to_publish", "completed"].includes(product?.status);
   const [productId, setProductId] = useState(saved.product_id || "");
   const [checkoutUrl, setCheckoutUrl] = useState(saved.checkout_url || "");
   const [saving, setSaving] = useState(false);
@@ -252,7 +253,7 @@ function Publish({ product, integrations, refresh, notify }) {
     }
   };
 
-  if (!product) return <Page title="Publicação" sub="Selecione um produto concluído no catálogo." />;
+  if (!product) return <Page title="Publicação" sub="Selecione um ebook pronto para publicação no catálogo." />;
 
   return <Page title="Publicação" sub="Associe o checkout real da Kiwify ao ebook pronto.">
     <div className="panel">
@@ -268,11 +269,11 @@ function Publish({ product, integrations, refresh, notify }) {
       <label>ID do produto (opcional)<input value={productId} onChange={event => setProductId(event.target.value)} placeholder="ID mostrado nos dados do produto" /></label>
       <label>Link de checkout HTTPS<input type="url" required value={checkoutUrl} onChange={event => setCheckoutUrl(event.target.value)} placeholder="https://pay.kiwify.com.br/..." /></label>
       <div className="form-footer">
-        <span>Somente produtos concluídos · link salvo, não verificado</span>
-        <Button primary type="submit" disabled={saving || product.status !== "completed"}>{saving ? "Salvando…" : "Salvar checkout"}</Button>
+        <span>Ebook pronto · checkout salvo, ainda não validado por compra</span>
+        <Button primary type="submit" disabled={saving || !isPublishable}>{saving ? "Salvando…" : "Salvar checkout"}</Button>
       </div>
       {saved.checkout_url && <p>Checkout registrado: <a href={saved.checkout_url} target="_blank" rel="noreferrer">abrir checkout ↗</a> · <b>não testado</b></p>}
-      {product.status !== "completed" && <p>Finalize a geração do ebook antes de vincular o checkout.</p>}
+      {!isPublishable && <p>Finalize a geração e a revisão do ebook antes de vincular o checkout.</p>}
     </form>
     <div className="panel">
       <p>O Hermes recebe eventos de venda, reembolso e chargeback da Kiwify. O cadastro, preço e entrega do produto são configurados na conta Kiwify; o Hermes não declara uma venda antes de receber o evento confirmado pela plataforma.</p>

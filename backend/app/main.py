@@ -19,7 +19,7 @@ from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
 from .queue import JobQueue
 from .schemas import *
-from .schemas_ext import KiwifyPublicationRequest, ProductUpdateRequest
+from .schemas_ext import KiwifyPublicationRequest, ProductUpdateRequest, is_kiwify_publishable_status
 from .services.analytics import analytics_service
 from .services.autonomy import AutonomyService
 from .services.integrations import integration_service
@@ -268,8 +268,8 @@ async def save_kiwify_publication(product_id: str, request: KiwifyPublicationReq
     row = await store.get_product(product_id)
     if not row:
         raise HTTPException(status_code=404, detail="product not found")
-    if row.get("status") != "completed":
-        raise HTTPException(status_code=409, detail="only completed products can be linked to a checkout")
+    if not is_kiwify_publishable_status(row.get("status")):
+        raise HTTPException(status_code=409, detail="product must be ready_to_publish before linking a checkout")
 
     metadata = dict(row.get("metadata") or {})
     publications = dict(metadata.get("publications") or {})
@@ -347,4 +347,4 @@ async def analytics(range_start: date | None = None, range_end: date | None = No
 async def dashboard():
     products_list = await store.list_products(); jobs_list = await store.list_jobs()
     sales_data = await sales_service.summary()
-    return DashboardResponse(products=len(products_list), active_jobs=sum(row["status"] in {"pending","running","retrying"} for row in jobs_list), completed_products=sum(row["status"] in {"completed"} for row in products_list), revenue=sales_data.get("revenue"), sales=sales_data.get("orders"), integrations=integration_service.status())
+    return DashboardResponse(products=len(products_list), active_jobs=sum(row["status"] in {"pending","running","retrying"} for row in jobs_list), completed_products=sum(row["status"] in {"completed", "ready_to_publish"} for row in products_list), revenue=sales_data.get("revenue"), sales=sales_data.get("orders"), integrations=integration_service.status())

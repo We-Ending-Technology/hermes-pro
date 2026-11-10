@@ -25,3 +25,11 @@ class KiwifyPublicationRequest(BaseModel):
     def normalize_product_id(cls, value: str | None) -> str | None:
         cleaned = value.strip() if value else None
         return cleaned or None
+
+
+KIWIFY_PUBLISHABLE_STATUSES = frozenset({"ready_to_publish", "completed"})
+
+
+def is_kiwify_publishable_status(status: str | None) -> bool:
+    """Accept the worker's actual ready_to_publish state and legacy completed rows."""
+    return status in KIWIFY_PUBLISHABLE_STATUSES
