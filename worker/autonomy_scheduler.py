@@ -13,7 +13,7 @@ from backend.app.services.persistence import PersistentStore
 logger = logging.getLogger("hermes.autonomy")
 
 ACTIVE_PRODUCT_STATUSES = {"queued", "generating", "generating_artifacts"}
-READY_PRODUCT_STATUSES = {"ready_to_publish", "review_required"}
+READY_PRODUCT_STATUSES = {"ready_to_publish"}
 
 
 def _json_object(raw: str) -> dict[str, Any]:
@@ -180,6 +180,10 @@ async def autonomy_tick(settings: Settings, store: PersistentStore, queue) -> di
     active = [p for p in products if p.get("status") in ACTIVE_PRODUCT_STATUSES]
     if len(active) >= settings.autonomy_max_active_products:
         return {"status": "capacity_full", "active_products": len(active)}
+
+    review_backlog = [p for p in products if p.get("status") == "review_required"]
+    if len(review_backlog) >= settings.autonomy_max_review_required_products:
+        return {"status": "review_backlog_full", "review_required": len(review_backlog)}
 
     ready = [p for p in products if p.get("status") in READY_PRODUCT_STATUSES]
     if len(ready) >= settings.autonomy_max_ready_to_publish:
