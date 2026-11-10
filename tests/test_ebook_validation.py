@@ -287,3 +287,34 @@ async def test_invalid_revision_keeps_original_manuscript(monkeypatch):
     assert response == "original-response"
     assert data == original
     assert gate["score"] == 50
+
+
+def test_product_metadata_merge_preserves_rebuild_history_and_previous_artifacts():
+    from worker.main import build_product_metadata
+
+    previous_artifacts = {"pdf": "https://storage/old.pdf", "docx": "https://storage/old.docx"}
+    publications = {"kiwify": {"status": "relink_required", "verified": False}}
+    existing = {
+        "rebuild_attempts": 1,
+        "rebuild_requested_at": "2026-11-10T20:24:00Z",
+        "previous_artifacts": previous_artifacts,
+        "publications": publications,
+    }
+    result = build_product_metadata(
+        existing,
+        strategy_data={"title": "Novo título"},
+        content="conteúdo novo",
+        content_data={"chapters": []},
+        review_data={"approved": False, "score": 92},
+        quality_score=79,
+        content_gate={"approved": False, "word_count": 3449, "findings": ["curto"]},
+        ai_review_approved=True,
+        approved=False,
+        ai_provider="gemini",
+        ai_model="gemini-flash",
+    )
+    assert result["rebuild_attempts"] == 1
+    assert result["previous_artifacts"] == previous_artifacts
+    assert result["publications"] == publications
+    assert result["artifact_status"] == "revision_required"
+    assert result["quality_gate"]["approved"] is False
