@@ -166,6 +166,33 @@ async def agents_status():
     else:
         ai_ready = False
 
+    provider_degraded = False
+    provider_last_error = None
+    try:
+        recent_jobs = await store.db.select(
+            "hermes_jobs",
+            params={"select": "status,error_message,updated_at,job_type", "or": "(status.eq.failed,status.eq.retrying)", "order": "updated_at.desc", "limit": "10"},
+        )
+        for failed_job in recent_jobs:
+            error_text = str(failed_job.get("error_message") or "")
+            lowered = error_text.casefold()
+            provider_error = any(marker in lowered for marker in ("429", "500", "502", "503", "504", "quota", "rate limit", "resource exhausted", "timed out", "connection error"))
+            if not provider_error:
+                continue
+            try:
+                failed_at = datetime.fromisoformat(str(failed_job.get("updated_at")).replace("Z", "+00:00"))
+                if failed_at.tzinfo is None:
+                    failed_at = failed_at.replace(tzinfo=timezone.utc)
+                age = (datetime.now(timezone.utc) - failed_at.astimezone(timezone.utc)).total_seconds()
+            except (TypeError, ValueError):
+                continue
+            if 0 <= age <= 3600:
+                provider_degraded = True
+                provider_last_error = error_text[:300]
+                break
+    except Exception:
+        logger.exception("could not inspect recent AI provider failures")
+
     try:
         redis_ready = bool(await queue.redis.ping())
     except Exception:
@@ -195,9 +222,12 @@ async def agents_status():
         and worker_age_seconds is not None
         and worker_age_seconds <= 180
     )
-    ready = ai_ready and redis_ready and worker_ready
+    ai_provider_healthy = ai_ready and not provider_degraded
+    ready = ai_provider_healthy and redis_ready and worker_ready
     if not ai_ready:
         chief_status = "blocked_ai_provider_not_configured"
+    elif provider_degraded:
+        chief_status = "blocked_ai_provider_recent_error"
     elif not redis_ready:
         chief_status = "blocked_redis_unavailable"
     elif not worker_ready:
@@ -216,6 +246,8 @@ async def agents_status():
         ],
         "ai_provider": provider,
         "ai_ready": ai_ready,
+        "ai_provider_status": "degraded" if provider_degraded else ("ready" if ai_ready else "missing"),
+        "ai_provider_last_error": provider_last_error,
         "queue_status": "ready" if redis_ready else "unavailable",
         "worker_status": "ready" if worker_ready else "unavailable",
         "worker_last_seen_at": worker_row.get("checked_at") if worker_row else None,
