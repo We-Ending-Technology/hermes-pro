@@ -263,7 +263,7 @@ function Studio({ product, notify, refresh }) {
   const rawArtifacts = product.metadata?.artifacts && Object.keys(product.metadata.artifacts).length
     ? product.metadata.artifacts
     : { pdf: product.metadata?.pdf_url, cover: product.metadata?.cover_url, docx: product.metadata?.document_url };
-  const artifacts = Object.entries(rawArtifacts).filter(([, value]) => typeof value === "string" && /^https?:\\/\\//i.test(value));
+  const artifacts = Object.entries(rawArtifacts).filter(([, value]) => typeof value === "string" && /^https?:\/\//i.test(value));
   const cover = rawArtifacts.cover;
   const pdf = rawArtifacts.pdf;
   const content = product.metadata?.content_data || {};
