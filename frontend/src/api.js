@@ -38,7 +38,7 @@ async function request(base, path, options = {}, authRetry = true) {
   try { body = text ? JSON.parse(text) : {}; } catch { body = { detail: text }; }
   if (response.status === 401 && needsAdminToken) {
     try { sessionStorage.removeItem("hermes_admin_api_token"); } catch {}
-    throw new Error("A chave de acesso foi rejeitada. Confira HERMES_API_TOKEN no Render e tente novamente.");
+    throw new Error("A chave de acesso foi rejeitada. Confira HERMES_API_KEY no Render e tente novamente.");
   }
   if (!response.ok) {
     const error = new Error(body.detail || ("HTTP " + response.status));
