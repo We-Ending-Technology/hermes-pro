@@ -183,7 +183,26 @@ async def autonomy_tick(settings: Settings, store: PersistentStore, queue) -> di
         return {"status": "capacity_full", "active_products": len(active)}
 
     review_backlog = [p for p in products if p.get("status") == "review_required"]
-    if review_backlog:
+    rebuild_candidates = []
+    for product in products:
+        if product.get("status") not in {"review_required", "failed"}:
+            continue
+        metadata = product.get("metadata") or {}
+        quality_gate = metadata.get("quality_gate") or {}
+        try:
+            rebuild_attempts = int(metadata.get("rebuild_attempts") or 0)
+        except (TypeError, ValueError):
+            rebuild_attempts = MAX_AUTOMATIC_REBUILDS_PER_PRODUCT
+        if (
+            metadata.get("artifact_status") == "revision_required"
+            and quality_gate.get("approved") is False
+            and rebuild_attempts < MAX_AUTOMATIC_REBUILDS_PER_PRODUCT
+            and not metadata.get("paused")
+            and str(product.get("topic") or "").strip()
+        ):
+            rebuild_candidates.append(product)
+
+    if rebuild_candidates:
         jobs = await store.list_jobs()
         active_product_ids = {
             str((job.get("payload") or {}).get("product_id"))
@@ -192,24 +211,10 @@ async def autonomy_tick(settings: Settings, store: PersistentStore, queue) -> di
             and job.get("status") in {"pending", "running", "retrying"}
             and (job.get("payload") or {}).get("product_id")
         }
-        rebuild_candidates = []
-        for product in review_backlog:
-            metadata = product.get("metadata") or {}
-            quality_gate = metadata.get("quality_gate") or {}
-            try:
-                rebuild_attempts = int(metadata.get("rebuild_attempts") or 0)
-            except (TypeError, ValueError):
-                rebuild_attempts = MAX_AUTOMATIC_REBUILDS_PER_PRODUCT
-            if (
-                metadata.get("artifact_status") == "revision_required"
-                and quality_gate.get("approved") is False
-                and rebuild_attempts < MAX_AUTOMATIC_REBUILDS_PER_PRODUCT
-                and not metadata.get("paused")
-                and str(product.get("id")) not in active_product_ids
-                and str(product.get("topic") or "").strip()
-            ):
-                rebuild_candidates.append(product)
-
+        rebuild_candidates = [
+            product for product in rebuild_candidates
+            if str(product.get("id")) not in active_product_ids
+        ]
         if rebuild_candidates:
             rebuild_candidates.sort(key=lambda item: str(item.get("created_at") or ""))
             candidate = rebuild_candidates[0]
@@ -227,7 +232,7 @@ async def autonomy_tick(settings: Settings, store: PersistentStore, queue) -> di
                     "product_id": str(candidate["id"]),
                     "job_id": str(rebuild_job["id"]),
                     "attempt": (rebuilt_product.get("metadata") or {}).get("rebuild_attempts"),
-                    "remaining_review_required": max(0, len(review_backlog) - 1),
+                    "remaining_review_required": max(0, len(review_backlog) - (1 if candidate.get("status") == "review_required" else 0)),
                 }
             except Exception:
                 logger.exception("automatic review-required ebook rebuild failed product=%s", candidate.get("id"))
