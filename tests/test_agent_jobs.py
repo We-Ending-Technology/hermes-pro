@@ -56,4 +56,4 @@ async def test_agent_job_retries_and_remains_recoverable(monkeypatch):
     await agent_jobs.process_agent("run-1", store, SimpleNamespace(), queue)
     assert store.job["status"] == "retrying"
     assert store.job["attempts"] == 1
-    assert queue.enqueued == ["run-1"]
+    assert queue.enqueued == []  # persistent recovery scan retries after the backoff window
