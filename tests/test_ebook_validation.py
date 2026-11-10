@@ -354,3 +354,19 @@ def test_substantive_ai_review_rejection_is_not_overridden_by_metrics_gate():
     normalized = normalize_review_result(review, gate)
     assert normalized["approved"] is False
     assert normalized["score"] == 65
+
+
+def test_quality_service_uses_current_validator_minimum_keys():
+    from backend.app.services.quality import QualityService
+
+    report = QualityService().evaluate({
+        "title": "Guia completo de teste",
+        "audience": "Leitores que precisam de um guia prático",
+        "content_data": _valid_content(),
+    })
+
+    assert report.decision == "approved"
+    assert report.score >= 80
+    assert report.dimensions["content_length"] == 100
+    assert report.dimensions["chapter_structure"] == 100
+    assert report.dimensions["chapter_depth"] == 100
