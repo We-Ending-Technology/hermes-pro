@@ -27,9 +27,18 @@ class KiwifyPublicationRequest(BaseModel):
         return cleaned or None
 
 
-KIWIFY_PUBLISHABLE_STATUSES = frozenset({"ready_to_publish", "completed"})
-
-
-def is_kiwify_publishable_status(status: str | None) -> bool:
-    """Accept the worker's actual ready_to_publish state and legacy completed rows."""
-    return status in KIWIFY_PUBLISHABLE_STATUSES
+def is_kiwify_publishable_product(product: dict) -> bool:
+    """Fail closed: legacy status labels alone never authorize a checkout link."""
+    metadata = product.get("metadata") or {}
+    artifacts = metadata.get("artifacts") or {}
+    quality_gate = metadata.get("quality_gate") or {}
+    return (
+        product.get("status") == "ready_to_publish"
+        and metadata.get("artifact_status") == "ready"
+        and all(
+            isinstance(artifacts.get(kind), str) and artifacts.get(kind, "").startswith("http")
+            for kind in ("pdf", "docx", "cover")
+        )
+        and quality_gate.get("approved") is True
+        and int(metadata.get("quality_score") or 0) >= 80
+    )
