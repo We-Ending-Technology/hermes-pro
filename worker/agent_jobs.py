@@ -68,7 +68,7 @@ async def process_agent(job_id: str, store: PersistentStore, settings: Settings,
                 "status": "pending",
                 "error_message": message,
             }, where={"id": f"eq.{job_id}"})
-            await queue.enqueue_agent(job_id)
+            logger.warning("agent job deferred to persistent recovery scan job=%s attempt=%s", job_id, attempts)
         else:
             await store.update_job(job_id, "failed", attempts=attempts, error_message=message)
             await store.db.update("hermes_agent_runs", {

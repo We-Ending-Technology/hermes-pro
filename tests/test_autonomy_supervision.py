@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from datetime import datetime, timezone
 
 import pytest
 
@@ -43,6 +44,19 @@ async def test_supervision_queues_persistent_chief_run_for_review_required_produ
     result = await supervision_tick(SimpleNamespace(autonomy_enabled=True), store, queue)
     assert result["status"] == "supervision_queued"
     assert result["run_id"] == "chief-run-1"
-    assert store.created[0][1] == "autonomous_supervision"
+    assert store.created[0][1].startswith("autonomous_supervision:")
     assert store.created[0][2].startswith("autonomy-chief:")
     assert queue.jobs == ["chief-run-1"]
+@pytest.mark.asyncio
+async def test_supervision_respects_cooldown_after_provider_failure():
+    now = datetime.now(timezone.utc).isoformat()
+    instruction = "Auditoria anterior falhou para produto p-1"
+    store = FakeStore(
+        products=[{"id": "p-1", "title": "Ebook curto", "status": "review_required", "updated_at": now, "metadata": {"quality_score": 52}}],
+        jobs=[{"id": "old-run", "job_type": "agent_run", "status": "failed", "updated_at": now, "payload": {"source": "autonomous_supervision", "instruction": instruction}}],
+    )
+    queue = FakeQueue()
+    result = await supervision_tick(SimpleNamespace(autonomy_enabled=True), store, queue)
+    assert result["status"] == "retry_cooldown"
+    assert store.created == []
+    assert queue.jobs == []

@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from worker import agent_jobs
+from worker.main import recover_pending
 
 class FakeDB:
     def __init__(self):
@@ -16,6 +17,10 @@ class FakeStore:
     def __init__(self):
         self.job = {"id": "run-1", "job_type": "agent_run", "status": "pending", "attempts": 0, "max_attempts": 3, "payload": {"instruction": "Audite a fila"}}
         self.db = FakeDB()
+        self.recoverable_jobs = []
+
+    async def list_recoverable_jobs(self, stale_before):
+        return self.recoverable_jobs
 
     async def get_job(self, job_id):
         return self.job
@@ -56,4 +61,10 @@ async def test_agent_job_retries_and_remains_recoverable(monkeypatch):
     await agent_jobs.process_agent("run-1", store, SimpleNamespace(), queue)
     assert store.job["status"] == "retrying"
     assert store.job["attempts"] == 1
+    assert queue.enqueued == []  # persistent recovery scan retries after the backoff window
+@pytest.mark.asyncio
+async def test_persistent_recovery_requeues_retrying_agent_job():
+    store, queue = FakeStore(), FakeQueue()
+    store.recoverable_jobs = [{"id": "run-1", "job_type": "agent_run", "status": "retrying"}]
+    await recover_pending(store, queue)
     assert queue.enqueued == ["run-1"]
