@@ -8,27 +8,39 @@ from typing import Any
 
 def normalize_kiwify_event(payload: dict[str, Any]) -> dict[str, Any]:
     """Normalize Kiwify's documented product webhook into Hermes sales events."""
-    order_id = payload.get("order_id") or payload.get("order_ref")
-    if not order_id:
-        raise ValueError("Kiwify event is missing order_id/order_ref")
-
     raw_event = str(payload.get("webhook_event_type") or payload.get("event") or "").strip().lower()
     raw_status = str(payload.get("order_status") or "").strip().lower()
     combined = f"{raw_event} {raw_status}"
 
-    if any(term in combined for term in ("chargeback", "charge_back", "contestacao", "contestação")):
+    order_id = payload.get("order_id") or payload.get("order_ref")
+    if not order_id and raw_event in {"subscription_trial_started", "subscription_trial_canceled"}:
+        order_id = payload.get("subscription_id")
+    if not order_id:
+        raise ValueError("Kiwify event is missing order_id/order_ref")
+
+    if any(term in combined for term in ("chargeback", "charge_back", "chargedback", "contestacao", "contestação")):
         event_type = "PURCHASE_CHARGEBACK"
     elif any(term in combined for term in ("refund", "refunded", "reembolso", "reembolsado")):
         event_type = "PURCHASE_REFUNDED"
+    elif "subscription" in combined and any(term in combined for term in ("trial_canceled", "trial_cancelled")):
+        event_type = "SUBSCRIPTION_TRIAL_CANCELLED"
+    elif "subscription" in combined and any(term in combined for term in ("trial_started", "trial_start")):
+        event_type = "SUBSCRIPTION_TRIAL_STARTED"
     elif "subscription" in combined and any(term in combined for term in ("renew", "renov", "paid")):
         event_type = "SUBSCRIPTION_RENEWED"
+    elif "subscription" in combined and any(term in combined for term in ("late", "expired", "unpaid")):
+        event_type = "SUBSCRIPTION_LATE"
+    elif "subscription" in combined and any(term in combined for term in ("cancel", "canceled", "cancelled")):
+        event_type = "SUBSCRIPTION_CANCELLED"
+    elif raw_status in {"refused", "rejected", "declined"} or raw_event == "order_rejected":
+        event_type = "PURCHASE_REFUSED"
     elif raw_status in {"paid", "approved", "complete", "completed"} or any(
         term in raw_event for term in ("order_approved", "purchase_approved", "order_paid")
     ):
         event_type = "PURCHASE_APPROVED"
     elif any(term in combined for term in ("cancel", "canceled", "cancelled")):
         event_type = "PURCHASE_CANCELLED"
-    elif any(term in combined for term in ("waiting", "pending", "pix_generated", "boleto_generated")):
+    elif any(term in combined for term in ("waiting", "pending", "pix_created", "billet_created", "pix_generated", "boleto_generated")):
         event_type = "PAYMENT_PENDING"
     else:
         event_type = "OTHER"
@@ -46,7 +58,7 @@ def normalize_kiwify_event(payload: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "event_type": event_type,
-        "external_id": f"{order_id}:{event_type.lower()}",
+        "external_id": f"{order_id}:{raw_event or raw_status or event_type.lower()}",
         "amount": amount,
         "currency": str(commissions.get("currency") or commissions.get("product_base_price_currency") or "BRL").upper(),
     }

@@ -59,3 +59,32 @@ def test_rejects_modified_body_or_missing_signature():
     signature = "bf18f352a4f981b91dfa3f6d8742a81080ab8c86"
     assert verify_kiwify_signature(b'{"order_id":"changed"}', token, signature) is False
     assert verify_kiwify_signature(b'{}', token, "") is False
+
+
+def test_normalizes_documented_kiwify_rejected_and_pending_events():
+    base = {"order_id": "order-789"}
+    refused = normalize_kiwify_event({**base, "webhook_event_type": "order_rejected", "order_status": "refused"})
+    pix = normalize_kiwify_event({**base, "webhook_event_type": "pix_created", "order_status": "waiting_payment"})
+    billet = normalize_kiwify_event({**base, "webhook_event_type": "billet_created", "order_status": "waiting_payment"})
+    assert refused["event_type"] == "PURCHASE_REFUSED"
+    assert pix["event_type"] == "PAYMENT_PENDING"
+    assert billet["event_type"] == "PAYMENT_PENDING"
+
+
+def test_normalizes_documented_kiwify_subscription_lifecycle():
+    base = {"subscription_id": "sub-123", "Commissions": {"charge_amount": 2500}}
+    trial = normalize_kiwify_event({**base, "webhook_event_type": "subscription_trial_started", "order_status": "trial"})
+    trial_cancel = normalize_kiwify_event({**base, "webhook_event_type": "subscription_trial_canceled", "order_status": "canceled"})
+    renewed = normalize_kiwify_event({**base, "webhook_event_type": "subscription_renewed", "order_status": "paid", "order_id": "order-renew"})
+    late = normalize_kiwify_event({**base, "webhook_event_type": "subscription_late", "order_status": "waiting_payment", "order_id": "order-late"})
+    cancelled = normalize_kiwify_event({**base, "webhook_event_type": "subscription_canceled", "order_status": "paid", "order_id": "order-cancel"})
+    assert trial["event_type"] == "SUBSCRIPTION_TRIAL_STARTED"
+    assert trial_cancel["event_type"] == "SUBSCRIPTION_TRIAL_CANCELLED"
+    assert renewed["event_type"] == "SUBSCRIPTION_RENEWED"
+    assert late["event_type"] == "SUBSCRIPTION_LATE"
+    assert cancelled["event_type"] == "SUBSCRIPTION_CANCELLED"
+
+
+def test_kiwify_chargeback_accepts_documented_chargedback_status():
+    event = normalize_kiwify_event({"order_id": "order-999", "order_status": "chargedback"})
+    assert event["event_type"] == "PURCHASE_CHARGEBACK"
