@@ -33,5 +33,11 @@ class JobQueue:
         payload = json.loads(item[1])
         return payload["job_id"]
 
+    async def depths(self) -> dict[str, int]:
+        return {
+            "product": int(await self.redis.llen(QUEUE_NAME)),
+            "agent": int(await self.redis.llen(AGENT_QUEUE_NAME)),
+        }
+
     async def close(self) -> None:
         await self.redis.aclose()

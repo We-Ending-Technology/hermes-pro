@@ -257,6 +257,15 @@ async def autonomy_tick(settings: Settings, store: PersistentStore, queue) -> di
                         candidate["id"], rebuild_job["id"], attempt_number,
                     )
                 await queue.enqueue(str(rebuild_job["id"]))
+                try:
+                    queue_depths = await queue.depths()
+                except Exception:
+                    queue_depths = {"product": "unknown", "agent": "unknown"}
+                logger.info(
+                    "autonomy queued job=%s queue_depths=%s",
+                    rebuild_job["id"],
+                    queue_depths,
+                )
                 return {
                     "status": result_status,
                     "product_id": str(candidate["id"]),
