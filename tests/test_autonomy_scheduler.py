@@ -210,3 +210,30 @@ async def test_review_required_backlog_limit_applies_after_rebuild_attempts_are_
     assert store.rebuilds == []
     assert store.created == []
     assert queue.jobs == []
+
+@pytest.mark.asyncio
+async def test_failed_rebuild_product_gets_one_bounded_second_attempt():
+    settings = Settings(
+        autonomy_enabled=True,
+        ai_provider="gemini",
+        gemini_api_key="test-key",
+        autonomy_max_active_products=5,
+        autonomy_max_ready_to_publish=2,
+        autonomy_max_review_required_products=3,
+    )
+    product = {
+        "id": "p-failed",
+        "status": "failed",
+        "topic": "Guia digital com falha técnica",
+        "metadata": {
+            "artifact_status": "revision_required",
+            "quality_gate": {"approved": False},
+            "rebuild_attempts": 1,
+        },
+    }
+    store, queue = FakeStore([product]), FakeQueue()
+    result = await autonomy_scheduler.autonomy_tick(settings, store, queue)
+    assert result["status"] == "review_product_rebuild_queued"
+    assert result["attempt"] == 2
+    assert store.rebuilds == [("p-failed", 2)]
+    assert queue.jobs == ["rebuild-job-1"]
