@@ -12,16 +12,37 @@ def parse_json_object(raw: str | None) -> dict[str, Any]:
     text = raw.strip()
     decoder = json.JSONDecoder()
     start = text.find("{")
-    while start >= 0:
-        try:
-            value, _ = decoder.raw_decode(text[start:])
-        except json.JSONDecodeError:
-            start = text.find("{", start + 1)
-            continue
-        if isinstance(value, dict):
-            return value
-        start = text.find("{", start + 1)
-    raise ValueError("AI provider response did not contain a valid JSON object")
+    if start < 0:
+        raise ValueError("AI provider response did not contain a valid JSON object")
+    try:
+        value, _ = decoder.raw_decode(text[start:])
+    except json.JSONDecodeError as exc:
+        # Never salvage a nested chapter object from a malformed outer manuscript.
+        raise ValueError("AI provider response contained a malformed JSON object") from exc
+    if not isinstance(value, dict):
+        raise ValueError("AI provider response did not contain a JSON object")
+    return value
+
+
+def is_ebook_payload(value: dict[str, Any]) -> bool:
+    """Return True only for the full manuscript schema expected by the quality gate."""
+    if not isinstance(value, dict):
+        return False
+    introduction = value.get("introduction")
+    chapters = value.get("chapters")
+    conclusion = value.get("conclusion")
+    return (
+        isinstance(introduction, str)
+        and isinstance(chapters, list)
+        and len(chapters) > 0
+        and all(
+            isinstance(chapter, dict)
+            and isinstance(chapter.get("title"), str)
+            and isinstance(chapter.get("content"), str)
+            for chapter in chapters
+        )
+        and isinstance(conclusion, str)
+    )
 
 
 def build_review_excerpt(writer_data: dict[str, Any]) -> str:
