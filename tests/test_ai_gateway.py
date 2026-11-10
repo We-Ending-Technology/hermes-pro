@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from backend.app.ai_gateway.adapters import _post_with_retries
+from backend.app.ai_gateway.adapters import GeminiAdapter, _post_with_retries
 from backend.app.ai_gateway.base import AIResponse, AIGateway
 from backend.app.ai_gateway.factory import FallbackAIGateway
 
@@ -76,3 +76,38 @@ async def test_provider_request_does_not_retry_auth_or_request_errors(monkeypatc
             await _post_with_retries(client, "https://provider.test", headers={}, json={})
 
     assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_gemini_requests_json_mode_and_sufficient_output_tokens(monkeypatch):
+    captured = {}
+
+    class FakeAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, *, headers, json):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["json"] = json
+            request = httpx.Request("POST", url)
+            return httpx.Response(
+                200,
+                json={"candidates": [{"content": {"parts": [{"text": '{"ok": true}'}]}}]},
+                request=request,
+            )
+
+    monkeypatch.setattr(
+        "backend.app.ai_gateway.adapters.httpx.AsyncClient",
+        lambda timeout: FakeAsyncClient(),
+    )
+    result = await GeminiAdapter(api_key="test-key", model="gemini-3.5-flash-lite").complete(
+        "Return a JSON object", system="Only JSON"
+    )
+    assert result.content == '{"ok": true}'
+    assert captured["json"]["generationConfig"]["responseMimeType"] == "application/json"
+    assert captured["json"]["generationConfig"]["maxOutputTokens"] == 8192
+    assert captured["json"]["generationConfig"]["temperature"] == 0.2
