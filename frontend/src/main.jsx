@@ -293,8 +293,10 @@ function Studio({ product, notify, refresh }) {
     {product.status === "review_required" && <div className="panel">
       <h3>Revisão necessária</h3>
       <p>Este conteúdo não passou pelo critério de qualidade e ainda não pode ser publicado.</p>
-      {review.score != null && <p>Nota: <b>{review.score}/100</b></p>}
-      {Array.isArray(review.findings) && <ul>{review.findings.map((finding, i) => <li key={i}>{finding}</li>)}</ul>}
+      {review.score != null && <p>Nota da revisão editorial: <b>{review.score}/100</b></p>}
+      {qualityGate.score != null && <p>Nota determinística: <b>{qualityGate.score}/100</b> · palavras: <b>{qualityGate.word_count || 0}</b></p>}
+      {Array.isArray(qualityGate.findings) && qualityGate.findings.length > 0 && <ul>{qualityGate.findings.map((finding, i) => <li key={"gate-" + i}>{finding}</li>)}</ul>}
+      {Array.isArray(review.findings) && review.findings.length > 0 && <ul>{review.findings.map((finding, i) => <li key={"review-" + i}>{finding}</li>)}</ul>}
       <p className="panel-note">Este produto está bloqueado para publicação. Arquivos já existentes podem ser consultados, mas não podem ser vinculados a um checkout até a aprovação do quality gate.</p>
     </div>}
     <div className="panel">
