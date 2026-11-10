@@ -213,7 +213,7 @@ function Studio({ product, notify, refresh }) {
     </div>
   </Page>;
 }
-function RadarView() { {
+function RadarView() {
   const [items,setItems]=useState([]); const [busy,setBusy]=useState(false); const [notice,setNotice]=useState(""); const [drafts,setDrafts]=useState({});
   const load=async()=>{try{const data=await call("/api/v1/opportunities?limit=20");setItems(Array.isArray(data)?data:[]);return Array.isArray(data)?data:null;}catch(e){setNotice(e.message);return null;}};
   useEffect(()=>{load();},[]);
