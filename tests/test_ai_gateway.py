@@ -111,3 +111,29 @@ async def test_gemini_requests_json_mode_and_sufficient_output_tokens(monkeypatc
     assert captured["json"]["generationConfig"]["responseMimeType"] == "application/json"
     assert captured["json"]["generationConfig"]["maxOutputTokens"] == 8192
     assert captured["json"]["generationConfig"]["temperature"] == 0.2
+
+@pytest.mark.asyncio
+async def test_provider_request_retries_transient_transport_error(monkeypatch):
+    calls = 0
+    delays = []
+
+    async def no_sleep(delay):
+        delays.append(delay)
+
+    monkeypatch.setattr("backend.app.ai_gateway.adapters.asyncio.sleep", no_sleep)
+    monkeypatch.setattr("backend.app.ai_gateway.adapters.random.uniform", lambda _a, _b: 0)
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise httpx.ConnectError("temporary connection failure", request=request)
+        return httpx.Response(200, json={"ok": True}, request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        response = await _post_with_retries(client, "https://provider.test", headers={}, json={})
+
+    assert response.status_code == 200
+    assert calls == 2
+    assert delays == [1]
+
