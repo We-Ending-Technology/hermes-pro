@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
 import hmac
@@ -28,6 +28,7 @@ from .services.persistence import PersistentStore
 from .services.quality import quality_service
 from .services.radar import radar_service
 from .services.sales import SalesService
+from .services.storage import SupabaseStorage
 
 logger = logging.getLogger("hermes.api")
 settings = get_settings()
@@ -110,8 +111,41 @@ app.add_middleware(
 app.include_router(commercial_router)
 
 
-def product_response(row: dict) -> ProductResponse:
+async def product_response(row: dict) -> ProductResponse:
     metadata = dict(row.get("metadata") or {})
+    artifact_paths = metadata.get("artifact_paths") or {}
+    expires_at_value = metadata.get("artifact_urls_expires_at")
+    expires_at = None
+    if expires_at_value:
+        try:
+            expires_at = datetime.fromisoformat(str(expires_at_value).replace("Z", "+00:00"))
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+        except ValueError:
+            expires_at = None
+
+    now = datetime.now(timezone.utc)
+    if artifact_paths and (expires_at is None or expires_at <= now + timedelta(days=1)):
+        refreshed_artifacts = dict(metadata.get("artifacts") or {})
+        refreshed_any = False
+        for kind, locator in artifact_paths.items():
+            if not isinstance(locator, dict) or not locator.get("bucket") or not locator.get("path"):
+                continue
+            try:
+                storage = SupabaseStorage(settings, bucket=str(locator["bucket"]))
+                refreshed_artifacts[str(kind)] = await storage.create_signed_url(str(locator["path"]), expires_in=604800)
+                refreshed_any = True
+            except Exception:
+                logger.exception("could not refresh private artifact URL product=%s kind=%s", row.get("id"), kind)
+        if refreshed_any:
+            metadata["artifacts"] = refreshed_artifacts
+            metadata["artifact_urls_expires_at"] = (now + timedelta(days=7)).isoformat()
+            try:
+                row = await store.update_product(str(row["id"]), metadata=metadata)
+                metadata = dict(row.get("metadata") or metadata)
+            except Exception:
+                logger.exception("could not persist refreshed artifact URLs product=%s", row.get("id"))
+
     metadata["job_id"] = row.get("job_id")
     metadata["paused"] = bool(row.get("paused", False))
     return ProductResponse(id=str(row["id"]), topic=row["topic"], title=row.get("title"), status=row["status"], current_stage=row["current_stage"], stages=list(__import__("backend.app.product_factory", fromlist=["PIPELINE_STAGES"]).PIPELINE_STAGES), metadata=metadata, created_at=row["created_at"])
@@ -338,7 +372,9 @@ async def cancel_job(job_id: str):
 
 
 @app.get("/api/v1/products", response_model=list[ProductResponse])
-async def products(): return [product_response(row) for row in await store.list_products()]
+async def products():
+    rows = await store.list_products()
+    return [await product_response(row) for row in rows]
 
 
 @app.post("/api/v1/products", response_model=ProductResponse, status_code=202)
@@ -347,14 +383,14 @@ async def create_product(request: ProductCreateRequest):
         product, job = await store.create_product_and_job(request.topic, request.metadata, request.idempotency_key)
         await queue.enqueue(str(job["id"]))
     except SupabaseError as exc: raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return product_response(product)
+    return await product_response(product)
 
 
 @app.get("/api/v1/products/{product_id}", response_model=ProductResponse)
 async def get_product(product_id: str):
     row = await store.get_product(product_id)
     if not row: raise HTTPException(status_code=404, detail="product not found")
-    return product_response(row)
+    return await product_response(row)
 
 
 @app.post("/api/v1/products/{product_id}/publication/kiwify", response_model=ProductResponse)
@@ -379,7 +415,7 @@ async def save_kiwify_publication(product_id: str, request: KiwifyPublicationReq
     }
     metadata["publications"] = publications
     updated = await store.update_product(product_id, metadata=metadata)
-    return product_response(updated)
+    return await product_response(updated)
 
 
 @app.patch("/api/v1/products/{product_id}", response_model=ProductResponse)
@@ -388,7 +424,7 @@ async def update_product(product_id: str, request: ProductUpdateRequest):
     if not row: raise HTTPException(status_code=404, detail="product not found")
     if row["status"] in {"completed", "cancelled"}: raise HTTPException(status_code=409, detail="product is not editable in its current state")
     updated = await store.update_product(product_id, title=request.title, metadata=request.metadata)
-    return product_response(updated)
+    return await product_response(updated)
 
 
 @app.post("/api/v1/products/{product_id}/pause", response_model=ProductResponse)
@@ -398,7 +434,7 @@ async def pause_product(product_id: str):
     metadata = dict(row.get("metadata") or {}); metadata["paused"] = True
     updated = await store.update_product(product_id, status="paused", metadata=metadata)
     if row.get("job_id"): await store.update_job(str(row["job_id"]), "paused", error_message="paused by operator")
-    return product_response(updated)
+    return await product_response(updated)
 
 
 @app.post("/api/v1/products/{product_id}/resume", response_model=ProductResponse)
@@ -410,7 +446,7 @@ async def resume_product(product_id: str):
     if row.get("job_id"):
         await store.update_job(str(row["job_id"]), "pending", error_message=None)
         await queue.enqueue(str(row["job_id"]))
-    return product_response(updated)
+    return await product_response(updated)
 
 
 @app.post("/api/v1/radar", response_model=RadarResponse)
