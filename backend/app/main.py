@@ -214,8 +214,18 @@ async def agents_status():
         ai_ready = bool(settings.gemini_api_key or settings.ai_api_key)
     elif provider == "openai":
         ai_ready = bool(settings.openai_api_key)
+    elif provider == "groq":
+        ai_ready = bool(settings.groq_api_key)
     else:
         ai_ready = False
+
+    fallback = settings.ai_fallback_provider.strip().lower()
+    fallback_ready = (
+        (fallback == "gemini" and bool(settings.gemini_api_key or settings.ai_api_key))
+        or (fallback == "openai" and bool(settings.openai_api_key))
+        or (fallback == "groq" and bool(settings.groq_api_key))
+    )
+    ai_ready = ai_ready or fallback_ready
 
     provider_degraded = False
     provider_last_error = None
@@ -300,6 +310,8 @@ async def agents_status():
         ],
         "ai_provider": provider,
         "ai_ready": ai_ready,
+        "ai_fallback_provider": fallback or None,
+        "ai_fallback_ready": fallback_ready,
         "ai_provider_status": "degraded" if provider_degraded else ("ready" if ai_ready else "missing"),
         "ai_provider_last_error": provider_last_error,
         "queue_status": "ready" if redis_ready else "unavailable",
