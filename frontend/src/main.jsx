@@ -405,6 +405,41 @@ function Publish({ product, integrations }) {
   const [checkoutUrl, setCheckoutUrl] = useState(product?.metadata?.publications?.kiwify?.checkout_url || "");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const [kiwifyApiStatus, setKiwifyApiStatus] = useState(null);
+  const [kiwifyApiBusy, setKiwifyApiBusy] = useState(false);
+  const [kiwifyProducts, setKiwifyProducts] = useState([]);
+  const [kiwifyProductsBusy, setKiwifyProductsBusy] = useState(false);
+  const connectKiwify = async () => {
+    setKiwifyApiBusy(true);
+    setNotice("");
+    try {
+      const status = await call("/api/v1/kiwify/status");
+      setKiwifyApiStatus(status);
+      if (!status.connected) {
+        setNotice(status.message || "A API Kiwify ainda não está conectada.");
+        return;
+      }
+      const result = await call("/api/v1/kiwify/webhook/setup", { method: "POST" });
+      setNotice(result.message || "Webhook configurado.");
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setKiwifyApiBusy(false);
+    }
+  };
+  const loadKiwifyProducts = async () => {
+    setKiwifyProductsBusy(true);
+    setNotice("");
+    try {
+      const result = await call("/api/v1/kiwify/products?page_size=100&page_number=1");
+      setKiwifyProducts(result.items || []);
+      setNotice(`Catálogo Kiwify consultado: ${(result.items || []).length} produto(s) nesta página.`);
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setKiwifyProductsBusy(false);
+    }
+  };
   useEffect(() => {
     setKiwifyProductId(product?.metadata?.publications?.kiwify?.product_id || "");
     setCheckoutUrl(product?.metadata?.publications?.kiwify?.checkout_url || "");
@@ -453,14 +488,26 @@ function Publish({ product, integrations }) {
       <h3>{product.title || product.topic}</h3>
       <p>Status do produto: <b>{product.status}</b> · arquivos: <b>{artifacts.length ? "disponíveis" : "pendentes"}</b></p>
       <p>Capa IA: <b>{coverArt.generated ? `${coverArt.provider} · ${coverArt.model}` : "pendente"}</b> · texto comercial: <b>{product.metadata?.marketing_pack_status === "ready" ? "pronto" : "pendente"}</b></p>
-      <p>O cadastro do produto e o upload do PDF são feitos no painel da Kiwify. O Hermes prepara os materiais, valida o produto e registra o ID e o checkout para acompanhar vendas.</p>
-      {!commercialReady && <div className="panel-note">Publicação bloqueada: o ebook precisa de capa IA, revisão aprovada e pacote comercial completo antes de vincular o checkout.</div>}
+      <p>O Hermes prepara os materiais, valida o produto, consulta o catálogo e acompanha vendas. A criação do produto e o envio inicial do arquivo ainda são feitos no painel da Kiwify: a API pública não documenta um endpoint de criação de produtos.</p>
+      <div className="panel-note">
+        <b>Integração API Kiwify</b>
+        <p>{kiwifyApiStatus?.connected ? "Conexão OAuth validada." : kiwifyApiStatus?.configured ? "Credenciais configuradas, mas a conexão ainda não foi validada." : "Aguardando Client ID, Client Secret e Account ID no ambiente privado do backend."}</p>
+        <div className="form-footer">
+          <Button primary onClick={connectKiwify} disabled={kiwifyApiBusy}>{kiwifyApiBusy ? "Verificando e configurando…" : "Validar API e configurar webhook automaticamente"}</Button>
+          <Button onClick={loadKiwifyProducts} disabled={kiwifyProductsBusy}>{kiwifyProductsBusy ? "Consultando…" : "Consultar catálogo Kiwify"}</Button>
+        </div>
+        {kiwifyApiStatus?.message && <p>{kiwifyApiStatus.message}</p>}
+      </div>
+      {!commercialReady && <div className="panel-note">Publicação bloqueada: o ebook precisa de capa IA, revisão aprovada e pacote comercial completo antes de vincular checkout.</div>}
       <form className="factory-form" onSubmit={saveKiwify}>
         <label>ID do produto Kiwify (opcional)<input value={kiwifyProductId} onChange={e => setKiwifyProductId(e.target.value)} placeholder="ID exibido na URL do produto" /></label>
         <label>Link de checkout HTTPS<input type="url" required value={checkoutUrl} onChange={e => setCheckoutUrl(e.target.value)} placeholder="https://pay.kiwify.com.br/..." /></label>
         <div className="form-footer"><span>Pagamento e entrega continuam na Kiwify.</span><Button primary type="submit" disabled={saving || !checkoutUrl.trim() || !commercialReady}>{saving ? "Salvando…" : "Vincular checkout ↗"}</Button></div>
       </form>
       {notice && <p className="notice">{notice}</p>}
+      {kiwifyProducts.length > 0 && <div className="panel-note"><b>Produtos encontrados na Kiwify</b>
+        {kiwifyProducts.map(item => <div className="form-footer" key={item.id}><span>{item.name} · {item.status || "status não informado"}</span><Button onClick={() => setKiwifyProductId(item.id)}>Usar ID</Button></div>)}
+      </div>}
       {kiwify?.checkout_url && <p><b>Checkout registrado:</b> <a href={kiwify.checkout_url} target="_blank" rel="noreferrer">abrir checkout Kiwify ↗</a> · {kiwify.status || "salvo"}</p>}
       <p><a href="https://dashboard.kiwify.com.br/" target="_blank" rel="noreferrer">Abrir painel da Kiwify ↗</a></p>
     </div>
