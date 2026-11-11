@@ -49,7 +49,7 @@ def is_kiwify_publishable_product(product: dict) -> bool:
         and quality_gate.get("approved") is True
         and quality_gate.get("ai_cover_generated") is True
         and cover_art.get("generated") is True
-        and cover_art.get("provider") == "ai_horde"
+        and cover_art.get("provider") in {"ai_horde", "ovhcloud"}
         and metadata.get("marketing_pack_status") == "ready"
         and isinstance(marketing_pack.get("product_description"), str)
         and len(marketing_pack.get("product_description", "").strip()) >= 300
