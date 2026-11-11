@@ -103,7 +103,7 @@ async def require_private_api_key(request: Request, call_next):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
-    allow_origin_regex=r"https://[a-zA-Z0-9-]+\.vercel\.app$",
+    allow_origin_regex=r"https://(hermes-pro-command-center\.onrender\.com|[a-zA-Z0-9-]+\.vercel\.app)$",
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -157,6 +157,11 @@ def job_response(row: dict) -> JobResponse:
 
 @app.get("/")
 async def root(): return {"status":"ok","service":"hermes-pro-api","version":"0.5.0"}
+
+@app.get("/api/v1/auth/verify")
+async def verify_private_access():
+    """Confirm the private API key without database or sales dependencies."""
+    return {"authenticated": True}
 
 
 @app.get("/health", response_model=HealthResponse)
