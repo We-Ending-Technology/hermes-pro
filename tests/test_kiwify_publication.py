@@ -100,3 +100,11 @@ def test_publication_requires_verified_ai_generated_cover(cover_art_change):
         assert is_kiwify_publishable_product(product) is True
     else:
         assert is_kiwify_publishable_product(product) is False
+
+
+
+def test_publication_requires_validated_marketing_pack():
+    product = publishable_product()
+    product["metadata"]["marketing_pack"] = {}
+    product["metadata"]["marketing_pack_status"] = "missing"
+    assert is_kiwify_publishable_product(product) is False
