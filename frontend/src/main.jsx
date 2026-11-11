@@ -8,7 +8,7 @@ import "./diagnostics.css";
 const NAV = [
   ["⌂", "Início"], ["✦", "Hermes"], ["⌁", "Radar"], ["⚗", "Fábrica"], ["◈", "Produtos"],
   ["▣", "Studio"], ["↗", "Publicação"], ["$", "Vendas"], ["◌", "Analytics"], ["◇", "Experimentos"],
-  ["▶", "Vídeos"], ["◉", "Canais"], ["◎", "Agentes"], ["⟳", "Automação"], ["⌘", "Integrações"], ["≡", "Logs"], ["?", "Guias"], ["▤", "Jobs"]
+["◉", "Canais"], ["◎", "Agentes"], ["⟳", "Automação"], ["⌘", "Integrações"], ["≡", "Logs"], ["?", "Guias"], ["▤", "Jobs"]
 ];
 
 const DEFAULT_RADAR = { demand: 80, competition: 45, differentiation: 75, production_difficulty: 35, pricing_potential: 70, audience_clarity: 85 };
@@ -34,11 +34,6 @@ function App() {
   const [radar, setRadar] = useState(null);
   const [sales, setSales] = useState(null);
   const [analytics, setAnalytics] = useState(null);
-  const [videoChannel, setVideoChannel] = useState("youtube_shorts");
-  const [videoTopic, setVideoTopic] = useState("");
-  const [videoPackage, setVideoPackage] = useState(null);
-  const [trendingTopics, setTrendingTopics] = useState([]);
-  const [trendsBusy, setTrendsBusy] = useState(false);
   const refreshing = useRef(false);
   const chatPending = useRef(false);
 
@@ -193,30 +188,6 @@ function App() {
     }
   };
 
-  const findTrendingTopics = async () => {
-    setTrendsBusy(true);
-    try {
-      const data = await call("/api/v1/content/trends?geo=BR&limit=15");
-      setTrendingTopics(Array.isArray(data.items) ? data.items : []);
-      setNotice("Temas carregados do Google Trends. Escolha um tema para preparar o vídeo; tendência não garante visualizações ou receita.");
-    } catch (e) {
-      setNotice("Não foi possível buscar tendências: " + e.message);
-    } finally {
-      setTrendsBusy(false);
-    }
-  };
-
-  const generateVideoPackage = async (event) => {
-    event.preventDefault();
-    const topic = videoTopic.trim();
-    if (topic.length < 5) { setNotice("Informe um tema com pelo menos 5 caracteres."); return; }
-    const result = await action(() => call("/api/v1/content/video-package", {
-      method: "POST",
-      body: JSON.stringify({ topic, channel: videoChannel })
-    }), "Pacote de vídeo gerado para revisão; nada foi publicado.");
-    if (result) setVideoPackage(result);
-  };
-
   const runDiagnostics = async () => setDiagnostics(await diagnose());
   const selectProduct = product => { setSelected(product); setView("Studio"); };
   const loadSales = () => action(() => call("/api/v1/sales"), "Vendas atualizadas.").then(setSales);
@@ -237,7 +208,6 @@ function App() {
       {busy && <div className="loading-line"><i /> sincronizando dados reais…</div>}
       {view === "Início" && <Home dashboard={dashboard} products={products} jobs={jobs} go={setView} select={selectProduct} diagnostics={diagnostics} runDiagnostics={runDiagnostics} />}
       {view === "Hermes" && <ChatView chat={chat} input={chatInput} setInput={setChatInput} send={sendChat} />}
-      {view === "Vídeos" && <VideoFactory channel={videoChannel} setChannel={setVideoChannel} topic={videoTopic} setTopic={setVideoTopic} result={videoPackage} submit={generateVideoPackage} busy={busy} trends={trendingTopics} trendsBusy={trendsBusy} findTrends={findTrendingTopics} />}
       {view === "Canais" && <RevenueChannels integrations={integrations} />}
       {view === "Radar" && <RadarView />}
       {view === "Fábrica" && <Factory topic={topic} setTopic={setTopic} submit={createProduct} />}
@@ -379,19 +349,46 @@ function Studio({ product, notify, refresh }) {
   </Page>;
 }
 function RadarView() {
-  const [items,setItems]=useState([]); const [busy,setBusy]=useState(false); const [notice,setNotice]=useState(""); const [drafts,setDrafts]=useState({});
-  const load=async()=>{try{const data=await call("/api/v1/opportunities?limit=20");setItems(Array.isArray(data)?data:[]);return Array.isArray(data)?data:null;}catch(e){setNotice(e.message);return null;}};
-  useEffect(()=>{load();},[]);
-  const run=async()=>{setBusy(true);setNotice("");try{const scan=await call("/api/v1/autonomy/cycle",{method:"POST",body:JSON.stringify({})});await load();setNotice("Varredura real concluída: "+Number(scan.scanned||0)+" oportunidades encontradas; "+Number(scan.queued||0)+" tarefas preparadas. Nenhuma proposta foi enviada.");}catch(e){setNotice("A varredura não foi concluída: "+e.message);}finally{setBusy(false);}};
-  const queue=async(id)=>{try{const r=await call("/api/v1/opportunities/"+id+"/queue",{method:"POST"});setDrafts(old=>({...old,[id]:r.proposal||""}));setNotice(r.message||"Rascunho preparado para revisão.");await load();}catch(e){setNotice(e.message);}};
-  return <Page title="Radar" sub="Busca oportunidades reais em APIs públicas gratuitas, salva os resultados e prepara rascunhos para revisão. O envio continua manual.">
-    {notice&&<div className="notice">{notice}</div>}
-    <Button primary disabled={busy} onClick={run}>{busy?"Atualizando…":"↻ Varrer a internet agora"}</Button>
-    <div className="section-heading"><div><K>OPPORTUNITIES</K><h3>Fila priorizada</h3></div><span className="kicker">{items.length} carregadas</span></div>
-    <div className="product-grid">{items.length?items.map(x=><article className="product-card detailed" key={x.id}>
-      <div className="cover-placeholder"><span>{String(x.source||"R").slice(0,1).toUpperCase()}</span><small>{"score "+Math.round(Number(x.score||0))}</small></div>
-      <div className="product-info"><span className="tag">{x.source||"RADAR"}</span><h4>{x.title}</h4><p>{x.summary||x.description||"Descrição detalhada não capturada; confira o anúncio original."}</p><div className="product-meta"><span>{x.difficulty||"—"}</span><span>{x.suggested_price?(x.currency||"BRL")+" "+x.suggested_price:"preço pendente"}</span></div><div className="asset-actions"><a href={x.url||x.source_url} target="_blank" rel="noreferrer">Abrir oportunidade</a><button onClick={()=>queue(x.id)}>Gerar rascunho</button></div>{drafts[x.id]&&<div className="panel"><h4>Proposta — revisar antes de enviar</h4><pre style={{whiteSpace:"pre-wrap"}}>{drafts[x.id]}</pre><button onClick={()=>navigator.clipboard.writeText(drafts[x.id]).then(()=>setNotice('Proposta copiada.')).catch(()=>setNotice('Não foi possível copiar automaticamente; selecione o texto da proposta.'))}>Copiar proposta</button></div>}</div>
-    </article>):<Empty text="Nenhuma oportunidade freelance relevante salva ainda."/>}</div>
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  const evaluate = async () => {
+    setBusy(true);
+    setNotice("");
+    try {
+      const data = await call("/api/v1/radar", {
+        method: "POST",
+        body: JSON.stringify(DEFAULT_RADAR),
+      });
+      setResult(data);
+      setNotice("Avaliação concluída com o motor de pontuação do Hermes.");
+    } catch (error) {
+      setNotice("Não foi possível avaliar a hipótese: " + error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <Page title="Radar de Produtos" sub="Avalia hipóteses de produto digital com critérios internos. Não representa pesquisa de mercado ao vivo nem promessa de vendas.">
+    {notice && <div className="notice">{notice}</div>}
+    <div className="panel">
+      <K>PRODUCT OPPORTUNITY SCORE</K>
+      <h3>Critérios de avaliação</h3>
+      <p>Demanda hipotética, concorrência, diferenciação, dificuldade de produção, potencial de preço e clareza do público. Ajustes e validação de mercado continuam necessários.</p>
+      <Button primary disabled={busy} onClick={evaluate}>{busy ? "Calculando…" : "Avaliar hipótese de produto ↗"}</Button>
+    </div>
+    {result && <>
+      <div className="metric-grid">
+        <Metric label="Pontuação" value={result.score} />
+        <Metric label="Confiança" value={result.confidence + "%"} />
+      </div>
+      <div className="panel">
+        <h3>Dimensões avaliadas</h3>
+        {Object.entries(result.dimensions || {}).map(([name, value]) => <p key={name}><b>{name.replaceAll("_", " ")}:</b> {value}/100</p>)}
+        {(result.findings || []).map((finding, index) => <p key={index}>• {finding}</p>)}
+      </div>
+    </>}
   </Page>;
 }
 function Publish({ product, integrations }) {
@@ -498,37 +495,6 @@ function RevenueChannels({ integrations }) {
     <div className="panel"><K>REGRA OPERACIONAL</K><h3>Nenhuma plataforma será marcada como conectada só porque existe um link ou uma chave.</h3><p>O Hermes deve guardar a evidência da última verificação, mostrar o que falta e pedir aprovação antes de ações financeiras, publicações ou envio de propostas.</p></div>
     <div className="product-grid">{channels.map(channel => <article className="product-card detailed" key={channel.name}><div className="cover-placeholder"><span>{channel.name.slice(0,1)}</span><small>{channel.status}</small></div><div className="product-info"><span className="tag">{channel.type}</span><h4>{channel.name}</h4><p>{channel.detail}</p><div className="panel-note"><b>Próximo passo:</b> {channel.next}</div><div className="asset-actions"><a href={channel.url} target="_blank" rel="noreferrer">{channel.action} ↗</a></div></div></article>)}</div>
     <div className="panel"><h3>Dependência central</h3><p><b>Supabase:</b> {supabase?.status || "não verificado"} — {supabase?.message || "A API não confirmou conexão."}</p><p>Sem persistência funcional, o Hermes não consegue manter fila, memória, produtos e evidências de venda de forma confiável.</p></div>
-  </Page>;
-}
-
-function VideoFactory({ channel, setChannel, topic, setTopic, result, submit, busy, trends, trendsBusy, findTrends }) {
-  return <Page title="Fábrica de Vídeos" sub="Crie roteiros originais para YouTube e canais verticais. Gera o pacote de produção; renderização e publicação são etapas separadas.">
-    <div className="two-col">
-      <form className="panel factory-form" onSubmit={submit}>
-        <label>Canal de destino
-          <select value={channel} onChange={e => setChannel(e.target.value)}>
-            <option value="youtube_shorts">YouTube Shorts</option>
-            <option value="youtube_long">YouTube — vídeo longo</option>
-            <option value="tiktok">TikTok</option>
-            <option value="instagram_reels">Instagram Reels</option>
-          </select>
-        </label>
-        <label>Tema / nicho do vídeo
-          <textarea value={topic} onChange={e => setTopic(e.target.value)} minLength={5} required placeholder="Ex.: curiosidades históricas brasileiras com fontes verificáveis" />
-        <div className="asset-actions"><button type="button" onClick={findTrends} disabled={trendsBusy}>{trendsBusy ? "Buscando tendências…" : "Buscar temas em alta (grátis)"}</button></div>
-        {trends.length > 0 && <div className="trend-list"><K>GOOGLE TRENDS · BRASIL</K>{trends.map((item, index) => <div className="trend-row" key={item.url || item.title + index}><button type="button" onClick={() => setTopic(item.title)}>{item.title}</button>{item.url && <a href={item.url} target="_blank" rel="noreferrer">Fonte ↗</a>}</div>)}</div>}
-        </label>
-        <div className="form-footer"><span>Roteiro · narração · cenas · legenda · hashtags</span><Button primary type="submit" disabled={busy}>Gerar pacote ↗</Button></div>
-        <p className="panel-note">Usa o modelo de IA já configurado. Pode consumir a franquia/cota da chave existente; não compra ferramentas nem publica automaticamente.</p>
-      </form>
-      <div className="panel">
-        <K>FLUXO DE PRODUÇÃO</K><h3>Da ideia ao canal</h3>
-        <div className="pipeline"><span>IDEIA</span><span>→ ROTEIRO</span><span>→ CENAS</span><span>→ REVISÃO</span><span>→ RENDER</span><span>→ PUBLICAÇÃO</span></div>
-        <p>O pacote inclui títulos, gancho, roteiro com timestamps, narração, prompts visuais, texto na tela, legenda, hashtags, CTA e pontos factuais que precisam de checagem.</p>
-        <p><b>Monetização:</b> respeitar as regras de conteúdo original, direitos autorais e elegibilidade de cada plataforma. Um roteiro gerado não é uma venda nem um vídeo publicado.</p>
-      </div>
-    </div>
-    {result && <div className="panel"><div className="section-heading"><div><K>PACOTE GERADO</K><h3>{result.topic}</h3></div><span className="tag">{result.provider} · {result.model}</span></div><pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere",fontFamily:"inherit",lineHeight:1.65}}>{result.package}</pre><p className="panel-note">{result.message}</p></div>}
   </Page>;
 }
 
