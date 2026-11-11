@@ -34,6 +34,13 @@ async def _post_with_retries(
             except ValueError:
                 delay = min(2**attempt, 8)
             await asyncio.sleep(delay + random.uniform(0.0, min(delay * 0.2, 0.5)))
+        except httpx.TransportError:
+            # DNS, connect, read, write and protocol interruptions are transient
+            # in many hosted environments. Retry them without retrying 4xx errors.
+            if attempt >= _MAX_RETRIES:
+                raise
+            delay = min(2**attempt, 8)
+            await asyncio.sleep(delay + random.uniform(0.0, min(delay * 0.2, 0.5)))
 
     raise RuntimeError("AI provider request exhausted retries")
 
@@ -59,7 +66,7 @@ class OpenAIAdapter(ConfiguredProviderAdapter):
         if system:
             payload["instructions"] = system
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
-        async with httpx.AsyncClient(timeout=60) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
             response = await _post_with_retries(
                 client, "https://api.openai.com/v1/responses", headers=headers, json=payload
             )
@@ -82,7 +89,7 @@ class GeminiAdapter(ConfiguredProviderAdapter):
         contents.append({"role": "user", "parts": [{"text": prompt}]})
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
         headers = {"x-goog-api-key": self.api_key, "Content-Type": "application/json"}
-        async with httpx.AsyncClient(timeout=45) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0)) as client:
             response = await _post_with_retries(
                 client,
                 url,
