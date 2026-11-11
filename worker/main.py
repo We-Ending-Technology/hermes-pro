@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from backend.app.ai_gateway.factory import build_ai_gateway
@@ -594,6 +595,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             if not artifact_bytes.startswith(expected_signatures[kind]):
                 raise RuntimeError("artifact validation failed for " + kind)
         artifact_urls: dict[str, str] = {}
+        artifact_paths: dict[str, dict[str, str]] = {}
         for kind, (path, content, content_type) in artifacts.items():
             if await checkpoint():
                 return
@@ -601,12 +603,16 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             if not bucket:
                 raise RuntimeError(f"No private storage bucket mapped for artifact kind: {kind}")
             storage = SupabaseStorage(settings, bucket=bucket)
-            artifact_urls[kind] = await storage.upload(f"{product_id}/{path}", content, content_type)
+            object_path = f"{product_id}/{path}"
+            artifact_urls[kind] = await storage.upload(object_path, content, content_type)
+            artifact_paths[kind] = {"bucket": bucket, "path": object_path}
 
         required_artifacts = {"cover", "docx", "pdf"}
         if set(artifact_urls) != required_artifacts:
             raise RuntimeError("not all required ebook artifacts were uploaded")
         metadata["artifacts"] = artifact_urls
+        metadata["artifact_paths"] = artifact_paths
+        metadata["artifact_urls_expires_at"] = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
         metadata["artifact_status"] = "ready"
         metadata["cover_art"] = cover_art_metadata
         metadata["quality_gate"] = {
