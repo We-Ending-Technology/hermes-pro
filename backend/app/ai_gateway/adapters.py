@@ -109,3 +109,39 @@ class GeminiAdapter(ConfiguredProviderAdapter):
         except (KeyError, IndexError, TypeError) as exc:
             raise RuntimeError("Gemini returned an unexpected response") from exc
         return AIResponse(content=text, provider=self.provider, model=self.model)
+
+
+class GroqAdapter(ConfiguredProviderAdapter):
+    provider = "groq"
+
+    async def complete(self, prompt: str, *, system: str | None = None) -> AIResponse:
+        if not self.api_key:
+            raise RuntimeError("GROQ_API_KEY is not configured")
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": 0.2,
+            "max_completion_tokens": 2048,
+            "response_format": {"type": "json_object"},
+        }
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0)) as client:
+            response = await _post_with_retries(
+                client,
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers=headers,
+                json=payload,
+            )
+            data = response.json()
+        try:
+            text = data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise RuntimeError("Groq returned an unexpected response") from exc
+        if not isinstance(text, str) or not text.strip():
+            raise RuntimeError("Groq returned no message content")
+        return AIResponse(content=text, provider=self.provider, model=self.model)
+
