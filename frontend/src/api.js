@@ -3,6 +3,11 @@ const PROXY_API = "";
 
 // The private API key exists only in this page's JavaScript memory.
 let adminToken = "";
+let warmupPromise = null;
+export function warmApi() {
+  if (!warmupPromise) warmupPromise = fetch(DIRECT_API + "/health", { cache: "no-store" }).then(r => r.ok ? r.json() : null).catch(() => null).finally(() => { warmupPromise = null; });
+  return warmupPromise;
+}
 
 export function setAdminToken(value) {
   adminToken = String(value || "").trim();

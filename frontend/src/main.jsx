@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { call, diagnose, setAdminToken, clearAdminToken, hasAdminToken } from "./api.js";
+import { call, diagnose, setAdminToken, clearAdminToken, hasAdminToken, warmApi } from "./api.js";
 import "./auth.css";
 import "./style.css";
 import "./diagnostics.css";
@@ -12,6 +12,15 @@ const NAV = [
 ];
 
 const DEFAULT_RADAR = { demand: 80, competition: 45, differentiation: 75, production_difficulty: 35, pricing_potential: 70, audience_clarity: 85 };
+
+function BrazilClock() {
+ const [now, setNow] = useState(Date.now()); const [offset, setOffset] = useState(0); const [synced, setSynced] = useState(false);
+ useEffect(() => { let alive = true; const sync = async () => { try { const data = await call("/time", { timeoutMs: 5000 }); const ms = new Date(data.utc).getTime(); if (alive && Number.isFinite(ms)) { setOffset(ms - Date.now()); setSynced(true); } } catch { if (alive) setSynced(false); } }; sync(); const tick = setInterval(() => setNow(Date.now()), 1000); const resync = setInterval(sync, 60000); return () => { alive = false; clearInterval(tick); clearInterval(resync); }; }, []);
+ const instant = new Date(now + offset);
+ const time = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(instant);
+ const date = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "short", day: "2-digit", month: "short", year: "numeric" }).format(instant);
+ return <div className="brazil-clock" title={synced ? "Relógio sincronizado com o servidor" : "Fuso horário fixo: Brasília (UTC−3)"}><strong>{time}</strong><span>{date} · Brasília</span><small>{synced ? "hora sincronizada" : "sincronização pendente"}</small></div>;
+}
 
 function App() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -45,6 +54,7 @@ function App() {
     setAuthError("");
     setAdminToken(candidate);
     try {
+      await warmApi();
       await call("/api/v1/auth/verify");
       setAuthenticated(true);
       setAuthKey("");
@@ -183,7 +193,7 @@ function App() {
     } finally {
       chatPending.current = false;
       setBusy(false);
-      await refresh();
+      refresh().catch(() => {});
     }
   };
 
@@ -202,7 +212,7 @@ function App() {
       <div className="sidebar-foot"><span>LIVE OPS • REAL DATA</span><button onClick={refresh}>↻ Atualizar</button></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div><span className="kicker">HERMES PRO / MONEY OPERATIONS</span><h1>{view}</h1></div><div className="top-actions"><span className="api-label"><i className={online ? "online" : "offline"}></i>{online ? "Backend conectado" : "Backend indisponível"}</span><button className="icon-button" onClick={runDiagnostics}>⌁</button><button className="icon-button" onClick={refresh}>↻</button><button className="text-button" onClick={logout}>Sair</button><button className="avatar">W</button></div></header>
+      <header className="topbar"><div><span className="kicker">HERMES PRO / MONEY OPERATIONS</span><h1>{view}</h1></div><BrazilClock /><div className="top-actions"><span className="api-label"><i className={online ? "online" : "offline"}></i>{online ? "Backend conectado" : "Backend indisponível"}</span><button className="icon-button" onClick={runDiagnostics}>⌁</button><button className="icon-button" onClick={refresh}>↻</button><button className="text-button" onClick={logout}>Sair</button><button className="avatar">W</button></div></header>
       {notice && <div className="notice">{notice}<button onClick={() => setNotice("")}>×</button></div>}
       {busy && <div className="loading-line"><i /> sincronizando dados reais…</div>}
       {view === "Início" && <Home dashboard={dashboard} products={products} jobs={jobs} go={setView} select={selectProduct} diagnostics={diagnostics} runDiagnostics={runDiagnostics} />}
@@ -235,7 +245,7 @@ function AuthGate({ value, onChange, onSubmit, busy, error }) {
       <h1>Bem-vindo de volta.</h1>
       <p>Informe a chave privada configurada no serviço de API do Render para abrir seu Command Center.</p>
       <label htmlFor="hermes-access-key">Chave de acesso</label>
-      <input id="hermes-access-key" type="password" autoComplete="current-password" value={value} onChange={event => onChange(event.target.value)} placeholder="HERMES_API_KEY" required autoFocus />
+      <input id="hermes-access-key" type="password" autoComplete="current-password" value={value} onFocus={() => { warmApi(); }} onChange={event => onChange(event.target.value)} placeholder="HERMES_API_KEY" required autoFocus />
       {error && <div className="auth-error" role="alert">{error}</div>}
       <button className="primary auth-submit" type="submit" disabled={busy || !value.trim()}>{busy ? "Validando acesso…" : "Entrar no Hermes"}</button>
       <small>A chave é mantida somente na memória desta aba e não é salva no armazenamento do navegador.</small>
