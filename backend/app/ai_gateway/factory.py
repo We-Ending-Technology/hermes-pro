@@ -1,6 +1,6 @@
 from .base import AIGateway
 from .stub import StubAIGateway
-from .adapters import GeminiAdapter, OpenAIAdapter
+from .adapters import GeminiAdapter, GroqAdapter, OpenAIAdapter
 from ..core.config import Settings
 
 class FallbackAIGateway(AIGateway):
@@ -24,6 +24,8 @@ def build_ai_gateway(settings: Settings) -> AIGateway:
         primary = GeminiAdapter(api_key=settings.gemini_api_key or settings.ai_api_key, model=settings.gemini_model)
     elif settings.ai_provider == "openai":
         primary = OpenAIAdapter(api_key=settings.openai_api_key, model=settings.openai_chat_model)
+    elif settings.ai_provider == "groq":
+        primary = GroqAdapter(api_key=settings.groq_api_key, model=settings.groq_chat_model)
     elif settings.ai_provider == "stub":
         return StubAIGateway()
     else:
@@ -34,4 +36,6 @@ def build_ai_gateway(settings: Settings) -> AIGateway:
         fallback = OpenAIAdapter(api_key=settings.openai_api_key, model=settings.openai_chat_model)
     elif settings.ai_fallback_provider == "gemini" and (settings.gemini_api_key or settings.ai_api_key) and settings.ai_provider != "gemini":
         fallback = GeminiAdapter(api_key=settings.gemini_api_key or settings.ai_api_key, model=settings.gemini_model)
+    elif settings.ai_fallback_provider == "groq" and settings.groq_api_key and settings.ai_provider != "groq":
+        fallback = GroqAdapter(api_key=settings.groq_api_key, model=settings.groq_chat_model)
     return FallbackAIGateway(primary, fallback)
