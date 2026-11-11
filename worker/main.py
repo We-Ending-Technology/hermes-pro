@@ -83,6 +83,40 @@ async def complete_json_response(
 
 
 
+def is_marketing_pack_payload(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    description = value.get("product_description")
+    short_description = value.get("short_description")
+    benefits = value.get("benefits")
+    faq = value.get("faq")
+    keywords = value.get("keywords")
+    social_posts = value.get("social_posts")
+    if not isinstance(description, str) or len(description.strip()) < 300:
+        return False
+    if not isinstance(short_description, str) or len(short_description.strip()) < 80:
+        return False
+    if not isinstance(value.get("target_audience"), str) or len(value["target_audience"].strip()) < 20:
+        return False
+    if not isinstance(benefits, list) or len(benefits) < 4:
+        return False
+    if not isinstance(faq, list) or len(faq) < 3:
+        return False
+    if not isinstance(keywords, list) or len(keywords) < 5:
+        return False
+    if not isinstance(social_posts, list) or len(social_posts) < 3:
+        return False
+    if not all(
+        isinstance(item, dict)
+        and all(isinstance(item.get(key), str) and item[key].strip() for key in ("platform", "hook", "caption", "cta"))
+        for item in social_posts[:3]
+    ):
+        return False
+    full_text = json.dumps(value, ensure_ascii=False).casefold()
+    prohibited_claims = ("renda garantida", "ganho garantido", "resultado garantido", "fique rico", "lucro garantido")
+    return not any(claim in full_text for claim in prohibited_claims)
+
+
 async def revise_ebook_if_needed(gateway: Any, topic: str, writer_response: Any, writer_data: dict):
     """Run up to two targeted editorial passes; never approve content that misses deterministic gates."""
     best_response = writer_response
@@ -482,6 +516,37 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             pending = "; ".join(content_gate.get("findings") or []) or "revisão editorial"
             await notify_owner(settings, f"Hermes Pro: produto bloqueado para revisão. Tema: {topic}. Palavras: {content_gate['word_count']}. Pendências: {pending}.")
             return
+
+        if not is_marketing_pack_payload(metadata.get("marketing_pack")):
+            await store.update_product(product_id, status="generating", current_stage="commercial", title=title, metadata=metadata)
+            chapter_titles = [
+                str(item.get("title", "")).strip()
+                for item in (writer_data.get("chapters") or [])[:10]
+                if isinstance(item, dict) and item.get("title")
+            ]
+            marketing_prompt = (
+                f"Prepare a truthful commercial listing and launch content for the ebook '{title or topic}'. "
+                f"Subtitle: {subtitle}. Strategy: {json.dumps(strategy_data, ensure_ascii=False)[:2500]}. "
+                f"Chapter outline: {json.dumps(chapter_titles, ensure_ascii=False)}. "
+                "Return ONLY JSON with: product_description (300-500 words, Brazilian Portuguese), "
+                "short_description (80-120 words), target_audience (specific audience), "
+                "benefits (5 concrete benefits), contents (array of 6-10 included items), "
+                "faq (4 objects with question and answer), keywords (8 search terms), "
+                "social_posts (3 objects with platform, hook, caption and cta for Instagram, TikTok and Facebook). "
+                "Use persuasive but honest copy. Never promise income, sales, results, employment, health outcomes, "
+                "or guaranteed success. Do not invent testimonials, research, statistics, credentials, discounts, "
+                "bonuses, guarantees, or features not present in the manuscript. Do not invent price or checkout URL. "
+                "Explain clearly what the buyer receives and who benefits from the guide."
+            )
+            _, marketing_pack = await complete_json_response(
+                gateway,
+                marketing_prompt,
+                "You are a careful Brazilian digital-product copywriter. Create accurate sales copy from the supplied book facts only. Return valid JSON and no Markdown.",
+                label="commercial_marketing_pack",
+                validator=is_marketing_pack_payload,
+            )
+            metadata["marketing_pack"] = marketing_pack
+            metadata["marketing_pack_status"] = "ready"
 
         await store.update_product(product_id, status="generating_artifacts", current_stage="cover", title=title, metadata=metadata)
         cover_artwork = None
