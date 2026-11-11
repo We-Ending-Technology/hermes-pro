@@ -411,9 +411,9 @@ function Publish({ product, integrations }) {
       {marketingPack.product_description
         ? <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.7 }}>{marketingPack.product_description}</p>
         : <p>O pacote comercial será gerado pela Fábrica depois da revisão editorial.</p>}
-      {marketingPack.benefits?.length > 0 && <><h4>Benefícios descritos no ebook</h4><ul>{marketingPack.benefits.map((item, index) => <li key={index}>{item}</li>)}</ul></>}
-      {marketingPack.faq?.length > 0 && <><h4>Perguntas frequentes</h4>{marketingPack.faq.map((item, index) => <p key={index}><b>{item.question}</b><br />{item.answer}</p>)}</>}
-      {marketingPack.social_posts?.length > 0 && <><h4>Posts preparados para divulgação</h4>{marketingPack.social_posts.map((post, index) => <div className="panel-note" key={index}>
+      {Array.isArray(marketingPack.benefits) && marketingPack.benefits.length > 0 && <><h4>Benefícios descritos no ebook</h4><ul>{marketingPack.benefits.map((item, index) => <li key={index}>{item}</li>)}</ul></>}
+      {Array.isArray(marketingPack.faq) && marketingPack.faq.length > 0 && <><h4>Perguntas frequentes</h4>{marketingPack.faq.map((item, index) => <p key={index}><b>{item.question}</b><br />{item.answer}</p>)}</>}
+      {Array.isArray(marketingPack.social_posts) && marketingPack.social_posts.length > 0 && <><h4>Posts preparados para divulgação</h4>{marketingPack.social_posts.map((post, index) => <div className="panel-note" key={index}>
         <b>{post.platform}: {post.hook}</b><p>{post.caption}</p><p><b>CTA:</b> {post.cta}</p>
         <Button onClick={() => copyText(`${post.hook}\n\n${post.caption}\n\n${post.cta}`)}>Copiar post</Button>
       </div>)}</>}
