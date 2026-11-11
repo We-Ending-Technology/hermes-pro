@@ -30,6 +30,7 @@ from worker.json_utils import build_review_excerpt, is_ebook_payload, parse_json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hermes.worker")
+ARTIFACT_RENDER_SEMAPHORE = asyncio.Semaphore(1)
 MAX_ATTEMPTS = 3
 RECOVERY_INTERVAL_SECONDS = 300
 ARTIFACT_BUCKETS = {"cover": "covers", "docx": "exports", "pdf": "ebooks"}
@@ -587,13 +588,29 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         if settings.ai_image_required and not cover_artwork:
             raise RuntimeError("commercial publication requires a successfully generated AI cover")
 
-        artifacts = build_artifacts(
-            title or topic,
-            subtitle,
-            json.dumps(writer_data, ensure_ascii=False),
-            cover_artwork=cover_artwork,
+        logger.info(
+            "AI cover generated product=%s provider=%s bytes=%s",
+            product_id,
+            cover_art_metadata["provider"],
+            len(cover_artwork or b""),
         )
-        artifact_gate = validate_artifacts(artifacts)
+        logger.info("artifact rendering queued product=%s", product_id)
+        async with ARTIFACT_RENDER_SEMAPHORE:
+            artifacts = await asyncio.to_thread(
+                build_artifacts,
+                title or topic,
+                subtitle,
+                json.dumps(writer_data, ensure_ascii=False),
+                cover_artwork=cover_artwork,
+            )
+            artifact_gate = await asyncio.to_thread(validate_artifacts, artifacts)
+        logger.info(
+            "artifact rendering completed product=%s artifacts=%s pages=%s illustrations=%s",
+            product_id,
+            list(artifacts),
+            artifact_gate["page_count"],
+            artifact_gate["illustration_count"],
+        )
         if not artifact_gate["approved"]:
             raise RuntimeError("artifact quality gate failed: " + "; ".join(artifact_gate.get("findings") or []))
         expected_signatures = {"cover": bytes.fromhex("89504e470d0a1a0a"), "docx": bytes.fromhex("504b0304"), "pdf": b"%PDF-"}
@@ -612,8 +629,10 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
                 raise RuntimeError(f"No private storage bucket mapped for artifact kind: {kind}")
             storage = SupabaseStorage(settings, bucket=bucket)
             object_path = f"{product_id}/{path}"
+            logger.info("artifact upload started product=%s kind=%s", product_id, kind)
             artifact_urls[kind] = await storage.upload(object_path, content, content_type)
             artifact_paths[kind] = {"bucket": bucket, "path": object_path}
+            logger.info("artifact upload completed product=%s kind=%s", product_id, kind)
 
         required_artifacts = {"cover", "docx", "pdf"}
         if set(artifact_urls) != required_artifacts:
