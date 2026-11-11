@@ -32,7 +32,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hermes.worker")
 ARTIFACT_RENDER_SEMAPHORE = asyncio.Semaphore(1)
 MAX_ATTEMPTS = 3
-RECOVERY_INTERVAL_SECONDS = 300
+RECOVERY_INTERVAL_SECONDS = 60  # Recover persisted jobs promptly after a missed Redis enqueue
 ARTIFACT_BUCKETS = {"cover": "covers", "docx": "exports", "pdf": "ebooks"}
 
 
