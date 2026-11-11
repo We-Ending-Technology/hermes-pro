@@ -63,6 +63,11 @@ def is_kiwify_publishable_product(product: dict) -> bool:
         and len(marketing_pack.get("keywords")) >= 5
         and isinstance(marketing_pack.get("social_posts"), list)
         and len(marketing_pack.get("social_posts")) >= 3
+        and all(
+            isinstance(post, dict)
+            and all(isinstance(post.get(key), str) and post[key].strip() for key in ("platform", "hook", "caption", "cta"))
+            for post in marketing_pack.get("social_posts", [])[:3]
+        )
         and page_count >= 10
         and illustration_count >= 4
         and quality_score >= 80
