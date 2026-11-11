@@ -36,7 +36,7 @@ def publishable_product():
             "artifact_status": "ready",
             "quality_score": "85",
             "quality_gate": {"approved": True, "page_count": 10, "illustration_count": 4, "ai_cover_generated": True},
-            "cover_art": {"provider": "ai_horde", "model": "stable_diffusion_2.1", "generated": True},
+            "cover_art": {"provider": "ovhcloud", "model": "stable-diffusion-xl-base-v10", "generated": True},
             "marketing_pack_status": "ready",
             "marketing_pack": {
                 "product_description": "Descrição comercial honesta do ebook. " * 12,
@@ -98,7 +98,7 @@ def test_missing_or_invalid_quality_evidence_blocks_publication(metadata_change)
 def test_publication_requires_verified_ai_generated_cover(cover_art_change):
     product = publishable_product()
     product["metadata"]["cover_art"] = cover_art_change
-    if cover_art_change.get("provider") == "ai_horde" and cover_art_change.get("generated") is True:
+    if cover_art_change.get("provider") in {"ai_horde", "ovhcloud"} and cover_art_change.get("generated") is True:
         assert is_kiwify_publishable_product(product) is True
     else:
         assert is_kiwify_publishable_product(product) is False
