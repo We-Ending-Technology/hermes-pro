@@ -87,7 +87,23 @@ def test_publication_requires_content_and_artifact_quality_gate():
         "metadata": {
             "artifact_status": "ready",
             "quality_score": 95,
-            "quality_gate": {"approved": True, "page_count": 10, "illustration_count": 4},
+            "quality_gate": {"approved": True, "page_count": 10, "illustration_count": 4, "ai_cover_generated": True},
+            "cover_art": {"provider": "ai_horde", "model": "SDXL 1.0", "generated": True},
+            "marketing_pack_status": "ready",
+            "marketing_pack": {
+                "product_description": "Descrição comercial honesta do ebook. " * 12,
+                "short_description": "Guia prático e objetivo para aplicar os conceitos do livro com orientações claras, exemplos e atividades úteis.",
+                "target_audience": "Pessoas que querem aprender e aplicar os conceitos do guia.",
+                "contents": ["Item 1", "Item 2", "Item 3", "Item 4", "Item 5", "Item 6"],
+                "benefits": ["Benefício 1", "Benefício 2", "Benefício 3", "Benefício 4"],
+                "faq": [{"question": "O que inclui?", "answer": "O conteúdo completo do guia."}] * 3,
+                "keywords": ["ebook", "guia", "prático", "digital", "aprendizado"],
+                "social_posts": [
+                    {"platform": "Instagram", "hook": "Veja o guia", "caption": "Conteúdo do ebook", "cta": "Saiba mais"},
+                    {"platform": "TikTok", "hook": "Aprenda", "caption": "Conteúdo do ebook", "cta": "Confira"},
+                    {"platform": "Facebook", "hook": "Guia prático", "caption": "Conteúdo do ebook", "cta": "Conheça"},
+                ],
+            },
             "artifacts": {
                 "pdf": "https://storage/pdf",
                 "docx": "https://storage/docx",

@@ -93,6 +93,20 @@ async def ready() -> dict[str, Any]:
             "required": False,
         })
 
+    image_provider = (settings.ai_image_provider or "").strip().lower()
+    image_configured = image_provider == "aihorde" and bool(settings.ai_horde_api_key)
+    checks.append({
+        "name": "AI Cover Generator",
+        "status": "ready" if image_configured else "optional_missing",
+        "configured": image_configured,
+        "message": (
+            f"AI Horde configured with {settings.ai_horde_model}; live worker availability is verified during generation."
+            if image_configured
+            else "Configure AI_IMAGE_PROVIDER=aihorde to generate commercial ebook covers."
+        ),
+        "required": False,
+    })
+
     critical_ready = all(item["configured"] for item in checks if item["required"])
     return {
         "status": "ready" if critical_ready else "degraded",
