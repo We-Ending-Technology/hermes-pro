@@ -73,6 +73,7 @@ async def test_generate_cover_artwork_polls_horde_and_downloads_result(monkeypat
 
     transport = httpx.MockTransport(handler)
     settings = SimpleNamespace(
+        ai_image_provider="aihorde",
         ai_horde_api_key="0000000000",
         ai_horde_model="stable_diffusion_2.1",
         ai_horde_timeout_seconds=30,
