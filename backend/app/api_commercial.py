@@ -23,6 +23,19 @@ hotmart = HotmartClient(settings)
 telegram = TelegramNotifier(settings)
 
 
+
+def _ai_provider_key_configured(provider: str, settings: Any) -> bool:
+    """Check only whether a provider credential exists; never expose the secret."""
+    provider = (provider or "").strip().lower()
+    if provider == "gemini":
+        return bool(settings.gemini_api_key or settings.ai_api_key)
+    if provider == "openai":
+        return bool(settings.openai_api_key)
+    if provider == "groq":
+        return bool(settings.groq_api_key)
+    return False
+
+
 @router.get("/ready")
 async def ready() -> dict[str, Any]:
     """Check live dependencies; never expose secret values."""
@@ -43,18 +56,9 @@ async def ready() -> dict[str, Any]:
             await client.aclose()
 
     provider = settings.ai_provider.strip().lower()
-    if provider == "gemini":
-        primary_ai_ok = bool(settings.gemini_api_key or settings.ai_api_key)
-    elif provider == "openai":
-        primary_ai_ok = bool(settings.openai_api_key)
-    else:
-        primary_ai_ok = False
+    primary_ai_ok = _ai_provider_key_configured(provider, settings)
     fallback_provider = (settings.ai_fallback_provider or "").strip().lower()
-    fallback_ai_ok = (
-        fallback_provider == "openai" and bool(settings.openai_api_key)
-    ) or (
-        fallback_provider == "gemini" and bool(settings.gemini_api_key or settings.ai_api_key)
-    )
+    fallback_ai_ok = _ai_provider_key_configured(fallback_provider, settings)
     ai_ok = primary_ai_ok or fallback_ai_ok
     ai_message = "Primary configured: " + str(primary_ai_ok) + "; fallback " + fallback_provider + " configured: " + str(fallback_ai_ok)
 

@@ -76,3 +76,12 @@ def test_unicode_api_key_header_returns_401_not_internal_server_error():
         )
     assert response.status_code == 401
     assert response.json()["detail"] == "Acesso privado: chave inválida ou ausente."
+
+def test_ai_provider_key_configured_recognizes_groq_fallback():
+    from backend.app.api_commercial import _ai_provider_key_configured
+    from backend.app.core.config import Settings
+
+    assert _ai_provider_key_configured("groq", Settings(groq_api_key="test-groq-key"))
+    assert not _ai_provider_key_configured("groq", Settings())
+    assert _ai_provider_key_configured("gemini", Settings(gemini_api_key="test-gemini-key"))
+

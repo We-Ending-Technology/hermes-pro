@@ -766,6 +766,7 @@ async def run() -> None:
     last_autonomy_tick = 0.0
     last_supervision_tick = 0.0
     last_heartbeat = 0.0
+    last_memory_cleanup = loop.time()
     last_recovery = loop.time()
     try:
         try:
@@ -782,6 +783,10 @@ async def run() -> None:
             logger.exception("initial job recovery failed or timed out; worker will continue")
         while True:
             now = loop.time()
+            if (now - last_memory_cleanup) >= 60:
+                _release_worker_memory("periodic")
+                last_memory_cleanup = loop.time()
+
             if settings.autonomy_enabled and (now - last_autonomy_tick) >= settings.autonomy_interval_seconds:
                 try:
                     logger.info("autonomy tick starting")
