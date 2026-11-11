@@ -280,7 +280,8 @@ async def autonomy_tick(settings: Settings, store: PersistentStore, queue) -> di
     if len(review_backlog) >= settings.autonomy_max_review_required_products:
         return {"status": "review_backlog_full", "review_required": len(review_backlog)}
 
-    ready = [p for p in products if is_kiwify_publishable_product(p)]
+    # Count every approved-for-review product awaiting its platform checkout, even if a newly added gate requires it to be rebuilt.
+    ready = [p for p in products if p.get("status") == "ready_to_publish"]
     if len(ready) >= settings.autonomy_max_ready_to_publish:
         return {"status": "publication_backlog_full", "ready_to_publish": len(ready)}
 

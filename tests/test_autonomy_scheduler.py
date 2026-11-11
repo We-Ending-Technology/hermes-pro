@@ -303,3 +303,37 @@ async def test_content_that_passed_deterministic_gate_uses_validation_only_job()
     assert store.validations == [("p-metrics-pass", 1)]
     assert store.rebuilds == []
     assert queue.jobs == ["validation-job-1"]
+
+
+@pytest.mark.asyncio
+async def test_publication_backlog_counts_ready_products_even_if_new_gate_requires_rebuild():
+    settings = Settings(
+        autonomy_enabled=True,
+        ai_provider="gemini",
+        gemini_api_key="test-key",
+        autonomy_max_active_products=5,
+        autonomy_max_ready_to_publish=2,
+        autonomy_max_daily_products=10,
+    )
+    products = [
+        {
+            "id": f"ready-{index}",
+            "status": "ready_to_publish",
+            "topic": f"Produto pronto {index}",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "metadata": {
+                "artifact_status": "ready",
+                "quality_gate": {"approved": True, "page_count": 12, "illustration_count": 4},
+                # Legacy products may not yet have AI cover and marketing evidence.
+                "artifacts": {"pdf": "https://storage/pdf", "docx": "https://storage/docx", "cover": "https://storage/cover"},
+            },
+        }
+        for index in range(4)
+    ]
+    store, queue = FakeStore(products), FakeQueue()
+
+    result = await autonomy_scheduler.autonomy_tick(settings, store, queue)
+
+    assert result == {"status": "publication_backlog_full", "ready_to_publish": 4}
+    assert store.created == []
+    assert queue.jobs == []
