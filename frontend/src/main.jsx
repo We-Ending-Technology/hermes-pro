@@ -354,7 +354,7 @@ function Publish({ product, integrations }) {
     && qualityGate.approved === true
     && qualityGate.ai_cover_generated === true
     && coverArt.generated === true
-    && coverArt.provider === "ai_horde"
+    && ["ai_horde", "ovhcloud"].includes(coverArt.provider)
     && product.metadata?.marketing_pack_status === "ready"
     && typeof marketingPack.product_description === "string"
     && marketingPack.product_description.length >= 300;
