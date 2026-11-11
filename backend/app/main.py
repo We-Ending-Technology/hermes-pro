@@ -261,8 +261,10 @@ async def agents_status():
         and worker_age_seconds is not None
         and worker_age_seconds <= 180
     )
-    ai_provider_healthy = ai_ready and not provider_degraded
-    ready = ai_provider_healthy and redis_ready and worker_ready
+    # A recent transient provider error should mark the Chief degraded, but must not
+    # prevent durable queueing. The worker can retry the persisted job after recovery.
+    dispatch_ready = ai_ready and redis_ready and worker_ready
+    ready = dispatch_ready and not provider_degraded
     if not ai_ready:
         chief_status = "blocked_ai_provider_not_configured"
     elif provider_degraded:
@@ -276,6 +278,7 @@ async def agents_status():
 
     return {
         "chief": chief_status,
+        "dispatch_ready": dispatch_ready,
         "agents": [
             {"name": "Hermes Chefe", "role": "orchestrator", "status": "ready" if ready else "blocked"},
             {"name": "Hermes Radar", "role": "research", "status": "ready" if ready else "blocked"},
@@ -307,8 +310,8 @@ async def dispatch_agent(request: AgentRunRequest):
     if len(prompt) < 8:
         raise HTTPException(status_code=422, detail="A tarefa precisa ter pelo menos 8 caracteres.")
     health = await agents_status()
-    if health["chief"] != "ready":
-        raise HTTPException(status_code=503, detail={"message": "Hermes Chefe indisponível; tarefa não foi enfileirada.", "checks": health})
+    if not health.get("dispatch_ready", health["chief"] == "ready"):
+        raise HTTPException(status_code=503, detail={"message": "Hermes Chefe sem dependências essenciais; tarefa não foi enfileirada.", "checks": health})
     try:
         job = await autonomy.create_job(
             "Execute esta tarefa pelo time Hermes e entregue evidências e recomendações: " + prompt,
