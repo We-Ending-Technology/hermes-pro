@@ -68,6 +68,7 @@ async def build_operational_context(store: PersistentStore, settings: Settings) 
         or (fallback == "gemini" and bool(
             getattr(settings, "gemini_api_key", None) or getattr(settings, "ai_api_key", None)
         ))
+        or (fallback == "groq" and bool(getattr(settings, "groq_api_key", None)))
     )
 
     return {
