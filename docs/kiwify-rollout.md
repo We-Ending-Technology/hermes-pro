@@ -49,19 +49,17 @@ Use Kiwify's **Testar Webhook** panel to validate signature and delivery. Its or
 
 ## AI cover generation
 
-New product jobs use the free, volunteer-run AI Horde image API with the SDXL 1.0 model by default:
-- `AI_IMAGE_PROVIDER=aihorde`
+New product jobs use OVHcloud AI Endpoints with Stable Diffusion XL 1.0 by default:
+- `AI_IMAGE_PROVIDER=ovhcloud`
 - `AI_IMAGE_REQUIRED=true`
-- `AI_HORDE_MODEL=stable_diffusion_2.1`
-- `AI_HORDE_API_KEY=0000000000` (anonymous access; an optional personal AI Horde key improves queue priority)
-- `AI_HORDE_TIMEOUT_SECONDS=180`
+- `OVHCLOUD_IMAGE_MODEL=stable-diffusion-xl-base-v10`
+- `OVHCLOUD_IMAGE_TIMEOUT_SECONDS=90`
 
-The generated artwork is composed with Hermes typography into a 1600x2560 PNG cover and stored in the private Supabase Storage bucket. The four internal illustrations remain topic-specific infographics rendered from the writer's illustration briefs. Kiwify publication now fails closed unless metadata confirms an AI Horde cover.
+No API key, account, payment method, or card is required for anonymous calls. OVHcloud documents an anonymous limit of 2 requests per minute per IP and model; Hermes serializes requests with a 35-second minimum gap and retries a 429 once using the provider's `Retry-After` value. The generated 1024x1024 artwork is composed with Hermes typography into a 1600x2560 PNG cover and stored in private Supabase Storage. The four internal illustrations remain topic-specific infographics rendered from the writer's illustration briefs. Kiwify publication requires a verified AI-generated cover.
 
-AI Horde is volunteer-operated: anonymous jobs have the lowest priority and can take longer or fail when compatible workers are unavailable. Prompts contain only public ebook topic material; do not send customer, account, or other private data. AI Horde workers receive the generation prompt and process the image. Stable Diffusion 2.1 is distributed under CreativeML OpenRAIL++-M; commercial use is permitted subject to the license's use restrictions. See https://huggingface.co/stabilityai/stable-diffusion-2-1 and https://aihub.qualcomm.com/compute/models/stable_diffusion_v2_1.
+The SDXL 1.0 model is published under CreativeML OpenRAIL++; commercial use is subject to that license's restrictions. OVHcloud's AI Endpoints documentation states that request data is not stored or shared during or after model use. Prompts contain only public ebook subject material. See https://www.ovhcloud.com/en-ie/public-cloud/ai-endpoints/catalog/stable-diffusion-xl/, https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-troubleshooting, and https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0.
 
-A local vector fallback is available only when `AI_IMAGE_REQUIRED=false`; such a product is intentionally not eligible for Kiwify publication until an AI cover has been generated.
-
+AI Horde remains an optional provider via `AI_IMAGE_PROVIDER=aihorde`, but anonymous queue priority can be too slow for production. A local vector fallback is available only when `AI_IMAGE_REQUIRED=false`; such a product is intentionally not eligible for Kiwify publication until an AI cover has been generated.
 
 ## Commercial copy package
 
