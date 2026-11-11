@@ -84,7 +84,7 @@ app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan, docs_
 
 @app.middleware("http")
 async def require_private_api_key(request: Request, call_next):
-    public_paths = {"/", "/health", "/ready", "/api/v1/webhooks/hotmart", "/api/v1/webhooks/kiwify"}
+    public_paths = {"/", "/health", "/ready", "/time", "/api/v1/webhooks/hotmart", "/api/v1/webhooks/kiwify"}
     if request.method == "OPTIONS" or request.url.path in public_paths:
         return await call_next(request)
     if not settings.hermes_api_key:
@@ -157,6 +157,11 @@ def job_response(row: dict) -> JobResponse:
 
 @app.get("/")
 async def root(): return {"status":"ok","service":"hermes-pro-api","version":"0.5.0"}
+
+@app.get("/time")
+async def server_time():
+    """Expose authoritative UTC time; clients render it in America/Sao_Paulo."""
+    return {"utc": datetime.now(timezone.utc).isoformat(), "timezone": "America/Sao_Paulo"}
 
 @app.get("/api/v1/auth/verify")
 async def verify_private_access():
