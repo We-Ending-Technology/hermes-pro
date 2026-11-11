@@ -61,3 +61,8 @@ The generated artwork is composed with Hermes typography into a 1600x2560 PNG co
 AI Horde is volunteer-operated: anonymous jobs have the lowest priority and can take longer or fail when compatible workers are unavailable. Prompts contain only public ebook topic material; do not send customer, account, or other private data. AI Horde workers receive the generation prompt and process the image. SDXL 1.0 is distributed under CreativeML Open RAIL++-M; commercial use is permitted subject to the license's use restrictions. See https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0 and https://github.com/Stability-AI/generative-models/blob/main/model_licenses/LICENSE-SDXL1.0.
 
 A local vector fallback is available only when `AI_IMAGE_REQUIRED=false`; such a product is intentionally not eligible for Kiwify publication until an AI cover has been generated.
+
+
+## Commercial copy package
+
+Before a product can pass the Kiwify publication gate, the factory also generates and validates a `marketing_pack` from the approved manuscript: long and short descriptions, target audience, concrete benefits, contents list, FAQ, search keywords, and three ready-to-edit social posts. The copy gate rejects guaranteed-income or guaranteed-results claims and blocks publication when the package is missing or structurally incomplete. These assets are prepared for the Kiwify listing and social distribution; they are not evidence that a social post was published.
