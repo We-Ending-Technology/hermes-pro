@@ -16,6 +16,7 @@ from .agents.registry import AgentRegistry
 from .agents.orchestrator import SPECIALISTS
 from .agents.specialist import ChiefAgent, SpecialistAgent
 from .api_commercial import router as commercial_router
+from .api_kiwify import router as kiwify_api_router
 from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
 from .queue import JobQueue
@@ -109,6 +110,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(commercial_router)
+app.include_router(kiwify_api_router)
 
 
 async def product_response(row: dict) -> ProductResponse:
