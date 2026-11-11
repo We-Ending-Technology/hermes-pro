@@ -84,3 +84,34 @@ async def test_bucket_creation_failure_is_not_silently_ignored(monkeypatch):
 
     with pytest.raises(StorageError, match="403"):
         await SupabaseStorage(settings, bucket="ebooks").ensure_bucket()
+
+
+@pytest.mark.asyncio
+async def test_private_artifact_signed_url_can_be_refreshed(monkeypatch):
+    clients = []
+
+    class SigningClient:
+        def __init__(self, *args, **kwargs):
+            self.calls = []
+            clients.append(self)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, **kwargs):
+            self.calls.append((url, kwargs))
+            return FakeResponse(200, {"signedURL": "/storage/v1/object/sign/ebooks/product/book.pdf?token=fresh"})
+
+    monkeypatch.setattr(storage_module.httpx, "AsyncClient", SigningClient)
+    settings = Settings(
+        supabase_url="https://project.supabase.co",
+        supabase_secret_key="sb_secret_test",
+    )
+
+    url = await SupabaseStorage(settings, bucket="ebooks").create_signed_url("product/book.pdf")
+
+    assert url == "https://project.supabase.co/storage/v1/object/sign/ebooks/product/book.pdf?token=fresh"
+    assert clients[0].calls[0][1]["json"] == {"expiresIn": 604800}

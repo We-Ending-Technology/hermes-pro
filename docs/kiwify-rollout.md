@@ -66,3 +66,8 @@ A local vector fallback is available only when `AI_IMAGE_REQUIRED=false`; such a
 ## Commercial copy package
 
 Before a product can pass the Kiwify publication gate, the factory also generates and validates a `marketing_pack` from the approved manuscript: long and short descriptions, target audience, concrete benefits, contents list, FAQ, search keywords, and three ready-to-edit social posts. The copy gate rejects guaranteed-income or guaranteed-results claims and blocks publication when the package is missing or structurally incomplete. These assets are prepared for the Kiwify listing and social distribution; they are not evidence that a social post was published.
+
+
+## Private artifact link lifecycle
+
+Ebook files remain in private Supabase Storage buckets. Product metadata stores the stable bucket/object path separately from its short-lived signed URL. The API refreshes signed URLs automatically when they are within 24 hours of expiry and persists the new URL, so a dashboard refresh does not leave old PDF/DOCX/cover links broken. Files are never made public.
