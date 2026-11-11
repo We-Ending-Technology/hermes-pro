@@ -565,14 +565,22 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             "generated": False,
         }
         image_provider = str(settings.ai_image_provider or "aihorde").strip().lower()
-        if image_provider == "aihorde":
+        if image_provider in {"ovhcloud", "aihorde"}:
             cover_artwork = await generate_cover_artwork(title or topic, subtitle, writer_data, settings)
-            cover_art_metadata = {
-                "provider": "ai_horde",
-                "model": settings.ai_horde_model,
-                "generated": True,
-                "license_basis": "Stable Diffusion 2.1; CreativeML OpenRAIL++-M; commercial use subject to license restrictions",
-            }
+            if image_provider == "ovhcloud":
+                cover_art_metadata = {
+                    "provider": "ovhcloud",
+                    "model": settings.ovhcloud_image_model,
+                    "generated": True,
+                    "license_basis": "Stable Diffusion XL 1.0; CreativeML OpenRAIL++-M; commercial use subject to license restrictions",
+                }
+            else:
+                cover_art_metadata = {
+                    "provider": "ai_horde",
+                    "model": settings.ai_horde_model,
+                    "generated": True,
+                    "license_basis": "Stable Diffusion 2.1; CreativeML OpenRAIL++-M; commercial use subject to license restrictions",
+                }
         elif settings.ai_image_required:
             raise RuntimeError("AI_IMAGE_REQUIRED is enabled but AI_IMAGE_PROVIDER is not configured for a supported image provider")
 
