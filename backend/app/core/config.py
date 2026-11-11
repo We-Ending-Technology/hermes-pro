@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     ai_api_key: str | None = Field(default=None, validation_alias="AI_API_KEY")
     openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
     openai_chat_model: str = Field(default="gpt-6-luna", validation_alias="OPENAI_CHAT_MODEL")
+    groq_api_key: str | None = Field(default=None, validation_alias="GROQ_API_KEY")
+    groq_chat_model: str = Field(default="openai/gpt-oss-20b", validation_alias="GROQ_CHAT_MODEL")
     openai_agent_model: str = Field(default="gpt-6-astra", validation_alias="OPENAI_AGENT_MODEL")
     autonomy_enabled: bool = Field(default=False, validation_alias="AUTONOMY_ENABLED")
     embedded_worker_enabled: bool = Field(default=False, validation_alias="EMBEDDED_WORKER_ENABLED")
