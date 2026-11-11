@@ -497,6 +497,7 @@ function Publish({ product, integrations }) {
           <Button onClick={loadKiwifyProducts} disabled={kiwifyProductsBusy}>{kiwifyProductsBusy ? "Consultando…" : "Consultar catálogo Kiwify"}</Button>
         </div>
         {kiwifyApiStatus?.message && <p>{kiwifyApiStatus.message}</p>}
+        {!kiwifyApiStatus?.configured && <p>Configuração única: no Render, abra o serviço <b>hermes-pro-api-commercial</b> → Environment e adicione <code>KIWIFY_API_CLIENT_ID</code>, <code>KIWIFY_API_CLIENT_SECRET</code> e <code>KIWIFY_ACCOUNT_ID</code>. Não coloque esses valores no chat. Depois volte aqui e valide a conexão.</p>}
       </div>
       {!commercialReady && <div className="panel-note">Publicação bloqueada: o ebook precisa de capa IA, revisão aprovada e pacote comercial completo antes de vincular checkout.</div>}
       <form className="factory-form" onSubmit={saveKiwify}>
