@@ -40,6 +40,7 @@ function App() {
   const [trendingTopics, setTrendingTopics] = useState([]);
   const [trendsBusy, setTrendsBusy] = useState(false);
   const refreshing = useRef(false);
+  const chatPending = useRef(false);
 
   const login = async (event) => {
     event.preventDefault();
@@ -119,19 +120,77 @@ function App() {
   const sendChat = async (event) => {
     event.preventDefault();
     const text = chatInput.trim();
-    if (!text) return;
+    if (!text || chatPending.current) return;
+
+    chatPending.current = true;
     setChat(items => [...items, { role: "user", text }]);
     setChatInput("");
-    const result = await action(() => call("/api/v1/chat", {
-      method: "POST", body: JSON.stringify({ message: text })
-    }));
-    if (result) setChat(items => [...items, {
-      role: "assistant",
-      text: result.response,
-      meta: `${result.provider || "AI"} · ${result.model || "modelo"}`,
-      action: result.action || null,
-      evidence: result.evidence || null,
-    }]);
+    setBusy(true);
+    setNotice("Hermes Chefe recebeu a tarefa e está iniciando os agentes.");
+
+    try {
+      // Dispatch is persistent: the browser no longer waits for a long synchronous AI response.
+      const queued = await call("/api/v1/agents/dispatch", {
+        method: "POST",
+        body: JSON.stringify({ agent: "Hermes Chefe", input: { prompt: text } }),
+        timeoutMs: 20000,
+      });
+      const runId = queued?.run_id;
+      if (!runId) throw new Error("A API não confirmou o ID da execução do Hermes Chefe.");
+
+      let completedRun = null;
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        const result = await call("/api/v1/agents/runs", { timeoutMs: 15000 });
+        const run = (result.runs || []).find(item => String(item.id) === String(runId));
+        if (!run) continue;
+
+        const status = run.job_status || run.status;
+        if (status === "completed") {
+          completedRun = run;
+          break;
+        }
+        if (status === "failed" || status === "cancelled") {
+          throw new Error(run.job_error || run.error_message || `Execução ${status}: ${runId}`);
+        }
+        if (attempt > 0 && attempt % 10 === 9) {
+          setNotice(`Hermes Chefe trabalhando. Tempo decorrido: ${Math.ceil((attempt + 1) * 3 / 60)} min.`);
+        }
+      }
+
+      if (!completedRun) {
+        setChat(items => [...items, {
+          role: "assistant",
+          text: `A execução continua registrada no servidor e não foi perdida. ID: ${runId}. Consulte a área Jobs para acompanhar o estado.`,
+          meta: "Hermes Chefe · execução persistente",
+        }]);
+        setNotice(`A tarefa continua em execução. ID: ${runId}`);
+        return;
+      }
+
+      const output = completedRun.output || {};
+      const answer = typeof output.output === "string" ? output.output : "";
+      if (!answer.trim()) throw new Error("O worker marcou a execução como concluída, mas não entregou uma resposta válida.");
+      setChat(items => [...items, {
+        role: "assistant",
+        text: answer,
+        meta: `${output.provider || "Hermes Chefe"} · ${output.model || "time de agentes"}`,
+        action: output.action || null,
+        evidence: output.operational_context || null,
+      }]);
+      setNotice("Hermes Chefe concluiu a execução persistente.");
+    } catch (error) {
+      setChat(items => [...items, {
+        role: "assistant",
+        text: `Não foi possível concluir a tarefa: ${error.message}`,
+        meta: "Hermes Chefe · falha registrada",
+      }]);
+      setNotice(error.message || "Falha ao executar a tarefa.");
+    } finally {
+      chatPending.current = false;
+      setBusy(false);
+      await refresh();
+    }
   };
 
   const findTrendingTopics = async () => {

@@ -21,30 +21,43 @@ function getAdminToken() {
 }
 
 async function request(base, path, options = {}) {
-  const headers = { ...(options.headers || {}) };
+  const { timeoutMs = 15000, ...fetchOptions } = options;
+  const headers = { ...(fetchOptions.headers || {}) };
   const needsAdminToken = path.startsWith("/api/v1/")
     && path !== "/api/v1/webhooks/hotmart";
-  if (options.body !== undefined && options.body !== null && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  if (fetchOptions.body !== undefined && fetchOptions.body !== null && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   if (needsAdminToken) {
     const token = getAdminToken();
     if (!token) throw new Error("Acesso privado não informado. Digite a chave configurada em HERMES_API_KEY no Render.");
     headers["X-Hermes-API-Key"] = token;
   }
-  const response = await fetch(base + path, { ...options, headers });
-  const text = await response.text();
-  let body = {};
-  try { body = text ? JSON.parse(text) : {}; } catch { body = { detail: text }; }
-  if (response.status === 401 && needsAdminToken) {
-    clearAdminToken();
-    throw new Error("A chave de acesso foi rejeitada. Confira HERMES_API_KEY no Render e tente novamente.");
-  }
-  if (!response.ok) {
-    const error = new Error(body.detail || ("HTTP " + response.status));
-    error.status = response.status;
-    error.base = base || "proxy";
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(base + path, { ...fetchOptions, headers, signal: controller.signal });
+    const text = await response.text();
+    let body = {};
+    try { body = text ? JSON.parse(text) : {}; } catch { body = { detail: text }; }
+    if (response.status === 401 && needsAdminToken) {
+      clearAdminToken();
+      throw new Error("A chave de acesso foi rejeitada. Confira HERMES_API_KEY no Render e tente novamente.");
+    }
+    if (!response.ok) {
+      const error = new Error(body.detail || ("HTTP " + response.status));
+      error.status = response.status;
+      error.base = base || "proxy";
+      throw error;
+    }
+    return body;
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error(`Tempo limite excedido ao consultar ${path} (${Math.ceil(timeoutMs / 1000)}s).`);
+    }
     throw error;
+  } finally {
+    clearTimeout(timer);
   }
-  return body;
 }
 
 export async function call(path, options = {}) {
