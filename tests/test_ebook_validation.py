@@ -92,7 +92,7 @@ def test_publication_requires_content_and_artifact_quality_gate():
             "marketing_pack_status": "ready",
             "marketing_pack": {
                 "product_description": "Descrição comercial honesta do ebook. " * 12,
-                "short_description": "Guia prático e objetivo para aplicar os conceitos do livro.",
+                "short_description": "Guia prático e objetivo para aplicar os conceitos do livro com orientações claras, exemplos e atividades úteis.",
                 "target_audience": "Pessoas que querem aprender e aplicar os conceitos do guia.",
                 "contents": ["Item 1", "Item 2", "Item 3", "Item 4", "Item 5", "Item 6"],
                 "benefits": ["Benefício 1", "Benefício 2", "Benefício 3", "Benefício 4"],
