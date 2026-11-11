@@ -45,8 +45,7 @@ function App() {
     setAuthError("");
     setAdminToken(candidate);
     try {
-      const data = await call("/api/v1/dashboard");
-      setDashboard(data);
+      await call("/api/v1/auth/verify");
       setAuthenticated(true);
       setAuthKey("");
     } catch (error) {
