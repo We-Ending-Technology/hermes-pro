@@ -31,6 +31,7 @@ def is_kiwify_publishable_product(product: dict) -> bool:
     metadata = product.get("metadata") or {}
     artifacts = metadata.get("artifacts") or {}
     quality_gate = metadata.get("quality_gate") or {}
+    cover_art = metadata.get("cover_art") or {}
     try:
         page_count = int(quality_gate.get("page_count") or 0)
         illustration_count = int(quality_gate.get("illustration_count") or 0)
@@ -45,6 +46,9 @@ def is_kiwify_publishable_product(product: dict) -> bool:
             for kind in ("pdf", "docx", "cover")
         )
         and quality_gate.get("approved") is True
+        and quality_gate.get("ai_cover_generated") is True
+        and cover_art.get("generated") is True
+        and cover_art.get("provider") == "ai_horde"
         and page_count >= 10
         and illustration_count >= 4
         and quality_score >= 80
