@@ -41,6 +41,8 @@ def publishable_product():
             "marketing_pack": {
                 "product_description": "Descrição comercial honesta do ebook. " * 12,
                 "short_description": "Guia prático e objetivo para aplicar os conceitos do livro.",
+                "target_audience": "Pessoas que querem aprender e aplicar os conceitos do guia.",
+                "contents": ["Item 1", "Item 2", "Item 3", "Item 4", "Item 5", "Item 6"],
                 "benefits": ["Benefício 1", "Benefício 2", "Benefício 3", "Benefício 4"],
                 "faq": [{"question": "O que inclui?", "answer": "O conteúdo completo do guia."}] * 3,
                 "keywords": ["ebook", "guia", "prático", "digital", "aprendizado"],
