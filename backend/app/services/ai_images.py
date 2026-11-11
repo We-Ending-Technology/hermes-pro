@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import io
 from typing import Any
 
@@ -10,6 +11,9 @@ from PIL import Image
 
 HORDE_BASE_URL = "https://aihorde.net/api/v2"
 ANONYMOUS_HORDE_KEY = "0000000000"
+OVHCLOUD_BASE_URL = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"
+_OVHCLOUD_LOCK = asyncio.Lock()
+_OVHCLOUD_LAST_CALL = 0.0
 MAX_IMAGE_BYTES = 15 * 1024 * 1024
 
 
@@ -61,7 +65,7 @@ def _normalise_image(raw: bytes) -> bytes:
         raise AIImageError("AI Horde response was not a decodable image") from exc
 
 
-async def generate_cover_artwork(
+async def _generate_horde_cover_artwork(
     title: str,
     subtitle: str,
     content_data: dict[str, Any],
@@ -142,3 +146,83 @@ async def generate_cover_artwork(
     finally:
         if owns_client:
             await session.aclose()
+
+
+async def _generate_ovhcloud_cover_artwork(
+    title: str,
+    subtitle: str,
+    content_data: dict[str, Any],
+    settings: Any,
+    *,
+    client: httpx.AsyncClient | None = None,
+) -> bytes:
+    """Generate a free SDXL image through OVHcloud's anonymous endpoint (2 req/min/IP)."""
+    global _OVHCLOUD_LAST_CALL
+    model = str(getattr(settings, "ovhcloud_image_model", None) or "stable-diffusion-xl-base-v10")
+    base_url = str(getattr(settings, "ovhcloud_image_base_url", OVHCLOUD_BASE_URL)).rstrip("/")
+    timeout_seconds = max(30, int(getattr(settings, "ovhcloud_image_timeout_seconds", 90)))
+    payload = {
+        "model": model,
+        "prompt": build_cover_prompt(title, subtitle, content_data),
+        "size": "1024x1024",
+    }
+    owns_client = client is None
+    session = client or httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=True)
+    try:
+        async with _OVHCLOUD_LOCK:
+            loop = asyncio.get_running_loop()
+            wait_seconds = 35 - (loop.time() - _OVHCLOUD_LAST_CALL)
+            if wait_seconds > 0:
+                await asyncio.sleep(wait_seconds)
+            _OVHCLOUD_LAST_CALL = loop.time()
+            response = await session.post(
+                f"{base_url}/images/generations",
+                headers={"Content-Type": "application/json", "User-Agent": "HermesPro/1.0"},
+                json=payload,
+            )
+            if response.status_code == 429:
+                retry_after = response.headers.get("Retry-After", "35")
+                try:
+                    delay = max(35, min(90, int(float(retry_after))))
+                except ValueError:
+                    delay = 35
+                await asyncio.sleep(delay)
+                _OVHCLOUD_LAST_CALL = loop.time()
+                response = await session.post(
+                    f"{base_url}/images/generations",
+                    headers={"Content-Type": "application/json", "User-Agent": "HermesPro/1.0"},
+                    json=payload,
+                )
+        if response.is_error:
+            raise AIImageError(f"OVHcloud image generation failed: HTTP {response.status_code}")
+        try:
+            encoded = response.json()["data"][0]["b64_json"]
+            raw = base64.b64decode(encoded, validate=True)
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            raise AIImageError("OVHcloud did not return a valid base64 image") from exc
+        return _normalise_image(raw)
+    except httpx.HTTPError as exc:
+        raise AIImageError(f"OVHcloud image service network error: {type(exc).__name__}") from exc
+    finally:
+        if owns_client:
+            await session.aclose()
+
+
+async def generate_cover_artwork(
+    title: str,
+    subtitle: str,
+    content_data: dict[str, Any],
+    settings: Any,
+    *,
+    client: httpx.AsyncClient | None = None,
+) -> bytes:
+    provider = str(getattr(settings, "ai_image_provider", "ovhcloud") or "ovhcloud").strip().lower()
+    if provider == "ovhcloud":
+        return await _generate_ovhcloud_cover_artwork(
+            title, subtitle, content_data, settings, client=client
+        )
+    if provider == "aihorde":
+        return await _generate_horde_cover_artwork(
+            title, subtitle, content_data, settings, client=client
+        )
+    raise AIImageError(f"Unsupported AI_IMAGE_PROVIDER: {provider}")
