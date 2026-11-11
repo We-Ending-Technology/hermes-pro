@@ -337,3 +337,24 @@ async def test_publication_backlog_counts_ready_products_even_if_new_gate_requir
     assert result == {"status": "publication_backlog_full", "ready_to_publish": 4}
     assert store.created == []
     assert queue.jobs == []
+
+@pytest.mark.asyncio
+async def test_autonomy_tick_accepts_groq_as_configured_fallback(monkeypatch):
+    monkeypatch.setattr(autonomy_scheduler, "build_ai_gateway", lambda settings: FakeGateway())
+    settings = Settings(
+        autonomy_enabled=True,
+        ai_provider="gemini",
+        gemini_api_key="primary-key",
+        ai_fallback_provider="groq",
+        groq_api_key="groq-test-key",
+        autonomy_max_daily_products=3,
+        autonomy_max_active_products=1,
+        autonomy_max_ready_to_publish=3,
+    )
+    store, queue = FakeStore(), FakeQueue()
+
+    result = await autonomy_scheduler.autonomy_tick(settings, store, queue)
+
+    assert result["status"] == "product_queued"
+    assert queue.jobs == ["job-1"]
+
