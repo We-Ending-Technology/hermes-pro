@@ -55,10 +55,20 @@ def is_kiwify_publishable_product(product: dict) -> bool:
         and len(marketing_pack.get("product_description", "").strip()) >= 300
         and isinstance(marketing_pack.get("short_description"), str)
         and len(marketing_pack.get("short_description", "").strip()) >= 80
+        and isinstance(marketing_pack.get("target_audience"), str)
+        and len(marketing_pack.get("target_audience", "").strip()) >= 20
+        and isinstance(marketing_pack.get("contents"), list)
+        and len(marketing_pack.get("contents")) >= 5
         and isinstance(marketing_pack.get("benefits"), list)
         and len(marketing_pack.get("benefits")) >= 4
         and isinstance(marketing_pack.get("faq"), list)
         and len(marketing_pack.get("faq")) >= 3
+        and all(
+            isinstance(item, dict)
+            and isinstance(item.get("question"), str) and item["question"].strip()
+            and isinstance(item.get("answer"), str) and item["answer"].strip()
+            for item in marketing_pack.get("faq", [])[:3]
+        )
         and isinstance(marketing_pack.get("keywords"), list)
         and len(marketing_pack.get("keywords")) >= 5
         and isinstance(marketing_pack.get("social_posts"), list)
