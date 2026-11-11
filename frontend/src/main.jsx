@@ -145,7 +145,24 @@ function App() {
       let completedRun = null;
       for (let attempt = 0; attempt < 120; attempt += 1) {
         await new Promise(resolve => setTimeout(resolve, 3000));
-        const result = await call("/api/v1/agents/runs", { timeoutMs: 15000 });
+
+        // A transient API restart or network blip must not discard a persisted run.
+        // The worker can recover the job from Supabase/Redis after the API returns.
+        let result;
+        try {
+          result = await call("/api/v1/agents/runs", { timeoutMs: 15000 });
+        } catch (error) {
+          const transient = !Number.isFinite(error.status)
+            || error.status >= 500
+            || error.status === 408
+            || error.status === 429;
+          if (!transient) throw error;
+          if (attempt > 0 && attempt % 10 === 9) {
+            setNotice("Conexão temporariamente instável. A execução continua salva; tentando consultar novamente.");
+          }
+          continue;
+        }
+
         const run = (result.runs || []).find(item => String(item.id) === String(runId));
         if (!run) continue;
 
