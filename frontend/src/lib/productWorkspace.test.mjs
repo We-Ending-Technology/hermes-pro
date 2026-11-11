@@ -23,3 +23,21 @@ test("product workspace keeps legacy flat asset URLs working", () => {
   const assets = getProductAssets({ metadata: { pdf_url: "pdf", document_url: "docx", cover_url: "cover" } });
   assert.deepEqual(assets, { pdf: "pdf", docx: "docx", cover: "cover" });
 });
+
+
+test("product workspace reads the actual backend artifacts map", () => {
+  const assets = getProductAssets({
+    metadata: {
+      artifacts: {
+        pdf: "https://storage.example/generated.pdf",
+        docx: "https://storage.example/generated.docx",
+        cover: "https://storage.example/generated-cover.png",
+      },
+    },
+  });
+  assert.deepEqual(assets, {
+    pdf: "https://storage.example/generated.pdf",
+    docx: "https://storage.example/generated.docx",
+    cover: "https://storage.example/generated-cover.png",
+  });
+});
