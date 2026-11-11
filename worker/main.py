@@ -10,6 +10,7 @@ from backend.app.core.config import get_settings
 from backend.app.db.supabase import SupabaseREST
 from backend.app.queue import JobQueue
 from backend.app.services.artifacts import build_artifacts, validate_artifacts
+from backend.app.services.ai_images import generate_cover_artwork
 from backend.app.services.ebook_validation import (
     MIN_CHAPTERS,
     MIN_CHAPTER_WORDS,
@@ -482,8 +483,34 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             await notify_owner(settings, f"Hermes Pro: produto bloqueado para revisão. Tema: {topic}. Palavras: {content_gate['word_count']}. Pendências: {pending}.")
             return
 
-        await store.update_product(product_id, status="generating_artifacts", current_stage="studio", title=title, metadata=metadata)
-        artifacts = build_artifacts(title or topic, subtitle, json.dumps(writer_data, ensure_ascii=False))
+        await store.update_product(product_id, status="generating_artifacts", current_stage="cover", title=title, metadata=metadata)
+        cover_artwork = None
+        cover_art_metadata = {
+            "provider": "local_vector",
+            "model": None,
+            "generated": False,
+        }
+        image_provider = str(settings.ai_image_provider or "aihorde").strip().lower()
+        if image_provider == "aihorde":
+            cover_artwork = await generate_cover_artwork(title or topic, subtitle, writer_data, settings)
+            cover_art_metadata = {
+                "provider": "ai_horde",
+                "model": settings.ai_horde_model,
+                "generated": True,
+                "license_basis": "SDXL 1.0 model; review model license and content policy before commercial distribution",
+            }
+        elif settings.ai_image_required:
+            raise RuntimeError("AI_IMAGE_REQUIRED is enabled but AI_IMAGE_PROVIDER is not configured for a supported image provider")
+
+        if settings.ai_image_required and not cover_artwork:
+            raise RuntimeError("commercial publication requires a successfully generated AI cover")
+
+        artifacts = build_artifacts(
+            title or topic,
+            subtitle,
+            json.dumps(writer_data, ensure_ascii=False),
+            cover_artwork=cover_artwork,
+        )
         artifact_gate = validate_artifacts(artifacts)
         if not artifact_gate["approved"]:
             raise RuntimeError("artifact quality gate failed: " + "; ".join(artifact_gate.get("findings") or []))
@@ -508,12 +535,37 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             raise RuntimeError("not all required ebook artifacts were uploaded")
         metadata["artifacts"] = artifact_urls
         metadata["artifact_status"] = "ready"
-        metadata["quality_gate"] = {**content_gate, **artifact_gate, "approved": True, "ai_review_approved": True}
+        metadata["cover_art"] = cover_art_metadata
+        metadata["quality_gate"] = {
+            **content_gate,
+            **artifact_gate,
+            "approved": True,
+            "ai_review_approved": True,
+            "ai_cover_generated": bool(cover_artwork),
+        }
         metadata["artifact_validation"] = artifact_gate
-        await store.update_product(product_id, status="ready_to_publish", current_stage="studio", metadata=metadata)
+        publication_ready = bool(cover_artwork)
+        final_status = "ready_to_publish" if publication_ready else "review_required"
+        await store.update_product(
+            product_id,
+            status=final_status,
+            current_stage="studio" if publication_ready else "cover",
+            metadata=metadata,
+        )
         await store.update_job(job_id, "completed", attempts=attempts)
-        logger.info("completed product_generation job=%s product=%s artifacts=%s pages=%s illustrations=%s", job_id, product_id, list(artifact_urls), artifact_gate["page_count"], artifact_gate["illustration_count"])
-        await notify_owner(settings, f"Hermes Pro: ebook pronto para publicação (ainda não publicado). Produto: {title or topic}. {content_gate['word_count']} palavras, {artifact_gate['page_count']} páginas, {artifact_gate['illustration_count']} ilustrações.")
+        logger.info(
+            "completed product_generation job=%s product=%s status=%s cover_provider=%s pages=%s illustrations=%s",
+            job_id,
+            product_id,
+            final_status,
+            cover_art_metadata["provider"],
+            artifact_gate["page_count"],
+            artifact_gate["illustration_count"],
+        )
+        if publication_ready:
+            await notify_owner(settings, f"Hermes Pro: ebook pronto para publicação (ainda não publicado). Produto: {title or topic}. Capa AI: {cover_art_metadata['model']}. {content_gate['word_count']} palavras, {artifact_gate['page_count']} páginas, {artifact_gate['illustration_count']} ilustrações.")
+        else:
+            await notify_owner(settings, f"Hermes Pro: arquivos gerados, mas publicação bloqueada porque a capa de IA não foi gerada. Produto: {title or topic}.")
     except Exception as exc:
         message = str(exc)[:1000]
         if attempts < MAX_ATTEMPTS:
