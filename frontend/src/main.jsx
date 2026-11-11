@@ -347,6 +347,25 @@ function Publish({ product, integrations }) {
   }, [product?.id]);
   if (!product) return <Page title="Publicação" sub="Selecione um produto no catálogo." />;
   const kiwify = product.metadata?.publications?.kiwify;
+  const marketingPack = product.metadata?.marketing_pack || {};
+  const coverArt = product.metadata?.cover_art || {};
+  const qualityGate = product.metadata?.quality_gate || {};
+  const commercialReady = product.status === "ready_to_publish"
+    && qualityGate.approved === true
+    && qualityGate.ai_cover_generated === true
+    && coverArt.generated === true
+    && coverArt.provider === "ai_horde"
+    && product.metadata?.marketing_pack_status === "ready"
+    && typeof marketingPack.product_description === "string"
+    && marketingPack.product_description.length >= 300;
+  const copyText = async value => {
+    try {
+      await navigator.clipboard.writeText(String(value || ""));
+      setNotice("Texto copiado para a área de transferência.");
+    } catch {
+      setNotice("Não foi possível copiar automaticamente neste navegador.");
+    }
+  };
   const saveKiwify = async event => {
     event.preventDefault();
     setSaving(true);
@@ -368,11 +387,13 @@ function Publish({ product, integrations }) {
     <div className="panel">
       <h3>{product.title || product.topic}</h3>
       <p>Status do produto: <b>{product.status}</b> · arquivos: <b>{artifacts.length ? "disponíveis" : "pendentes"}</b></p>
-      <p>O cadastro do produto e o upload do arquivo são feitos no painel da Kiwify. Aqui o Hermes registra o ID e o link de checkout para acompanhar a operação.</p>
+      <p>Capa IA: <b>{coverArt.generated ? `${coverArt.provider} · ${coverArt.model}` : "pendente"}</b> · texto comercial: <b>{product.metadata?.marketing_pack_status === "ready" ? "pronto" : "pendente"}</b></p>
+      <p>O cadastro do produto e o upload do PDF são feitos no painel da Kiwify. O Hermes prepara os materiais, valida o produto e registra o ID e o checkout para acompanhar vendas.</p>
+      {!commercialReady && <div className="panel-note">Publicação bloqueada: o ebook precisa de capa IA, revisão aprovada e pacote comercial completo antes de vincular o checkout.</div>}
       <form className="factory-form" onSubmit={saveKiwify}>
         <label>ID do produto Kiwify (opcional)<input value={kiwifyProductId} onChange={e => setKiwifyProductId(e.target.value)} placeholder="ID exibido na URL do produto" /></label>
         <label>Link de checkout HTTPS<input type="url" required value={checkoutUrl} onChange={e => setCheckoutUrl(e.target.value)} placeholder="https://pay.kiwify.com.br/..." /></label>
-        <div className="form-footer"><span>O Hermes não recebe pagamentos.</span><Button primary type="submit" disabled={saving || !checkoutUrl.trim()}>{saving ? "Salvando…" : "Salvar checkout ↗"}</Button></div>
+        <div className="form-footer"><span>Pagamento e entrega continuam na Kiwify.</span><Button primary type="submit" disabled={saving || !checkoutUrl.trim() || !commercialReady}>{saving ? "Salvando…" : "Vincular checkout ↗"}</Button></div>
       </form>
       {notice && <p className="notice">{notice}</p>}
       {kiwify?.checkout_url && <p><b>Checkout registrado:</b> <a href={kiwify.checkout_url} target="_blank" rel="noreferrer">abrir checkout Kiwify ↗</a> · {kiwify.status || "salvo"}</p>}
@@ -381,6 +402,21 @@ function Publish({ product, integrations }) {
     <div className="panel"><h3>Arquivos para cadastrar na plataforma</h3>
       {artifacts.map(([kind, url]) => <p key={kind}><b>{kind}:</b> <a href={url} target="_blank" rel="noreferrer">abrir arquivo</a></p>)}
       {!artifacts.length && <p>Os links dos arquivos aparecerão após a geração bem-sucedida do produto.</p>}
+      <p><a href="https://dashboard.kiwify.com.br/" target="_blank" rel="noreferrer">Abrir painel da Kiwify para cadastrar o produto ↗</a></p>
+    </div>
+    <div className="panel">
+      <div className="section-head"><div><span className="kicker">SALES COPY</span><h3>Descrição e divulgação prontas</h3></div>
+        <Button onClick={() => copyText(marketingPack.product_description)} disabled={!marketingPack.product_description}>Copiar descrição</Button>
+      </div>
+      {marketingPack.product_description
+        ? <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.7 }}>{marketingPack.product_description}</p>
+        : <p>O pacote comercial será gerado pela Fábrica depois da revisão editorial.</p>}
+      {marketingPack.benefits?.length > 0 && <><h4>Benefícios descritos no ebook</h4><ul>{marketingPack.benefits.map((item, index) => <li key={index}>{item}</li>)}</ul></>}
+      {marketingPack.faq?.length > 0 && <><h4>Perguntas frequentes</h4>{marketingPack.faq.map((item, index) => <p key={index}><b>{item.question}</b><br />{item.answer}</p>)}</>}
+      {marketingPack.social_posts?.length > 0 && <><h4>Posts preparados para divulgação</h4>{marketingPack.social_posts.map((post, index) => <div className="panel-note" key={index}>
+        <b>{post.platform}: {post.hook}</b><p>{post.caption}</p><p><b>CTA:</b> {post.cta}</p>
+        <Button onClick={() => copyText(`${post.hook}\n\n${post.caption}\n\n${post.cta}`)}>Copiar post</Button>
+      </div>)}</>}
     </div>
   </Page>;
 }
