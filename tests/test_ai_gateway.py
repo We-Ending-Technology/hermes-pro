@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from backend.app.ai_gateway.adapters import GeminiAdapter, _post_with_retries
+from backend.app.ai_gateway.adapters import GeminiAdapter, GroqAdapter, _post_with_retries
 from backend.app.ai_gateway.base import AIResponse, AIGateway
 from backend.app.ai_gateway.factory import FallbackAIGateway
 
@@ -136,4 +136,41 @@ async def test_provider_request_retries_transient_transport_error(monkeypatch):
     assert response.status_code == 200
     assert calls == 2
     assert delays == [1]
+
+@pytest.mark.asyncio
+async def test_groq_adapter_uses_compatible_chat_completions_api(monkeypatch):
+    captured = {}
+
+    class FakeAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, *, headers, json):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["json"] = json
+            request = httpx.Request("POST", url)
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": '{"answer": "ok"}'}}]},
+                request=request,
+            )
+
+    monkeypatch.setattr(
+        "backend.app.ai_gateway.adapters.httpx.AsyncClient",
+        lambda timeout: FakeAsyncClient(),
+    )
+    result = await GroqAdapter(api_key="test-groq-key", model="openai/gpt-oss-20b").complete(
+        "Return a JSON object", system="Only JSON"
+    )
+    assert result.provider == "groq"
+    assert result.model == "openai/gpt-oss-20b"
+    assert result.content == '{"answer": "ok"}'
+    assert captured["url"] == "https://api.groq.com/openai/v1/chat/completions"
+    assert captured["headers"]["Authorization"] == "Bearer test-groq-key"
+    assert captured["json"]["response_format"] == {"type": "json_object"}
+    assert captured["json"]["max_completion_tokens"] == 2048
 
