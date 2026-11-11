@@ -45,3 +45,19 @@ Hermes stores the checkout under `metadata.publications.kiwify` with `verified=f
 ## Test and replay
 
 Use Kiwify's **Testar Webhook** panel to validate signature and delivery. Its order IDs are fictitious; the resulting event is a test, not real revenue. Inspect the Kiwify delivery log for a 2xx response. Re-send failed events after the receiver is healthy.
+
+
+## AI cover generation
+
+New product jobs use the free, volunteer-run AI Horde image API with the SDXL 1.0 model by default:
+- `AI_IMAGE_PROVIDER=aihorde`
+- `AI_IMAGE_REQUIRED=true`
+- `AI_HORDE_MODEL=SDXL 1.0`
+- `AI_HORDE_API_KEY=0000000000` (anonymous access; an optional personal AI Horde key improves queue priority)
+- `AI_HORDE_TIMEOUT_SECONDS=240`
+
+The generated artwork is composed with Hermes typography into a 1600x2560 PNG cover and stored in the private Supabase Storage bucket. The four internal illustrations remain topic-specific infographics rendered from the writer's illustration briefs. Kiwify publication now fails closed unless metadata confirms an AI Horde cover.
+
+AI Horde is volunteer-operated: anonymous jobs have the lowest priority and can take longer or fail when compatible workers are unavailable. Prompts contain only public ebook topic material; do not send customer, account, or other private data. AI Horde workers receive the generation prompt and process the image. SDXL 1.0 is distributed under CreativeML Open RAIL++-M; commercial use is permitted subject to the license's use restrictions. See https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0 and https://github.com/Stability-AI/generative-models/blob/main/model_licenses/LICENSE-SDXL1.0.
+
+A local vector fallback is available only when `AI_IMAGE_REQUIRED=false`; such a product is intentionally not eligible for Kiwify publication until an AI cover has been generated.
