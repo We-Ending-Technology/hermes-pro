@@ -12,7 +12,7 @@ from typing import Any
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -70,30 +70,44 @@ def _wrap_pixels(draw: ImageDraw.ImageDraw, value: str, font, max_width: int) ->
     return lines or [""]
 
 
-def build_cover(title: str, subtitle: str) -> bytes:
+def build_cover(title: str, subtitle: str, artwork_bytes: bytes | None = None) -> bytes:
     width, height = 1600, 2560
     image = Image.new("RGB", (width, height), "#101827")
     draw = ImageDraw.Draw(image)
     accent = "#f2a65a"
     draw.rounded_rectangle((90, 90, width - 90, height - 90), radius=50, outline=accent, width=5)
-    draw.text((140, 180), "HERMES PRO", fill="#e5e7eb", font=_font(56))
-    draw.text((140, 330), "GUIA DIGITAL ILUSTRADO", fill=accent, font=_font(42))
+    draw.text((140, 150), "HERMES PRO", fill="#e5e7eb", font=_font(52))
+    draw.text((140, 260), "GUIA DIGITAL ILUSTRADO", fill=accent, font=_font(36))
 
-    y = 760
-    title_font = _font(104)
-    for line in textwrap.wrap(title, width=24):
+    title_font = _font(84 if len(title) < 58 else 70)
+    y = 390
+    for line in textwrap.wrap(title, width=25)[:4]:
         draw.text((140, y), line, fill="#ffffff", font=title_font)
-        y += 130
-    y += 80
-    subtitle_font = _font(48)
-    for line in textwrap.wrap(subtitle, width=38):
-        draw.text((140, y), line, fill="#cbd5e1", font=subtitle_font)
-        y += 68
+        y += 100
 
-    # A topic-neutral geometric motif keeps the cover readable without inventing facts.
-    draw.ellipse((width - 560, height - 760, width - 180, height - 380), outline=accent, width=18)
-    draw.ellipse((width - 460, height - 660, width - 280, height - 480), fill=accent)
-    draw.line((180, height - 300, width - 180, height - 300), fill="#475569", width=4)
+    if artwork_bytes:
+        with Image.open(io.BytesIO(artwork_bytes)) as source:
+            artwork = ImageOps.fit(
+                source.convert("RGB"),
+                (1400, 1120),
+                method=Image.Resampling.LANCZOS,
+            )
+        image.paste(artwork, (100, 850))
+        draw = ImageDraw.Draw(image)
+        draw.rounded_rectangle((100, 850, 1500, 1970), radius=34, outline=accent, width=7)
+        subtitle_y = 2070
+    else:
+        # Deterministic fallback is retained for non-commercial previews only.
+        draw.ellipse((width - 560, height - 760, width - 180, height - 380), outline=accent, width=18)
+        draw.ellipse((width - 460, height - 660, width - 280, height - 480), fill=accent)
+        draw.line((180, height - 300, width - 180, height - 300), fill="#475569", width=4)
+        subtitle_y = 1760
+
+    subtitle_font = _font(42)
+    for line in textwrap.wrap(subtitle, width=44)[:4]:
+        draw.text((140, subtitle_y), line, fill="#cbd5e1", font=subtitle_font)
+        subtitle_y += 62
+    draw.line((140, height - 170, width - 140, height - 170), fill="#475569", width=4)
 
     output = io.BytesIO()
     image.save(output, format="PNG", optimize=True)
@@ -280,7 +294,7 @@ def build_pdf(
     return output.getvalue()
 
 
-def build_artifacts(title: str, subtitle: str, content: str) -> dict[str, tuple[str, bytes, str]]:
+def build_artifacts(title: str, subtitle: str, content: str, cover_artwork: bytes | None = None) -> dict[str, tuple[str, bytes, str]]:
     data = _content_data(content)
     raw_briefs = data.get("illustrations")
     briefs = [
@@ -292,7 +306,7 @@ def build_artifacts(title: str, subtitle: str, content: str) -> dict[str, tuple[
         raise ValueError(f"ebook requires {MIN_ILLUSTRATIONS} valid internal illustration briefs before artifact generation")
 
     slug = _safe_name(title)
-    cover = build_cover(title, subtitle)
+    cover = build_cover(title, subtitle, artwork_bytes=cover_artwork)
     selected_briefs = briefs[:MIN_ILLUSTRATIONS]
     illustration_bytes = [build_illustration(brief, index) for index, brief in enumerate(selected_briefs)]
     content_json = json.dumps(data, ensure_ascii=False)
