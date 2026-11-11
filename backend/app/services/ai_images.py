@@ -71,8 +71,8 @@ async def generate_cover_artwork(
 ) -> bytes:
     """Generate one free SDXL cover image through the volunteer-run AI Horde."""
     api_key = str(getattr(settings, "ai_horde_api_key", None) or ANONYMOUS_HORDE_KEY)
-    model = str(getattr(settings, "ai_horde_model", None) or "SDXL 1.0")
-    timeout_seconds = max(30, int(getattr(settings, "ai_horde_timeout_seconds", 240)))
+    model = str(getattr(settings, "ai_horde_model", None) or "stable_diffusion_2.1")
+    timeout_seconds = max(30, int(getattr(settings, "ai_horde_timeout_seconds", 180)))
     base_url = str(getattr(settings, "ai_horde_base_url", HORDE_BASE_URL)).rstrip("/")
     headers = {
         "apikey": api_key,

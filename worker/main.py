@@ -571,7 +571,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
                 "provider": "ai_horde",
                 "model": settings.ai_horde_model,
                 "generated": True,
-                "license_basis": "SDXL 1.0 model; review model license and content policy before commercial distribution",
+                "license_basis": "Stable Diffusion 2.1; CreativeML OpenRAIL++-M; commercial use subject to license restrictions",
             }
         elif settings.ai_image_required:
             raise RuntimeError("AI_IMAGE_REQUIRED is enabled but AI_IMAGE_PROVIDER is not configured for a supported image provider")

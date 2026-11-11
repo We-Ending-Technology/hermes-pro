@@ -36,7 +36,7 @@ def publishable_product():
             "artifact_status": "ready",
             "quality_score": "85",
             "quality_gate": {"approved": True, "page_count": 10, "illustration_count": 4, "ai_cover_generated": True},
-            "cover_art": {"provider": "ai_horde", "model": "SDXL 1.0", "generated": True},
+            "cover_art": {"provider": "ai_horde", "model": "stable_diffusion_2.1", "generated": True},
             "marketing_pack_status": "ready",
             "marketing_pack": {
                 "product_description": "Descrição comercial honesta do ebook. " * 12,
