@@ -526,7 +526,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             return
 
         if not is_marketing_pack_payload(metadata.get("marketing_pack")):
-            await store.update_product(product_id, status="generating", current_stage="commercial", title=title, metadata=metadata)
+            await store.update_product(product_id, status="generating", current_stage="publication", title=title, metadata=metadata)
             chapter_titles = [
                 str(item.get("title", "")).strip()
                 for item in (writer_data.get("chapters") or [])[:10]
