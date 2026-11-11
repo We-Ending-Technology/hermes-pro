@@ -94,15 +94,15 @@ async def ready() -> dict[str, Any]:
         })
 
     image_provider = (settings.ai_image_provider or "").strip().lower()
-    image_configured = image_provider == "aihorde" and bool(settings.ai_horde_api_key)
+    image_configured = image_provider == "ovhcloud" or (image_provider == "aihorde" and bool(settings.ai_horde_api_key))
     checks.append({
         "name": "AI Cover Generator",
         "status": "ready" if image_configured else "optional_missing",
         "configured": image_configured,
         "message": (
-            f"AI Horde configured with {settings.ai_horde_model}; live worker availability is verified during generation."
+            (f"OVHcloud SDXL configured with {settings.ovhcloud_image_model}; anonymous limit is 2 requests/minute/IP." if image_provider == "ovhcloud" else f"AI Horde configured with {settings.ai_horde_model}; live worker availability is verified during generation.")
             if image_configured
-            else "Configure AI_IMAGE_PROVIDER=aihorde to generate commercial ebook covers."
+            else "Configure AI_IMAGE_PROVIDER=ovhcloud for free anonymous SDXL covers, or a supported alternate provider."
         ),
         "required": False,
     })
