@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from backend.app.agents.orchestrator import run_chief
 from backend.app.core.config import Settings
@@ -154,6 +155,25 @@ async def process_agent(job_id: str, store: PersistentStore, settings: Settings,
         )
         result = await run_chief(enriched_instruction, settings)
         completed_at = _now()
+        # Replace model-reported timing with authoritative persisted-job timings.
+        start_dt = datetime.fromisoformat(started_at)
+        end_dt = datetime.fromisoformat(completed_at)
+        created_raw = job.get("created_at") or started_at
+        created_dt = datetime.fromisoformat(str(created_raw).replace("Z", "+00:00"))
+        sao_paulo = ZoneInfo("America/Sao_Paulo")
+        timestamps = result.get("timestamps")
+        if not isinstance(timestamps, dict):
+            timestamps = {}
+        timestamps.update({
+            "utc": start_dt.isoformat(),
+            "america_sao_paulo": start_dt.astimezone(sao_paulo).isoformat(),
+            "completed_at_utc": end_dt.isoformat(),
+            "completed_at_america_sao_paulo": end_dt.astimezone(sao_paulo).isoformat(),
+            "queue_wait_seconds": round(max(0.0, (start_dt - created_dt).total_seconds()), 2),
+            "execution_time_seconds": round(max(0.0, (end_dt - start_dt).total_seconds()), 2),
+            "total_elapsed_seconds": round(max(0.0, (end_dt - created_dt).total_seconds()), 2),
+        })
+        result["timestamps"] = timestamps
         result["operational_context"] = operational_context
         await store.db.update("hermes_agent_runs", {
             "status": "completed",
