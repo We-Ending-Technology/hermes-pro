@@ -52,13 +52,13 @@ Use Kiwify's **Testar Webhook** panel to validate signature and delivery. Its or
 New product jobs use the free, volunteer-run AI Horde image API with the SDXL 1.0 model by default:
 - `AI_IMAGE_PROVIDER=aihorde`
 - `AI_IMAGE_REQUIRED=true`
-- `AI_HORDE_MODEL=SDXL 1.0`
+- `AI_HORDE_MODEL=stable_diffusion_2.1`
 - `AI_HORDE_API_KEY=0000000000` (anonymous access; an optional personal AI Horde key improves queue priority)
-- `AI_HORDE_TIMEOUT_SECONDS=240`
+- `AI_HORDE_TIMEOUT_SECONDS=180`
 
 The generated artwork is composed with Hermes typography into a 1600x2560 PNG cover and stored in the private Supabase Storage bucket. The four internal illustrations remain topic-specific infographics rendered from the writer's illustration briefs. Kiwify publication now fails closed unless metadata confirms an AI Horde cover.
 
-AI Horde is volunteer-operated: anonymous jobs have the lowest priority and can take longer or fail when compatible workers are unavailable. Prompts contain only public ebook topic material; do not send customer, account, or other private data. AI Horde workers receive the generation prompt and process the image. SDXL 1.0 is distributed under CreativeML Open RAIL++-M; commercial use is permitted subject to the license's use restrictions. See https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0 and https://github.com/Stability-AI/generative-models/blob/main/model_licenses/LICENSE-SDXL1.0.
+AI Horde is volunteer-operated: anonymous jobs have the lowest priority and can take longer or fail when compatible workers are unavailable. Prompts contain only public ebook topic material; do not send customer, account, or other private data. AI Horde workers receive the generation prompt and process the image. Stable Diffusion 2.1 is distributed under CreativeML OpenRAIL++-M; commercial use is permitted subject to the license's use restrictions. See https://huggingface.co/stabilityai/stable-diffusion-2-1 and https://aihub.qualcomm.com/compute/models/stable_diffusion_v2_1.
 
 A local vector fallback is available only when `AI_IMAGE_REQUIRED=false`; such a product is intentionally not eligible for Kiwify publication until an AI cover has been generated.
 
@@ -71,3 +71,6 @@ Before a product can pass the Kiwify publication gate, the factory also generate
 ## Private artifact link lifecycle
 
 Ebook files remain in private Supabase Storage buckets. Product metadata stores the stable bucket/object path separately from its short-lived signed URL. The API refreshes signed URLs automatically when they are within 24 hours of expiry and persists the new URL, so a dashboard refresh does not leave old PDF/DOCX/cover links broken. Files are never made public.
+
+
+The anonymous queue was checked against the live AI Horde model-status endpoint. SDXL 1.0 can be heavily backlogged for anonymous requests; the default was therefore changed to Stable Diffusion 2.1, which had available volunteer workers and no queued jobs at the time of verification. The provider remains configurable with `AI_HORDE_MODEL`.
