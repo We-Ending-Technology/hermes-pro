@@ -87,7 +87,8 @@ def test_publication_requires_content_and_artifact_quality_gate():
         "metadata": {
             "artifact_status": "ready",
             "quality_score": 95,
-            "quality_gate": {"approved": True, "page_count": 10, "illustration_count": 4},
+            "quality_gate": {"approved": True, "page_count": 10, "illustration_count": 4, "ai_cover_generated": True},
+            "cover_art": {"provider": "ai_horde", "model": "SDXL 1.0", "generated": True},
             "artifacts": {
                 "pdf": "https://storage/pdf",
                 "docx": "https://storage/docx",
