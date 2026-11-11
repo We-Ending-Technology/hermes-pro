@@ -88,7 +88,7 @@ def test_publication_requires_content_and_artifact_quality_gate():
             "artifact_status": "ready",
             "quality_score": 95,
             "quality_gate": {"approved": True, "page_count": 10, "illustration_count": 4, "ai_cover_generated": True},
-            "cover_art": {"provider": "ai_horde", "model": "stable_diffusion_2.1", "generated": True},
+            "cover_art": {"provider": "ovhcloud", "model": "stable-diffusion-xl-base-v10", "generated": True},
             "marketing_pack_status": "ready",
             "marketing_pack": {
                 "product_description": "Descrição comercial honesta do ebook. " * 12,

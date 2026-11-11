@@ -1,10 +1,12 @@
 import asyncio
+import base64
 import io
 from types import SimpleNamespace
 
 import httpx
 from PIL import Image
 
+from backend.app.services import ai_images
 from backend.app.services.ai_images import (
     HORDE_BASE_URL,
     _normalise_image,
@@ -71,6 +73,7 @@ async def test_generate_cover_artwork_polls_horde_and_downloads_result(monkeypat
 
     transport = httpx.MockTransport(handler)
     settings = SimpleNamespace(
+        ai_image_provider="aihorde",
         ai_horde_api_key="0000000000",
         ai_horde_model="stable_diffusion_2.1",
         ai_horde_timeout_seconds=30,
@@ -89,3 +92,45 @@ async def test_generate_cover_artwork_polls_horde_and_downloads_result(monkeypat
     assert any(url.endswith("/generate/async") for _, url in calls)
     assert any(url.endswith("/generate/check/job-123") for _, url in calls)
     assert any(url.endswith("/generate/status/job-123") for _, url in calls)
+
+
+
+async def test_generate_cover_artwork_uses_free_ovhcloud_endpoint(monkeypatch):
+    generated = _png_bytes()
+    calls = []
+
+    async def no_wait(_seconds):
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", no_wait)
+    monkeypatch.setattr(ai_images, "_OVHCLOUD_LAST_CALL", 0.0)
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(
+            200,
+            json={"data": [{"b64_json": base64.b64encode(generated).decode("ascii")}]},
+        )
+
+    settings = SimpleNamespace(
+        ai_image_provider="ovhcloud",
+        ovhcloud_image_base_url="https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
+        ovhcloud_image_model="stable-diffusion-xl-base-v10",
+        ovhcloud_image_timeout_seconds=90,
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await generate_cover_artwork(
+            "Guia de teste",
+            "Subtítulo",
+            {"chapters": [], "illustrations": []},
+            settings,
+            client=client,
+        )
+
+    assert result.startswith(bytes.fromhex("89504e470d0a1a0a"))
+    assert len(calls) == 1
+    assert str(calls[0].url) == "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/images/generations"
+    assert calls[0].headers.get("authorization") is None
+    body = __import__("json").loads(calls[0].content)
+    assert body["model"] == "stable-diffusion-xl-base-v10"
+    assert body["size"] == "1024x1024"
