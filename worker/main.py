@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import ctypes
+import gc
 import json
 import logging
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -34,6 +37,36 @@ ARTIFACT_RENDER_SEMAPHORE = asyncio.Semaphore(1)
 MAX_ATTEMPTS = 3
 RECOVERY_INTERVAL_SECONDS = 60  # Recover persisted jobs promptly after a missed Redis enqueue
 ARTIFACT_BUCKETS = {"cover": "covers", "docx": "exports", "pdf": "ebooks"}
+
+
+def _container_memory_bytes() -> int | None:
+    """Read cgroup-v2 memory usage when available; never fail the worker on telemetry."""
+    try:
+        return int(Path("/sys/fs/cgroup/memory.current").read_text().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _release_worker_memory(label: str) -> None:
+    """Collect released Python objects and ask glibc to return free arenas to the OS."""
+    collected = gc.collect()
+    trimmed = 0
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+        malloc_trim = libc.malloc_trim
+        malloc_trim.argtypes = [ctypes.c_size_t]
+        malloc_trim.restype = ctypes.c_int
+        trimmed = int(malloc_trim(0))
+    except (OSError, AttributeError):
+        pass
+    memory = _container_memory_bytes()
+    logger.info(
+        "worker memory cleanup label=%s gc_collected=%s malloc_trim=%s memory_mib=%s",
+        label,
+        collected,
+        trimmed,
+        round(memory / (1024 * 1024), 1) if memory is not None else "unknown",
+    )
 
 
 async def notify_owner(settings: Any, message: str) -> None:
@@ -792,12 +825,18 @@ async def run() -> None:
             agent_job_id = await queue.dequeue_agent(timeout=1)
             if agent_job_id:
                 logger.info("dequeued agent job=%s", agent_job_id)
-                await process_agent(agent_job_id, store, settings, queue)
+                try:
+                    await process_agent(agent_job_id, store, settings, queue)
+                finally:
+                    _release_worker_memory("agent")
                 continue
             job_id = await queue.dequeue(timeout=5)
             if job_id:
                 logger.info("dequeued product job=%s", job_id)
-                await process_product(job_id, store, queue)
+                try:
+                    await process_product(job_id, store, queue)
+                finally:
+                    _release_worker_memory("product")
     finally:
         await queue.close()
 
