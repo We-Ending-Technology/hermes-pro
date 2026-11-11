@@ -191,8 +191,10 @@ async def autonomy_tick(settings: Settings, store: PersistentStore, queue) -> di
     ) or (provider == "openai" and bool(settings.openai_api_key))
     fallback_provider = (settings.ai_fallback_provider or "").strip().lower()
     fallback_available = (
-        fallback_provider == "gemini" and bool(settings.gemini_api_key or settings.ai_api_key)
-    ) or (fallback_provider == "openai" and bool(settings.openai_api_key))
+        (fallback_provider == "gemini" and bool(settings.gemini_api_key or settings.ai_api_key))
+        or (fallback_provider == "openai" and bool(settings.openai_api_key))
+        or (fallback_provider == "groq" and bool(settings.groq_api_key))
+    )
     if not primary_available and not fallback_available:
         return {"status": "blocked", "reason": "missing_all_configured_ai_keys"}
 

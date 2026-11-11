@@ -37,10 +37,19 @@ async def run_chief(input_text: str, settings: Settings) -> dict[str, Any]:
     if provider == "stub":
         raise RuntimeError("AI_PROVIDER=stub is not a production AI provider")
 
-    if provider == "gemini" and not (settings.gemini_api_key or settings.ai_api_key):
-        raise RuntimeError("GEMINI_API_KEY is required for autonomous agents")
-    if provider == "openai" and not settings.openai_api_key:
-        raise RuntimeError("OPENAI_API_KEY is required for autonomous agents")
+    primary_key_available = (
+        (provider == "gemini" and bool(settings.gemini_api_key or settings.ai_api_key))
+        or (provider == "openai" and bool(settings.openai_api_key))
+        or (provider == "groq" and bool(settings.groq_api_key))
+    )
+    fallback = settings.ai_fallback_provider.strip().lower()
+    fallback_key_available = (
+        (fallback == "gemini" and bool(settings.gemini_api_key or settings.ai_api_key))
+        or (fallback == "openai" and bool(settings.openai_api_key))
+        or (fallback == "groq" and bool(settings.groq_api_key))
+    )
+    if not primary_key_available and not fallback_key_available:
+        raise RuntimeError("Configure ao menos uma credencial de IA entre o provedor principal e o fallback")
 
     gateway = build_ai_gateway(settings)
     findings: dict[str, str] = {}
