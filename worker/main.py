@@ -98,11 +98,19 @@ def is_marketing_pack_payload(value: Any) -> bool:
         return False
     if not isinstance(value.get("target_audience"), str) or len(value["target_audience"].strip()) < 20:
         return False
-    if not isinstance(benefits, list) or len(benefits) < 4:
+    contents = value.get("contents")
+    if not isinstance(contents, list) or len(contents) < 5:
         return False
-    if not isinstance(faq, list) or len(faq) < 3:
+    if not isinstance(benefits, list) or len(benefits) < 4 or not all(isinstance(item, str) and item.strip() for item in benefits[:4]):
         return False
-    if not isinstance(keywords, list) or len(keywords) < 5:
+    if not isinstance(faq, list) or len(faq) < 3 or not all(
+        isinstance(item, dict)
+        and isinstance(item.get("question"), str) and item["question"].strip()
+        and isinstance(item.get("answer"), str) and item["answer"].strip()
+        for item in faq[:3]
+    ):
+        return False
+    if not isinstance(keywords, list) or len(keywords) < 5 or not all(isinstance(item, str) and item.strip() for item in keywords[:5]):
         return False
     if not isinstance(social_posts, list) or len(social_posts) < 3:
         return False
