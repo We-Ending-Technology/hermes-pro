@@ -75,6 +75,28 @@ class SupabaseStorage:
             if response.status_code not in {200, 201}:
                 raise StorageError(f"Private storage bucket setup failed: {response.status_code} {response.text[:300]}")
 
+    def _absolute_signed_url(self, signed_path: str) -> str:
+        if signed_path.startswith("http"):
+            return signed_path
+        if signed_path.startswith("/storage/v1/"):
+            return f"{self.base}{signed_path}"
+        return f"{self.base}/storage/v1{signed_path if signed_path.startswith('/') else '/' + signed_path}"
+
+    async def create_signed_url(self, path: str, expires_in: int = 604800) -> str:
+        self._ensure_configured()
+        async with httpx.AsyncClient(timeout=30) as client:
+            signed = await client.post(
+                f"{self.storage_base}/object/sign/{self.bucket}/{path}",
+                headers={**self._headers(), "Content-Type": "application/json"},
+                json={"expiresIn": max(60, min(int(expires_in), 31536000))},
+            )
+            if signed.is_error:
+                raise StorageError(f"Private artifact link creation failed: {signed.status_code} {signed.text[:500]}")
+            signed_path = signed.json().get("signedURL") or signed.json().get("signedUrl")
+            if not signed_path:
+                raise StorageError("Supabase did not return a signed artifact URL")
+        return self._absolute_signed_url(signed_path)
+
     async def upload(self, path: str, content: bytes, content_type: str) -> str:
         await self.ensure_bucket()
         async with httpx.AsyncClient(timeout=60) as client:
@@ -85,18 +107,4 @@ class SupabaseStorage:
             )
             if response.is_error:
                 raise StorageError(f"Storage upload failed: {response.status_code} {response.text[:500]}")
-            signed = await client.post(
-                f"{self.storage_base}/object/sign/{self.bucket}/{path}",
-                headers={**self._headers(), "Content-Type": "application/json"},
-                json={"expiresIn": 604800},
-            )
-            if signed.is_error:
-                raise StorageError(f"Private artifact link creation failed: {signed.status_code} {signed.text[:500]}")
-            signed_path = signed.json().get("signedURL") or signed.json().get("signedUrl")
-            if not signed_path:
-                raise StorageError("Supabase did not return a signed artifact URL")
-        if signed_path.startswith("http"):
-            return signed_path
-        if signed_path.startswith("/storage/v1/"):
-            return f"{self.base}{signed_path}"
-        return f"{self.base}/storage/v1{signed_path if signed_path.startswith('/') else '/' + signed_path}"
+        return await self.create_signed_url(path, expires_in=604800)
