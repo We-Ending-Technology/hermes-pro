@@ -35,7 +35,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hermes.worker")
 ARTIFACT_RENDER_SEMAPHORE = asyncio.Semaphore(1)
 MAX_ATTEMPTS = 3
-RECOVERY_INTERVAL_SECONDS = 60  # Recover persisted jobs promptly after a missed Redis enqueue
+RECOVERY_INTERVAL_SECONDS = 10  # Keep orphan detection within the 90-second lease window
 ARTIFACT_BUCKETS = {"cover": "covers", "docx": "exports", "pdf": "ebooks"}
 
 
@@ -734,13 +734,14 @@ async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
     from datetime import datetime, timedelta, timezone
 
     now = datetime.now(timezone.utc)
-    stale_before = now - timedelta(minutes=15)
+    stale_before = now - timedelta(seconds=90)
     recovered = 0
     for job in await store.list_recoverable_jobs(stale_before):
         status = job.get("status")
         if status == "running":
-            await store.update_job(str(job["id"]), "pending", error_message="recovered after stale worker lease")
-            status = "pending"
+            await store.update_job(str(job["id"]), "retrying", error_message="recovered after stale worker lease (>90s)")
+            await queue.remove_processing(str(job["id"]), agent=job.get("job_type") == "agent_run")
+            status = "retrying"
         if status not in {"pending", "retrying"}:
             continue
         if job["job_type"] == "product_generation":
@@ -755,6 +756,40 @@ async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
     except Exception:
         depths = {"product": "unknown", "agent": "unknown"}
     logger.info("job recovery scan complete recovered=%s queue_depths=%s", recovered, depths)
+
+
+async def _job_heartbeat(store: PersistentStore, job_id: str, stop: asyncio.Event) -> None:
+    """Refresh a running job lease every 30 seconds independently of its long task."""
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=30)
+        except asyncio.TimeoutError:
+            try:
+                await store.touch_job(job_id)
+            except Exception:
+                logger.exception("job heartbeat failed job=%s", job_id)
+
+
+async def _run_job_with_lease(store: PersistentStore, queue: JobQueue, job_id: str, *, agent: bool) -> None:
+    stop = asyncio.Event()
+    heartbeat = asyncio.create_task(_job_heartbeat(store, job_id, stop))
+    try:
+        if agent:
+            await process_agent(job_id, store, get_settings(), queue)
+        else:
+            await process_product(job_id, store, queue)
+    finally:
+        stop.set()
+        heartbeat.cancel()
+        await asyncio.gather(heartbeat, return_exceptions=True)
+        try:
+            job = await store.get_job(job_id)
+            if job and job.get("status") == "failed":
+                await queue.dead_letter(job_id, agent=agent, reason=job.get("error_message") or "max_attempts_exceeded")
+            else:
+                await queue.ack(job_id, agent=agent)
+        except Exception:
+            logger.exception("failed to acknowledge/dead-letter job=%s", job_id)
 
 
 async def run() -> None:
@@ -831,7 +866,7 @@ async def run() -> None:
             if agent_job_id:
                 logger.info("dequeued agent job=%s", agent_job_id)
                 try:
-                    await process_agent(agent_job_id, store, settings, queue)
+                    await _run_job_with_lease(store, queue, agent_job_id, agent=True)
                 finally:
                     _release_worker_memory("agent")
                 continue
@@ -839,7 +874,7 @@ async def run() -> None:
             if job_id:
                 logger.info("dequeued product job=%s", job_id)
                 try:
-                    await process_product(job_id, store, queue)
+                    await _run_job_with_lease(store, queue, job_id, agent=False)
                 finally:
                     _release_worker_memory("product")
     finally:
