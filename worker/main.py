@@ -35,7 +35,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hermes.worker")
 ARTIFACT_RENDER_SEMAPHORE = asyncio.Semaphore(1)
 MAX_ATTEMPTS = 3
-RECOVERY_INTERVAL_SECONDS = 10  # Keep orphan detection within the 90-second lease window
+RECOVERY_INTERVAL_SECONDS = 10  # 75-second lease plus 10-second scan keeps recovery within 90 seconds
 ARTIFACT_BUCKETS = {"cover": "covers", "docx": "exports", "pdf": "ebooks"}
 
 
@@ -753,7 +753,7 @@ async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
     from datetime import datetime, timedelta, timezone
 
     now = datetime.now(timezone.utc)
-    stale_before = now - timedelta(seconds=90)
+    stale_before = now - timedelta(seconds=75)
     recovered = 0
     for job in await store.list_recoverable_jobs(stale_before):
         status = job.get("status")
