@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     autonomy_enabled: bool = Field(default=False, validation_alias="AUTONOMY_ENABLED")
     embedded_worker_enabled: bool = Field(default=False, validation_alias="EMBEDDED_WORKER_ENABLED")
     sentinel_enabled: bool = Field(default=True, validation_alias="SENTINEL_ENABLED")
-    sentinel_interval_seconds: int = Field(default=60, ge=30, le=300, validation_alias="SENTINEL_INTERVAL_SECONDS")
+    sentinel_interval_seconds: int = Field(default=15, ge=10, le=300, validation_alias="SENTINEL_INTERVAL_SECONDS")
     autonomy_interval_seconds: int = Field(default=900, validation_alias="AUTONOMY_INTERVAL_SECONDS")
     autonomy_agent_interval_seconds: int = Field(default=3600, validation_alias="AUTONOMY_AGENT_INTERVAL_SECONDS")
     autonomy_max_daily_products: int = Field(default=3, ge=0, le=100, validation_alias="AUTONOMY_MAX_DAILY_PRODUCTS")
