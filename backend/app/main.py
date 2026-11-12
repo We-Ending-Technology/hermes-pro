@@ -471,6 +471,66 @@ async def radar_validate(payload: dict[str, Any]):
     }
 
 
+@app.post("/api/v1/products/{product_id}/offers")
+async def create_offer_draft(product_id: str, payload: dict[str, Any]):
+    row = await store.get_product(product_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="product not found")
+    if row.get("status") != "ready_to_publish" or not is_kiwify_publishable_product(row):
+        raise HTTPException(status_code=409, detail="Oferta bloqueada: produto ainda não passou por todos os quality gates.")
+    try:
+        price = float(payload.get("price"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="price must be a positive number")
+    if not 0 < price <= 100000:
+        raise HTTPException(status_code=422, detail="price must be between 0.01 and 100000")
+    checkout = payload.get("link_checkout")
+    if checkout and not str(checkout).startswith("https://"):
+        raise HTTPException(status_code=422, detail="checkout link must use HTTPS")
+    offer = await db.insert("hermes_offers", {
+        "product_id": product_id,
+        "price": round(price, 2),
+        "link_checkout": str(checkout) if checkout else None,
+        "status": "draft",
+        "approval_required": True,
+    })
+    return offer
+
+
+@app.post("/api/v1/offers/{offer_id}/approve")
+async def approve_offer(offer_id: str, payload: dict[str, Any]):
+    rows = await db.select(
+        "hermes_offers",
+        params={"select": "*", "id": f"eq.{offer_id}", "limit": "1"},
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="offer not found")
+    offer = rows[0]
+    if payload.get("approved") is not True:
+        raise HTTPException(status_code=409, detail="human approval is required")
+    try:
+        approved_price = round(float(payload.get("approved_price")), 2)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="approved_price must match the draft price")
+    if approved_price != round(float(offer["price"]), 2):
+        raise HTTPException(status_code=409, detail="approved price differs from draft price")
+    checkout = str(payload.get("link_checkout") or offer.get("link_checkout") or "")
+    if not checkout.startswith("https://"):
+        raise HTTPException(status_code=409, detail="a real HTTPS checkout URL is required before activation")
+    updated = await db.update(
+        "hermes_offers",
+        {
+            "link_checkout": checkout,
+            "status": "active",
+            "approval_required": False,
+            "approved_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+        where={"id": f"eq.{offer_id}"},
+    )
+    return updated
+
+
 @app.get("/api/v1/products/{product_id}", response_model=ProductResponse)
 async def get_product(product_id: str):
     row = await store.get_product(product_id)
