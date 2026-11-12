@@ -1,5 +1,6 @@
 import asyncio
 import random
+import time
 
 import httpx
 
@@ -80,35 +81,70 @@ class OpenAIAdapter(ConfiguredProviderAdapter):
 class GeminiAdapter(ConfiguredProviderAdapter):
     provider = "gemini"
 
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str = "default",
+        *,
+        circuit_failure_threshold: int = 5,
+        circuit_open_seconds: float = 60.0,
+    ) -> None:
+        super().__init__(api_key=api_key, model=model)
+        self.circuit_failure_threshold = circuit_failure_threshold
+        self.circuit_open_seconds = circuit_open_seconds
+        self._consecutive_transient_failures = 0
+        self._circuit_open_until = 0.0
+
     async def complete(self, prompt: str, *, system: str | None = None) -> AIResponse:
         if not self.api_key:
             raise RuntimeError("GEMINI_API_KEY is not configured")
+        now = time.monotonic()
+        if now < self._circuit_open_until:
+            remaining = max(1, int(self._circuit_open_until - now))
+            raise RuntimeError(
+                f"Gemini temporariamente indisponível; circuit breaker aberto por mais {remaining}s."
+            )
+
         contents = []
         if system:
             contents.append({"role": "user", "parts": [{"text": f"SYSTEM INSTRUCTIONS:\\n{system}"}]})
         contents.append({"role": "user", "parts": [{"text": prompt}]})
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
         headers = {"x-goog-api-key": self.api_key, "Content-Type": "application/json"}
-        async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0)) as client:
-            response = await _post_with_retries(
-                client,
-                url,
-                headers=headers,
-                json={
-                    "contents": contents,
-                    "generationConfig": {
-                        "responseMimeType": "application/json",
-                        "temperature": 0.2,
-                        "maxOutputTokens": 8192,
-                    },
-                },
-            )
-            data = response.json()
         try:
-            text = data["candidates"][0]["content"]["parts"][0]["text"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError("Gemini returned an unexpected response") from exc
-        return AIResponse(content=text, provider=self.provider, model=self.model)
+            async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0)) as client:
+                response = await _post_with_retries(
+                    client,
+                    url,
+                    headers=headers,
+                    json={
+                        "contents": contents,
+                        "generationConfig": {
+                            "responseMimeType": "application/json",
+                            "temperature": 0.2,
+                            "maxOutputTokens": 8192,
+                        },
+                    },
+                )
+                data = response.json()
+            try:
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+            except (KeyError, IndexError, TypeError) as exc:
+                raise RuntimeError("Gemini returned an unexpected response") from exc
+            self._consecutive_transient_failures = 0
+            self._circuit_open_until = 0.0
+            return AIResponse(content=text, provider=self.provider, model=self.model)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in _RETRYABLE_STATUS_CODES:
+                self._consecutive_transient_failures += 1
+                if self._consecutive_transient_failures >= self.circuit_failure_threshold:
+                    self._circuit_open_until = time.monotonic() + self.circuit_open_seconds
+            raise
+        except httpx.TransportError:
+            self._consecutive_transient_failures += 1
+            if self._consecutive_transient_failures >= self.circuit_failure_threshold:
+                self._circuit_open_until = time.monotonic() + self.circuit_open_seconds
+            raise
 
 
 class GroqAdapter(ConfiguredProviderAdapter):
