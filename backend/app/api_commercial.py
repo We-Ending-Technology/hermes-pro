@@ -89,13 +89,31 @@ async def ready() -> dict[str, Any]:
 
     for name in ("Hotmart", "Kiwify", "Telegram"):
         item = configured[name.lower()]
-        checks.append({
-            "name": name,
-            "status": "ready" if item["status"] == "connected" else "optional_missing",
-            "configured": item["status"] == "connected",
-            "message": item["message"],
-            "required": False,
-        })
+        if name == "Kiwify":
+            # Kiwify's integration registry uses "configured" when the API
+            # credentials exist, not "connected". Do not misreport configured
+            # credentials as missing; the authenticated status endpoint performs
+            # the real OAuth + products request before declaring it connected.
+            api_configured = item["status"] in {"configured", "connected"}
+            webhook_only = item["status"] == "webhook_configured"
+            checks.append({
+                "name": name,
+                "status": "configured" if api_configured else ("webhook_only" if webhook_only else "optional_missing"),
+                "configured": api_configured or webhook_only,
+                "message": item["message"] + (
+                    " A conexão OAuth deve ser confirmada em /api/v1/kiwify/status."
+                    if api_configured else ""
+                ),
+                "required": False,
+            })
+        else:
+            checks.append({
+                "name": name,
+                "status": "ready" if item["status"] == "connected" else "optional_missing",
+                "configured": item["status"] == "connected",
+                "message": item["message"],
+                "required": False,
+            })
 
     image_provider = (settings.ai_image_provider or "").strip().lower()
     image_configured = image_provider == "ovhcloud" or (image_provider == "aihorde" and bool(settings.ai_horde_api_key))
