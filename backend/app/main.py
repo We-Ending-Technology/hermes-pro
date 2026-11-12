@@ -478,18 +478,21 @@ async def create_offer_draft(product_id: str, payload: dict[str, Any]):
         raise HTTPException(status_code=404, detail="product not found")
     if row.get("status") != "ready_to_publish" or not is_kiwify_publishable_product(row):
         raise HTTPException(status_code=409, detail="Oferta bloqueada: produto ainda não passou por todos os quality gates.")
-    try:
-        price = float(payload.get("price"))
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=422, detail="price must be a positive number")
-    if not 0 < price <= 100000:
-        raise HTTPException(status_code=422, detail="price must be between 0.01 and 100000")
+    raw_price = payload.get("price")
+    price = None
+    if raw_price is not None:
+        try:
+            price = round(float(raw_price), 2)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="price must be a positive number")
+        if not 0 < price <= 100000:
+            raise HTTPException(status_code=422, detail="price must be between 0.01 and 100000")
     checkout = payload.get("link_checkout")
     if checkout and not str(checkout).startswith("https://"):
         raise HTTPException(status_code=422, detail="checkout link must use HTTPS")
     offer = await db.insert("hermes_offers", {
         "product_id": product_id,
-        "price": round(price, 2),
+        "price": price,
         "link_checkout": str(checkout) if checkout else None,
         "status": "draft",
         "approval_required": True,
@@ -520,6 +523,7 @@ async def approve_offer(offer_id: str, payload: dict[str, Any]):
     updated = await db.update(
         "hermes_offers",
         {
+            "price": approved_price,
             "link_checkout": checkout,
             "status": "active",
             "approval_required": False,
