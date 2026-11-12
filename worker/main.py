@@ -805,6 +805,17 @@ async def _run_job_with_lease(store: PersistentStore, queue: JobQueue, job_id: s
         try:
             job = await store.get_job(job_id)
             if job and job.get("status") == "failed":
+                try:
+                    await store.db.insert("hermes_jobs_dead_letter", {
+                        "job_id": job_id,
+                        "job_type": job.get("job_type") or ("agent_run" if agent else "product_generation"),
+                        "payload": job.get("payload") or {},
+                        "attempts": int(job.get("attempts") or 0),
+                        "error_message": str(job.get("error_message") or "max_attempts_exceeded")[:1000],
+                    })
+                except Exception as exc:
+                    if "duplicate" not in str(exc).lower() and "unique" not in str(exc).lower() and "23505" not in str(exc):
+                        logger.exception("persistent dead-letter write failed job=%s", job_id)
                 await queue.dead_letter(job_id, agent=agent, reason=job.get("error_message") or "max_attempts_exceeded")
             else:
                 await queue.ack(job_id, agent=agent)
