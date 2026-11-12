@@ -604,7 +604,7 @@ function DiagnosticsPanel({ data }) { if (!data) return <Empty text="Diagnóstic
 function Integrations({ items, diagnostics, runDiagnostics }) { return <Page title="Integrações" sub="Estado das conexões sem expor segredos."><Button primary onClick={runDiagnostics}>Testar conexões</Button><DiagnosticsPanel data={diagnostics} /><div className="integration-list">{items.length ? items.map(x => <div className="panel" key={x.name}><strong>{x.name}</strong><p>{x.status}</p><small>{x.message}</small></div>) : <Empty text="Nenhuma integração retornada pelo backend." />}</div></Page>; }
 function Experiments({ products, radar }) { return <Page title="Experimentos" sub="Área para comparar temas e resultados reais."><div className="metric-grid"><Metric label="Produtos" value={products.length}/><Metric label="Radar disponível" value={radar ? "sim" : "não"}/></div><Empty text="Os experimentos usam somente produtos e análises persistidos; não há conversões inventadas." /></Page>; }
 function Agents() {
-  return <Page title="Equipe de agentes" sub="Hermes Chefe coordena Radar, Factory, Dev e Analyst. Tarefas despachadas ficam registradas e podem ser acompanhadas aqui.">
+  return <Page title="Equipe de agentes" sub="Hermes Chefe coordena dez especialistas: Radar, Factory, Dev, Analyst, Designer, Auditor, Executor, Comercial, Rentabilidade e Sentinel. Tarefas despachadas ficam registradas e podem ser acompanhadas aqui.">
     <AgentControlCenter />
   </Page>;
 }
@@ -668,7 +668,7 @@ function AgentControlCenter() {
     </div>
     <div className="panel">
       <h3>Time operacional</h3>
-      <p>O Chefe divide cada tarefa entre Radar, Factory, Dev e Analyst, consolida as análises e grava o resultado. A fila é processada pelo worker; esta tela atualiza automaticamente.</p>
+      <p>O Chefe distribui cada tarefa entre dez especialistas, consolida as análises e grava o resultado. A fila é processada pelo worker; esta tela atualiza automaticamente.</p>
       <div className="product-grid">
         {(status?.agents || []).map(agent => <article className="panel" key={agent.name}>
           <strong>{agent.name}</strong>
@@ -681,7 +681,7 @@ function AgentControlCenter() {
       <label>O que o Hermes Chefe deve executar?
         <textarea value={task} onChange={event => setTask(event.target.value)} minLength={8} required placeholder="Ex.: audite o funil de ebooks, identifique bloqueios de publicação e proponha correções verificáveis." />
       </label>
-      <div className="form-footer"><span>Despacho persistente · 4 especialistas + Chefe · histórico salvo</span><Button primary type="submit" disabled={busy || !task.trim()}>{busy ? "Enviando…" : "Despachar para o Chefe ↗"}</Button></div>
+      <div className="form-footer"><span>Despacho persistente · 10 especialistas + Chefe · histórico salvo</span><Button primary type="submit" disabled={busy || !task.trim()}>{busy ? "Enviando…" : "Despachar para o Chefe ↗"}</Button></div>
     </form>
     <div className="panel">
       <div className="section-heading"><div><h3>Histórico de execuções</h3><p className="panel-note">Atualização automática a cada 10 segundos.</p></div><Button onClick={load}>Atualizar</Button></div>
