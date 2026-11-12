@@ -90,7 +90,12 @@ def sanitize_kiwify_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 def verify_kiwify_signature(raw_body: bytes, token: str, signature: str) -> bool:
     """Verify Kiwify HMAC-SHA1 over the exact raw request body."""
-    if not token or len(signature) != 40:
+    if (
+        not token
+        or len(signature) != 40
+        or signature != signature.lower()
+        or any(char not in "0123456789abcdef" for char in signature)
+    ):
         return False
     expected = hmac.new(token.encode("utf-8"), raw_body, hashlib.sha1).hexdigest()
-    return hmac.compare_digest(expected, signature.lower())
+    return hmac.compare_digest(expected, signature)
