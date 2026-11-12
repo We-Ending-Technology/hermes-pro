@@ -31,3 +31,8 @@ create index if not exists hermes_offers_product_idx
 create unique index if not exists hermes_offers_one_draft_per_product
   on public.hermes_offers(product_id)
   where status = 'draft';
+
+alter table public.hermes_market_signals enable row level security;
+alter table public.hermes_offers enable row level security;
+revoke all on table public.hermes_market_signals, public.hermes_offers from anon, authenticated;
+grant all on table public.hermes_market_signals, public.hermes_offers to service_role;
