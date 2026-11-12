@@ -781,6 +781,7 @@ async def _job_heartbeat(store: PersistentStore, job_id: str, stop: asyncio.Even
         except asyncio.TimeoutError:
             try:
                 await store.touch_job(job_id)
+                await store.record_worker_health("ok", f"worker active job={job_id}")
             except Exception:
                 logger.exception("job heartbeat failed job=%s", job_id)
 
