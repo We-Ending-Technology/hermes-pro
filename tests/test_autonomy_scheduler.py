@@ -373,3 +373,35 @@ async def test_autonomy_tick_accepts_groq_as_configured_fallback(monkeypatch):
     assert result["status"] == "product_queued"
     assert queue.jobs == ["job-1"]
 
+
+@pytest.mark.asyncio
+async def test_autonomy_tick_blocks_ebook_without_positive_market_signal(monkeypatch):
+    monkeypatch.setattr(autonomy_scheduler, "build_ai_gateway", lambda settings: FakeGateway())
+
+    async def no_demand(store, topic):
+        return {
+            "signal_id": "signal-negative",
+            "source": "Google Trends Brasil — Trending RSS",
+            "source_url": "https://trends.google.com/trending/rss?geo=BR",
+            "queried_at": datetime.now(timezone.utc).isoformat(),
+            "demand_exists": False,
+            "matches": [],
+            "competition": None,
+        }
+
+    monkeypatch.setattr(autonomy_scheduler, "validate_and_record_niche", no_demand)
+    settings = Settings(
+        autonomy_enabled=True,
+        ai_provider="gemini",
+        gemini_api_key="test-key",
+        autonomy_max_daily_products=3,
+        autonomy_max_active_products=1,
+        autonomy_max_ready_to_publish=2,
+    )
+    store, queue = FakeStore(), FakeQueue()
+
+    result = await autonomy_scheduler.autonomy_tick(settings, store, queue)
+
+    assert result["status"] == "market_validation_blocked"
+    assert store.created == []
+    assert queue.jobs == []
