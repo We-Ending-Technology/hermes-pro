@@ -1,68 +1,28 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from ..ai_gateway.factory import build_ai_gateway
 from ..core.config import Settings
-from .specialist import SpecialistAgent
 
 
 SPECIALISTS: tuple[tuple[str, str], ...] = (
-    (
-        "Hermes Radar",
-        "Analise sinais, oportunidades, riscos e lacunas de informação. "
-        "Não invente dados de mercado, fontes ou validações.",
-    ),
-    (
-        "Hermes Factory",
-        "Transforme a tarefa em uma solução ou produto digital executável. "
-        "Defina entregáveis, critérios de qualidade e dependências reais.",
-    ),
-    (
-        "Hermes Dev",
-        "Analise arquitetura, integrações, falhas técnicas e testes. "
-        "Não afirme que executou alterações que não foram realizadas.",
-    ),
-    (
-        "Hermes Analyst",
-        "Avalie custos, riscos, retorno, métricas e viabilidade. "
-        "Separe fatos, hipóteses e informações ausentes.",
-    ),
-    (
-        "Hermes Designer",
-        "Defina estrutura editorial, hierarquia visual, legibilidade, identidade da capa e ilustrações. "
-        "Não declare arquivos gerados sem validação binária.",
-    ),
-    (
-        "Hermes Auditor",
-        "Aplique critérios de qualidade, segurança, integridade de arquivos, rastreabilidade e conformidade. "
-        "Bloqueie publicação quando faltar evidência.",
-    ),
-    (
-        "Hermes Executor",
-        "Converta decisões aprovadas em tarefas persistentes, idempotentes e verificáveis. "
-        "Não execute publicação, gastos ou ações irreversíveis sem aprovação humana.",
-    ),
-    (
-        "Hermes Comercial",
-        "Prepare oferta, descrição, público, preço como proposta e checkout. "
-        "Nunca invente checkout, preço aprovado ou publicação.",
-    ),
-    (
-        "Hermes Rentabilidade",
-        "Calcule receita líquida, taxas, comissões, custos e margem usando valores documentados. "
-        "Se faltar dado, retorne desconhecido em vez de estimar como fato.",
-    ),
-    (
-        "Hermes Sentinel",
-        "Analise health checks, heartbeats, incidentes e tarefas órfãs. "
-        "Separe falhas detectadas, ações executadas e resultado confirmado.",
-    ),
+    ("Hermes Radar", "Analise sinais, oportunidades, riscos e lacunas de informação. Não invente dados de mercado, fontes ou validações."),
+    ("Hermes Factory", "Transforme a tarefa em uma solução ou produto digital executável. Defina entregáveis, critérios de qualidade e dependências reais."),
+    ("Hermes Dev", "Analise arquitetura, integrações, falhas técnicas e testes. Não afirme que executou alterações que não foram realizadas."),
+    ("Hermes Analyst", "Avalie custos, riscos, retorno, métricas e viabilidade. Separe fatos, hipóteses e informações ausentes."),
+    ("Hermes Designer", "Defina estrutura editorial, hierarquia visual, legibilidade, identidade da capa e ilustrações. Não declare arquivos gerados sem validação binária."),
+    ("Hermes Auditor", "Aplique critérios de qualidade, segurança, integridade de arquivos, rastreabilidade e conformidade. Bloqueie publicação quando faltar evidência."),
+    ("Hermes Executor", "Converta decisões aprovadas em tarefas persistentes, idempotentes e verificáveis. Não execute publicação, gastos ou ações irreversíveis sem aprovação humana."),
+    ("Hermes Comercial", "Prepare oferta, descrição, público, preço como proposta e checkout. Nunca invente checkout, preço aprovado ou publicação."),
+    ("Hermes Rentabilidade", "Calcule receita líquida, taxas, comissões, custos e margem usando valores documentados. Se faltar dado, retorne desconhecido em vez de estimar como fato."),
+    ("Hermes Sentinel", "Analise health checks, heartbeats, incidentes e tarefas órfãs. Separe falhas detectadas, ações executadas e resultado confirmado."),
 )
 
 
 async def run_chief(input_text: str, settings: Settings) -> dict[str, Any]:
-    """Run the specialist team with the configured provider, then synthesize."""
+    """Run ten specialist perspectives and the Chief synthesis in one provider request."""
     provider = settings.ai_provider.strip().lower()
     if provider == "stub":
         raise RuntimeError("AI_PROVIDER=stub is not a production AI provider")
@@ -82,32 +42,54 @@ async def run_chief(input_text: str, settings: Settings) -> dict[str, Any]:
         raise RuntimeError("Configure ao menos uma credencial de IA entre o provedor principal e o fallback")
 
     gateway = build_ai_gateway(settings)
-    findings: dict[str, str] = {}
-
-    for name, instructions in SPECIALISTS:
-        specialist = SpecialistAgent(name, instructions, gateway)
-        response = await specialist.run({"prompt": input_text})
-        findings[name] = response["analysis"]
-
-    specialist_context = "\n\n".join(
-        f"## {name}\n{content}" for name, content in findings.items()
+    role_brief = "\n".join(f"- {name}: {instructions}" for name, instructions in SPECIALISTS)
+    prompt = (
+        "TAREFA ORIGINAL DO USUÁRIO:\n"
+        f"{input_text}\n\n"
+        "EQUIPE ESPECIALISTA — produza uma análise separada para cada papel abaixo.\n"
+        f"{role_brief}\n\n"
+        "Depois, Hermes Chefe deve reconciliar divergências, priorizar riscos e produzir uma síntese executável. "
+        "Use fatos fornecidos, marque hipóteses e lacunas. Não afirme que ações externas foram executadas sem evidência. "
+        "Não publique, compre, cobre, saque, altere preços ou execute ações irreversíveis sem autorização humana explícita.\n\n"
+        "Responda estritamente como JSON válido, sem markdown, neste formato: "
+        '{"specialists":{"Hermes Radar":"...","Hermes Factory":"...","Hermes Dev":"...","Hermes Analyst":"...","Hermes Designer":"...","Hermes Auditor":"...","Hermes Executor":"...","Hermes Comercial":"...","Hermes Rentabilidade":"...","Hermes Sentinel":"..."},"synthesis":"..."} '
+        "Cada especialista deve entregar uma análise curta e concreta, não apenas repetir a tarefa."
     )
-    final = await gateway.complete(
-        f"Tarefa original:\n{input_text}\n\n"
-        f"Análises dos especialistas:\n{specialist_context}\n\n"
-        "Consolide as análises, resolva divergências, identifique bloqueios reais e "
-        "entregue o resultado mais útil. Não declare ações como concluídas sem evidência.",
+    response = await gateway.complete(
+        prompt,
         system=(
-            "Você é Hermes Chefe, responsável pelo resultado final. "
-            "Coordene os especialistas, priorize segurança e execução verificável, "
-            "separe fatos de inferências e não invente resultados."
+            "Você é Hermes Chefe. Coordene dez especialistas em uma única execução estruturada. "
+            "Mantenha as análises individuais separadas por nome e finalize com uma síntese objetiva. "
+            "Precisão, rastreabilidade e segurança são obrigatórias."
         ),
     )
+    try:
+        parsed = json.loads(response.content)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("O provedor de IA retornou JSON inválido para a equipe Hermes") from exc
+
+    specialists = parsed.get("specialists") if isinstance(parsed, dict) else None
+    synthesis = parsed.get("synthesis") if isinstance(parsed, dict) else None
+    if not isinstance(specialists, dict) or not isinstance(synthesis, str) or not synthesis.strip():
+        raise RuntimeError("Resposta da equipe Hermes incompleta: faltam specialists ou synthesis")
+
+    findings: dict[str, str] = {}
+    missing: list[str] = []
+    for name, _instructions in SPECIALISTS:
+        value = specialists.get(name)
+        if not isinstance(value, str) or not value.strip():
+            missing.append(name)
+        else:
+            findings[name] = value.strip()
+    if missing:
+        raise RuntimeError("Resposta da equipe Hermes incompleta; especialistas ausentes: " + ", ".join(missing))
+
     return {
-        "output": final.content,
+        "output": synthesis.strip(),
         "agent": "Hermes Chefe",
-        "steps": len(findings) + 1,
+        "steps": len(SPECIALISTS) + 1,
+        "model_calls": 1,
         "specialists": findings,
-        "provider": final.provider,
-        "model": final.model,
+        "provider": response.provider,
+        "model": response.model,
     }
