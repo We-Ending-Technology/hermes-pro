@@ -10,6 +10,7 @@ from backend.app.ai_gateway.factory import build_ai_gateway
 from backend.app.core.config import Settings
 from backend.app.schemas_ext import is_kiwify_publishable_product
 from backend.app.services.persistence import PersistentStore
+from backend.app.services.market_radar import validate_and_record_niche
 
 logger = logging.getLogger("hermes.autonomy")
 
@@ -319,6 +320,16 @@ async def autonomy_tick(settings: Settings, store: PersistentStore, queue) -> di
         if _normalise_topic(topic) in existing_topics:
             return {"status": "duplicate_rejected", "topic": topic}
 
+        market_signal = await validate_and_record_niche(store, topic)
+        if not market_signal["demand_exists"]:
+            logger.info("autonomous product blocked by market radar topic=%s source=%s", topic, market_signal["source"])
+            return {
+                "status": "market_validation_blocked",
+                "topic": topic,
+                "source": market_signal["source"],
+                "reason": "no matching Google Trends Brazil signal; ebook was not created",
+            }
+
         slot = len(today_products) + 1
         idempotency_key = f"autonomous-product:{now.date().isoformat()}:{slot}"
         product, job = await store.create_product_and_job(
@@ -327,7 +338,15 @@ async def autonomy_tick(settings: Settings, store: PersistentStore, queue) -> di
                 "source": "autonomous_factory",
                 "product_type": "ebook",
                 "candidate": candidate,
-                "market_validation": "not_yet_verified",
+                "market_validation": {
+                    "signal_id": market_signal.get("signal_id"),
+                    "source": market_signal["source"],
+                    "source_url": market_signal["source_url"],
+                    "queried_at": market_signal["queried_at"],
+                    "demand_exists": True,
+                    "competition": None,
+                    "evidence": market_signal["matches"],
+                },
                 "publication_status": "not_published",
             },
             idempotency_key=idempotency_key,

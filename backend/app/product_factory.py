@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
-PIPELINE_STAGES = ("topic", "job", "writer", "reviewer", "cover", "document", "validation", "publication", "sales")
+PIPELINE_STAGES = ("create_outline", "generate_content", "review_content", "generate_cover", "generate_pdf", "generate_docx", "validate_files", "commercial_offer", "human_approval", "published")
 
 @dataclass(frozen=True)
 class QualityGate:

@@ -174,3 +174,70 @@ async def test_groq_adapter_uses_compatible_chat_completions_api(monkeypatch):
     assert captured["json"]["response_format"] == {"type": "json_object"}
     assert captured["json"]["max_completion_tokens"] == 2048
 
+
+
+@pytest.mark.asyncio
+async def test_gemini_circuit_breaker_opens_after_five_transient_failures(monkeypatch):
+    import backend.app.ai_gateway.adapters as adapters
+
+    now = 100.0
+    calls = 0
+
+    class FakeAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def always_rate_limited(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        request = httpx.Request("POST", "https://generativelanguage.googleapis.com/test")
+        response = httpx.Response(429, request=request)
+        raise httpx.HTTPStatusError("rate limited", request=request, response=response)
+
+    monkeypatch.setattr(adapters.httpx, "AsyncClient", lambda timeout: FakeAsyncClient())
+    monkeypatch.setattr(adapters, "_post_with_retries", always_rate_limited)
+    monkeypatch.setattr(adapters.time, "monotonic", lambda: now)
+
+    gateway = GeminiAdapter(api_key="test-key", model="gemini-test")
+    for _ in range(5):
+        with pytest.raises(RuntimeError, match="IA indisponível"):
+            await gateway.complete("test")
+
+    assert calls == 5
+    with pytest.raises(RuntimeError, match="circuit breaker aberto"):
+        await gateway.complete("test")
+    assert calls == 5
+
+    now += 61
+    with pytest.raises(RuntimeError, match="IA indisponível"):
+        await gateway.complete("test")
+    assert calls == 6
+
+
+@pytest.mark.asyncio
+async def test_retry_after_seconds_is_respected(monkeypatch):
+    calls = 0
+    delays = []
+
+    async def no_sleep(delay):
+        delays.append(delay)
+
+    monkeypatch.setattr("backend.app.ai_gateway.adapters.asyncio.sleep", no_sleep)
+    monkeypatch.setattr("backend.app.ai_gateway.adapters.random.uniform", lambda _a, _b: 0)
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(429, headers={"Retry-After": "3"}, request=request)
+        return httpx.Response(200, json={"ok": True}, request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        response = await _post_with_retries(client, "https://provider.test", headers={}, json={})
+
+    assert response.status_code == 200
+    assert calls == 2
+    assert delays == [3.0]

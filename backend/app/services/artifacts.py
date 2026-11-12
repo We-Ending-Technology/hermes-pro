@@ -294,7 +294,12 @@ def build_pdf(
     return output.getvalue()
 
 
-def build_artifacts(title: str, subtitle: str, content: str, cover_artwork: bytes | None = None) -> dict[str, tuple[str, bytes, str]]:
+def prepare_artifact_context(
+    title: str,
+    subtitle: str,
+    content: str,
+    cover_artwork: bytes | None = None,
+) -> dict[str, Any]:
     data = _content_data(content)
     raw_briefs = data.get("illustrations")
     briefs = [
@@ -304,28 +309,42 @@ def build_artifacts(title: str, subtitle: str, content: str, cover_artwork: byte
     ] if isinstance(raw_briefs, list) else []
     if len(briefs) < MIN_ILLUSTRATIONS:
         raise ValueError(f"ebook requires {MIN_ILLUSTRATIONS} valid internal illustration briefs before artifact generation")
-
-    slug = _safe_name(title)
-    cover = build_cover(title, subtitle, artwork_bytes=cover_artwork)
     selected_briefs = briefs[:MIN_ILLUSTRATIONS]
-    illustration_bytes = [build_illustration(brief, index) for index, brief in enumerate(selected_briefs)]
-    content_json = json.dumps(data, ensure_ascii=False)
-    docx = build_docx(
-        title, subtitle, content_json,
-        cover_bytes=cover,
-        illustration_bytes=illustration_bytes,
-        illustration_briefs=selected_briefs,
-    )
-    pdf = build_pdf(
-        title, subtitle, content_json,
-        cover_bytes=cover,
-        illustration_bytes=illustration_bytes,
-        illustration_briefs=selected_briefs,
-    )
     return {
-        "cover": (f"{slug}/cover.png", cover, "image/png"),
-        "docx": (f"{slug}/ebook.docx", docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
-        "pdf": (f"{slug}/ebook.pdf", pdf, "application/pdf"),
+        "slug": _safe_name(title),
+        "cover": build_cover(title, subtitle, artwork_bytes=cover_artwork),
+        "illustrations": [build_illustration(brief, index) for index, brief in enumerate(selected_briefs)],
+        "briefs": selected_briefs,
+        "content_json": json.dumps(data, ensure_ascii=False),
+    }
+
+
+def build_docx_artifact(title: str, subtitle: str, context: dict[str, Any]) -> tuple[str, bytes, str]:
+    content = build_docx(
+        title, subtitle, context["content_json"],
+        cover_bytes=context["cover"],
+        illustration_bytes=context["illustrations"],
+        illustration_briefs=context["briefs"],
+    )
+    return (f"{context['slug']}/ebook.docx", content, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
+def build_pdf_artifact(title: str, subtitle: str, context: dict[str, Any]) -> tuple[str, bytes, str]:
+    content = build_pdf(
+        title, subtitle, context["content_json"],
+        cover_bytes=context["cover"],
+        illustration_bytes=context["illustrations"],
+        illustration_briefs=context["briefs"],
+    )
+    return (f"{context['slug']}/ebook.pdf", content, "application/pdf")
+
+
+def build_artifacts(title: str, subtitle: str, content: str, cover_artwork: bytes | None = None) -> dict[str, tuple[str, bytes, str]]:
+    context = prepare_artifact_context(title, subtitle, content, cover_artwork)
+    return {
+        "cover": (f"{context['slug']}/cover.png", context["cover"], "image/png"),
+        "docx": build_docx_artifact(title, subtitle, context),
+        "pdf": build_pdf_artifact(title, subtitle, context),
     }
 
 

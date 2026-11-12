@@ -21,7 +21,7 @@ class FallbackAIGateway(AIGateway):
 
 def build_ai_gateway(settings: Settings) -> AIGateway:
     if settings.ai_provider == "gemini":
-        primary = GeminiAdapter(api_key=settings.gemini_api_key or settings.ai_api_key, model=settings.gemini_model)
+        primary = GeminiAdapter(api_key=settings.gemini_api_key or settings.ai_api_key, model=settings.gemini_model, timeout_seconds=settings.gemini_timeout_seconds)
     elif settings.ai_provider == "openai":
         primary = OpenAIAdapter(api_key=settings.openai_api_key, model=settings.openai_chat_model)
     elif settings.ai_provider == "groq":

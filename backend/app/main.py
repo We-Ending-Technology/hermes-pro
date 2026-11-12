@@ -25,6 +25,7 @@ from .schemas_ext import KiwifyPublicationRequest, ProductUpdateRequest, is_kiwi
 from .services.analytics import analytics_service
 from .services.autonomy import AutonomyService
 from .services.integrations import integration_service
+from .services.market_radar import validate_and_record_niche
 from .services.persistence import PersistentStore
 from .services.quality import quality_service
 from .services.radar import radar_service
@@ -65,18 +66,27 @@ async def lifespan(app: FastAPI):
         registry.register(SpecialistAgent(agent_name, instructions, ai_gateway))
 
     worker_task = None
+    sentinel_task = None
     if settings.embedded_worker_enabled:
         worker_task = asyncio.create_task(_run_embedded_worker(), name="hermes-embedded-worker")
         logger.info("embedded worker enabled")
+    if settings.sentinel_enabled:
+        from .services.sentinel import run_sentinel
+        sentinel_task = asyncio.create_task(
+            run_sentinel(settings, store, queue, settings.sentinel_interval_seconds),
+            name="hermes-sentinel",
+        )
+        logger.info("Hermes Sentinel enabled")
     try:
         yield
     finally:
-        if worker_task is not None:
-            worker_task.cancel()
-            try:
-                await worker_task
-            except asyncio.CancelledError:
-                pass
+        for task in (sentinel_task, worker_task):
+            if task is not None:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
         await queue.close()
 
 
@@ -407,10 +417,122 @@ async def products():
 @app.post("/api/v1/products", response_model=ProductResponse, status_code=202)
 async def create_product(request: ProductCreateRequest):
     try:
-        product, job = await store.create_product_and_job(request.topic, request.metadata, request.idempotency_key)
+        signals = await db.select(
+            "hermes_market_signals",
+            params={
+                "select": "id,niche,source,demand_estimated,positive,data_consulted",
+                "niche": "eq." + request.topic.strip(),
+                "positive": "eq.true",
+                "order": "data_consulted.desc",
+                "limit": "1",
+            },
+        )
+        if not signals:
+            raise HTTPException(
+                status_code=409,
+                detail="Radar bloqueou a produção: não existe sinal positivo registrado para este nicho. Execute POST /api/v1/radar/validate primeiro.",
+            )
+        metadata = dict(request.metadata or {})
+        metadata["market_validation"] = {
+            "signal_id": signals[0]["id"],
+            "source": signals[0]["source"],
+            "demand_estimated": signals[0].get("demand_estimated"),
+            "validated_at": signals[0]["data_consulted"],
+        }
+        product, job = await store.create_product_and_job(request.topic, metadata, request.idempotency_key)
         await queue.enqueue(str(job["id"]))
-    except SupabaseError as exc: raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail="database unavailable while checking market evidence") from exc
     return await product_response(product)
+
+
+@app.post("/api/v1/radar/validate")
+async def radar_validate(payload: dict[str, Any]):
+    niche = str(payload.get("niche") or "").strip()
+    if len(niche) < 3 or len(niche) > 180:
+        raise HTTPException(status_code=422, detail="niche must contain between 3 and 180 characters")
+    try:
+        result = await validate_and_record_niche(store, niche)
+    except Exception as exc:
+        logger.exception("market radar source query failed")
+        raise HTTPException(status_code=503, detail="Google Trends source unavailable; no demand conclusion recorded") from exc
+    return {
+        "niche": niche,
+        "demand_exists": result["demand_exists"],
+        "decision": "positive" if result["demand_exists"] else "insufficient_evidence",
+        "source": result["source"],
+        "source_url": result["source_url"],
+        "queried_at": result["queried_at"],
+        "signals": result["matches"],
+        "competition": None,
+        "limitations": result["limitations"],
+    }
+
+
+@app.post("/api/v1/products/{product_id}/offers")
+async def create_offer_draft(product_id: str, payload: dict[str, Any]):
+    row = await store.get_product(product_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="product not found")
+    if row.get("status") != "ready_to_publish" or not is_kiwify_publishable_product(row):
+        raise HTTPException(status_code=409, detail="Oferta bloqueada: produto ainda não passou por todos os quality gates.")
+    raw_price = payload.get("price")
+    price = None
+    if raw_price is not None:
+        try:
+            price = round(float(raw_price), 2)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="price must be a positive number")
+        if not 0 < price <= 100000:
+            raise HTTPException(status_code=422, detail="price must be between 0.01 and 100000")
+    checkout = payload.get("link_checkout")
+    if checkout and not str(checkout).startswith("https://"):
+        raise HTTPException(status_code=422, detail="checkout link must use HTTPS")
+    offer = await db.insert("hermes_offers", {
+        "product_id": product_id,
+        "price": price,
+        "link_checkout": str(checkout) if checkout else None,
+        "status": "draft",
+        "approval_required": True,
+    })
+    return offer
+
+
+@app.post("/api/v1/offers/{offer_id}/approve")
+async def approve_offer(offer_id: str, payload: dict[str, Any]):
+    rows = await db.select(
+        "hermes_offers",
+        params={"select": "*", "id": f"eq.{offer_id}", "limit": "1"},
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="offer not found")
+    offer = rows[0]
+    if payload.get("approved") is not True:
+        raise HTTPException(status_code=409, detail="human approval is required")
+    try:
+        approved_price = round(float(payload.get("approved_price")), 2)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="approved_price must match the draft price")
+    if approved_price != round(float(offer["price"]), 2):
+        raise HTTPException(status_code=409, detail="approved price differs from draft price")
+    checkout = str(payload.get("link_checkout") or offer.get("link_checkout") or "")
+    if not checkout.startswith("https://"):
+        raise HTTPException(status_code=409, detail="a real HTTPS checkout URL is required before activation")
+    updated = await db.update(
+        "hermes_offers",
+        {
+            "price": approved_price,
+            "link_checkout": checkout,
+            "status": "active",
+            "approval_required": False,
+            "approved_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+        where={"id": f"eq.{offer_id}"},
+    )
+    return updated
 
 
 @app.get("/api/v1/products/{product_id}", response_model=ProductResponse)

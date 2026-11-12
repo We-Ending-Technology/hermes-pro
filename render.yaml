@@ -18,6 +18,12 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-3.5-flash-lite
+      - key: GEMINI_TIMEOUT_SECONDS
+        value: "45"
+      - key: SENTINEL_ENABLED
+        value: "true"
+      - key: SENTINEL_INTERVAL_SECONDS
+        value: "15"
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_CHAT_MODEL
@@ -57,6 +63,12 @@ services:
       - key: HOTMART_WEBHOOK_TOKEN
         sync: false
       - key: KIWIFY_WEBHOOK_TOKEN
+        sync: false
+      - key: KIWIFY_API_CLIENT_ID
+        sync: false
+      - key: KIWIFY_API_CLIENT_SECRET
+        sync: false
+      - key: KIWIFY_ACCOUNT_ID
         sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false

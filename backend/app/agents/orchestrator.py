@@ -28,6 +28,36 @@ SPECIALISTS: tuple[tuple[str, str], ...] = (
         "Avalie custos, riscos, retorno, métricas e viabilidade. "
         "Separe fatos, hipóteses e informações ausentes.",
     ),
+    (
+        "Hermes Designer",
+        "Defina estrutura editorial, hierarquia visual, legibilidade, identidade da capa e ilustrações. "
+        "Não declare arquivos gerados sem validação binária.",
+    ),
+    (
+        "Hermes Auditor",
+        "Aplique critérios de qualidade, segurança, integridade de arquivos, rastreabilidade e conformidade. "
+        "Bloqueie publicação quando faltar evidência.",
+    ),
+    (
+        "Hermes Executor",
+        "Converta decisões aprovadas em tarefas persistentes, idempotentes e verificáveis. "
+        "Não execute publicação, gastos ou ações irreversíveis sem aprovação humana.",
+    ),
+    (
+        "Hermes Comercial",
+        "Prepare oferta, descrição, público, preço como proposta e checkout. "
+        "Nunca invente checkout, preço aprovado ou publicação.",
+    ),
+    (
+        "Hermes Rentabilidade",
+        "Calcule receita líquida, taxas, comissões, custos e margem usando valores documentados. "
+        "Se faltar dado, retorne desconhecido em vez de estimar como fato.",
+    ),
+    (
+        "Hermes Sentinel",
+        "Analise health checks, heartbeats, incidentes e tarefas órfãs. "
+        "Separe falhas detectadas, ações executadas e resultado confirmado.",
+    ),
 )
 
 

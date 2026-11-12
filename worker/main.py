@@ -10,10 +10,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from backend.app.ai_gateway.factory import build_ai_gateway
+from backend.app.ai_gateway.base import AIResponse
 from backend.app.core.config import get_settings
 from backend.app.db.supabase import SupabaseREST
 from backend.app.queue import JobQueue
-from backend.app.services.artifacts import build_artifacts, validate_artifacts
+from backend.app.services.artifacts import (build_docx_artifact, build_pdf_artifact, prepare_artifact_context, validate_artifacts)
 from backend.app.services.ai_images import generate_cover_artwork
 from backend.app.services.ebook_validation import (
     MIN_CHAPTERS,
@@ -35,7 +36,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hermes.worker")
 ARTIFACT_RENDER_SEMAPHORE = asyncio.Semaphore(1)
 MAX_ATTEMPTS = 3
-RECOVERY_INTERVAL_SECONDS = 60  # Recover persisted jobs promptly after a missed Redis enqueue
+RECOVERY_INTERVAL_SECONDS = 10  # 75-second lease plus 10-second scan keeps recovery within 90 seconds
 ARTIFACT_BUCKETS = {"cover": "covers", "docx": "exports", "pdf": "ebooks"}
 
 
@@ -408,7 +409,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             return
         await store.update_job(job_id, "running", attempts=attempts, error_message=None)
         gateway = build_ai_gateway(settings)
-        await store.update_product(product_id, status="generating", current_stage="topic")
+        await store.update_product(product_id, status="generating", current_stage="create_outline")
 
         payload = job.get("payload") or {}
         reuse_existing_content = bool(payload.get("reuse_existing_content"))
@@ -426,7 +427,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
                 raise ValueError("existing ebook no longer passes deterministic content validation")
             ai_provider = str(existing_metadata.get("ai_provider") or settings.ai_provider)
             ai_model = str(existing_metadata.get("ai_model") or settings.gemini_model)
-            await store.update_product(product_id, current_stage="reviewer")
+            await store.update_product(product_id, current_stage="review_content")
             review_data = normalize_review_result(existing_metadata.get("review") or {}, content_gate)
             if not review_data.get("approved"):
                 gateway = build_ai_gateway(settings)
@@ -451,6 +452,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
                 )
                 review_data = normalize_review_result(review_data, content_gate)
         else:
+            await store.update_product(product_id, current_stage="create_outline")
             strategy_prompt = (
                 f"Create a concise product strategy for the digital ebook topic: {topic}. "
                 "Return valid JSON with keys: positioning, audience, title, subtitle, outline "
@@ -465,22 +467,79 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             if await checkpoint():
                 return
 
-            await store.update_product(product_id, current_stage="writer")
-            writer_prompt = (
-                f"Using this strategy, write the ebook for topic '{topic}'. "
-                f"Strategy: {json.dumps(strategy_data, ensure_ascii=False)}\n"
-                "Write a complete, practical ebook targeting at least 4,000 words, with 8 to 10 chapters. "
-                "Each chapter must contain at least 350 substantive words; introduction and conclusion at least 250 words each. "
-                "Include concrete examples, step-by-step procedures, checklists, templates and original explanations; do not pad or repeat. "
-                "Create at least four original, topic-specific illustration briefs, each with title, description, caption, alt_text, chapter_index and 3-4 practical steps. "
-                "Return valid JSON with keys: introduction, chapters (array of objects with title and content), conclusion, illustrations."
+            await store.update_product(product_id, current_stage="generate_content")
+            outline = strategy_data.get("outline") if isinstance(strategy_data, dict) else None
+            chapter_titles = [str(item).strip() for item in outline if str(item).strip()] if isinstance(outline, list) else []
+            if len(chapter_titles) < 8:
+                raise ValueError("ebook outline must contain at least eight chapter titles")
+
+            generated_chapters = []
+            chapter_responses = []
+            for chapter_index, chapter_title in enumerate(chapter_titles[:10]):
+                if await checkpoint():
+                    return
+                chapter_prompt = (
+                    f"Escreva somente o capítulo {chapter_index + 1} de um ebook sobre '{topic}'. "
+                    f"Título obrigatório: {chapter_title}. Estratégia: {json.dumps(strategy_data, ensure_ascii=False)[:2500]}. "
+                    "Retorne JSON com title e content. O conteúdo deve ter pelo menos 450 palavras substantivas, "
+                    "com explicação original, exemplo brasileiro plausível, procedimento passo a passo, checklist e critérios de decisão. "
+                    "Não repita capítulos anteriores, não invente estatísticas, fontes, depoimentos ou resultados. "
+                    "Não use preenchimento artificial."
+                )
+                chapter_response, chapter_data = await complete_json_response(
+                    gateway,
+                    chapter_prompt,
+                    "Você é autor técnico do Hermes. Retorne apenas JSON válido com title e content.",
+                    label=f"writer_chapter_{chapter_index + 1}",
+                    validator=lambda value: (
+                        isinstance(value.get("title"), str)
+                        and bool(value["title"].strip())
+                        and isinstance(value.get("content"), str)
+                        and len(value["content"].split()) >= 350
+                    ),
+                )
+                generated_chapters.append({"title": chapter_title, "content": chapter_data["content"]})
+                chapter_responses.append(chapter_response)
+
+            if await checkpoint():
+                return
+            frontmatter_prompt = (
+                f"Crie introdução, conclusão e quatro briefs de ilustração para o ebook '{topic}'. "
+                f"Capítulos: {json.dumps(chapter_titles[:10], ensure_ascii=False)}. "
+                "Retorne JSON com introduction, conclusion e illustrations. "
+                "Introdução e conclusão devem ter pelo menos 250 palavras cada. "
+                "Crie quatro ilustrações específicas dos capítulos, cada uma com title, description, caption, alt_text, "
+                "chapter_index e pelo menos três steps. Não invente estatísticas, pesquisas ou fontes."
             )
-            writer, writer_data = await complete_json_response(
+            frontmatter_response, frontmatter = await complete_json_response(
                 gateway,
-                writer_prompt,
-                "You are the Hermes Pro writer. Return only valid JSON. Produce original, useful educational content and do not fabricate citations.",
-                label="writer",
-                validator=is_ebook_payload,
+                frontmatter_prompt,
+                "Você é editor de estrutura editorial. Retorne somente JSON válido.",
+                label="writer_frontmatter",
+                validator=lambda value: (
+                    isinstance(value.get("introduction"), str)
+                    and len(value["introduction"].split()) >= 200
+                    and isinstance(value.get("conclusion"), str)
+                    and len(value["conclusion"].split()) >= 200
+                    and isinstance(value.get("illustrations"), list)
+                    and len(value["illustrations"]) >= 4
+                    and all(
+                        isinstance(item, dict)
+                        and all(isinstance(item.get(key), str) and item[key].strip() for key in ("title", "description", "caption", "alt_text"))
+                        for item in value["illustrations"][:4]
+                    )
+                ),
+            )
+            writer_data = {
+                "introduction": frontmatter["introduction"],
+                "chapters": generated_chapters,
+                "conclusion": frontmatter["conclusion"],
+                "illustrations": frontmatter["illustrations"][:4],
+            }
+            writer = AIResponse(
+                content=json.dumps(writer_data, ensure_ascii=False),
+                provider=frontmatter_response.provider,
+                model=frontmatter_response.model,
             )
             if await checkpoint():
                 return
@@ -591,7 +650,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             metadata["marketing_pack"] = marketing_pack
             metadata["marketing_pack_status"] = "ready"
 
-        await store.update_product(product_id, status="generating_artifacts", current_stage="cover", title=title, metadata=metadata)
+        await store.update_product(product_id, status="generating_artifacts", current_stage="generate_cover", title=title, metadata=metadata)
         cover_artwork = None
         cover_art_metadata = {
             "provider": "local_vector",
@@ -629,13 +688,27 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         )
         logger.info("artifact rendering queued product=%s", product_id)
         async with ARTIFACT_RENDER_SEMAPHORE:
-            artifacts = await asyncio.to_thread(
-                build_artifacts,
+            artifact_context = await asyncio.to_thread(
+                prepare_artifact_context,
                 title or topic,
                 subtitle,
                 json.dumps(writer_data, ensure_ascii=False),
-                cover_artwork=cover_artwork,
+                cover_artwork,
             )
+            await store.update_product(product_id, current_stage="generate_pdf")
+            pdf_artifact = await asyncio.to_thread(
+                build_pdf_artifact, title or topic, subtitle, artifact_context
+            )
+            await store.update_product(product_id, current_stage="generate_docx")
+            docx_artifact = await asyncio.to_thread(
+                build_docx_artifact, title or topic, subtitle, artifact_context
+            )
+            artifacts = {
+                "cover": (f"{artifact_context['slug']}/cover.png", artifact_context["cover"], "image/png"),
+                "pdf": pdf_artifact,
+                "docx": docx_artifact,
+            }
+            await store.update_product(product_id, current_stage="validate_files")
             artifact_gate = await asyncio.to_thread(validate_artifacts, artifacts)
         logger.info(
             "artifact rendering completed product=%s artifacts=%s pages=%s illustrations=%s",
@@ -685,10 +758,14 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         metadata["artifact_validation"] = artifact_gate
         publication_ready = bool(cover_artwork)
         final_status = "ready_to_publish" if publication_ready else "review_required"
+        if publication_ready:
+            offer_draft = await store.ensure_offer_draft(product_id)
+            metadata["offer_draft_id"] = offer_draft.get("id")
+            metadata["offer_status"] = "draft_pending_human_price_and_checkout"
         await store.update_product(
             product_id,
             status=final_status,
-            current_stage="studio" if publication_ready else "cover",
+            current_stage="commercial_offer" if publication_ready else "generate_cover",
             metadata=metadata,
         )
         await store.update_job(job_id, "completed", attempts=attempts)
@@ -734,13 +811,14 @@ async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
     from datetime import datetime, timedelta, timezone
 
     now = datetime.now(timezone.utc)
-    stale_before = now - timedelta(minutes=15)
+    stale_before = now - timedelta(seconds=75)
     recovered = 0
     for job in await store.list_recoverable_jobs(stale_before):
         status = job.get("status")
         if status == "running":
-            await store.update_job(str(job["id"]), "pending", error_message="recovered after stale worker lease")
-            status = "pending"
+            await store.update_job(str(job["id"]), "retrying", error_message="recovered after stale worker lease (>75s)")
+            await queue.remove_processing(str(job["id"]), agent=job.get("job_type") == "agent_run")
+            status = "retrying"
         if status not in {"pending", "retrying"}:
             continue
         if job["job_type"] == "product_generation":
@@ -755,6 +833,52 @@ async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
     except Exception:
         depths = {"product": "unknown", "agent": "unknown"}
     logger.info("job recovery scan complete recovered=%s queue_depths=%s", recovered, depths)
+
+
+async def _job_heartbeat(store: PersistentStore, job_id: str, stop: asyncio.Event) -> None:
+    """Refresh a running job lease every 30 seconds independently of its long task."""
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=30)
+        except asyncio.TimeoutError:
+            try:
+                await store.touch_job(job_id)
+                await store.record_worker_health("ok", f"worker active job={job_id}")
+            except Exception:
+                logger.exception("job heartbeat failed job=%s", job_id)
+
+
+async def _run_job_with_lease(store: PersistentStore, queue: JobQueue, job_id: str, *, agent: bool) -> None:
+    stop = asyncio.Event()
+    heartbeat = asyncio.create_task(_job_heartbeat(store, job_id, stop))
+    try:
+        if agent:
+            await process_agent(job_id, store, get_settings(), queue)
+        else:
+            await process_product(job_id, store, queue)
+    finally:
+        stop.set()
+        heartbeat.cancel()
+        await asyncio.gather(heartbeat, return_exceptions=True)
+        try:
+            job = await store.get_job(job_id)
+            if job and job.get("status") == "failed":
+                try:
+                    await store.db.insert("hermes_jobs_dead_letter", {
+                        "job_id": job_id,
+                        "job_type": job.get("job_type") or ("agent_run" if agent else "product_generation"),
+                        "payload": job.get("payload") or {},
+                        "attempts": int(job.get("attempts") or 0),
+                        "error_message": str(job.get("error_message") or "max_attempts_exceeded")[:1000],
+                    })
+                except Exception as exc:
+                    if "duplicate" not in str(exc).lower() and "unique" not in str(exc).lower() and "23505" not in str(exc):
+                        logger.exception("persistent dead-letter write failed job=%s", job_id)
+                await queue.dead_letter(job_id, agent=agent, reason=job.get("error_message") or "max_attempts_exceeded")
+            else:
+                await queue.ack(job_id, agent=agent)
+        except Exception:
+            logger.exception("failed to acknowledge/dead-letter job=%s", job_id)
 
 
 async def run() -> None:
@@ -831,7 +955,7 @@ async def run() -> None:
             if agent_job_id:
                 logger.info("dequeued agent job=%s", agent_job_id)
                 try:
-                    await process_agent(agent_job_id, store, settings, queue)
+                    await _run_job_with_lease(store, queue, agent_job_id, agent=True)
                 finally:
                     _release_worker_memory("agent")
                 continue
@@ -839,7 +963,7 @@ async def run() -> None:
             if job_id:
                 logger.info("dequeued product job=%s", job_id)
                 try:
-                    await process_product(job_id, store, queue)
+                    await _run_job_with_lease(store, queue, job_id, agent=False)
                 finally:
                     _release_worker_memory("product")
     finally:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+import os
 
 from ..db.supabase import SupabaseREST
 from ..models.jobs import Job, JobStatus
@@ -77,15 +78,27 @@ class PersistentStore:
             "hermes_jobs",
             params={
                 "select": "*",
-                "or": f"(status.eq.pending,status.eq.retrying,and(status.eq.running,updated_at.lt.{cutoff}))",
+                "or": f"(and(status.eq.pending,updated_at.lt.{cutoff}),and(status.eq.retrying,updated_at.lt.{cutoff}),and(status.eq.running,updated_at.lt.{cutoff}))",
                 "order": "created_at.asc",
             },
+        )
+
+    async def touch_job(self, job_id: str) -> None:
+        """Refresh the durable lease while a worker is actively processing a job."""
+        now = datetime.now(timezone.utc).isoformat()
+        await self.db.update(
+            "hermes_jobs",
+            {"updated_at": now, "heartbeat_at": now},
+            where={"id": f"eq.{job_id}", "status": "eq.running"},
         )
 
     async def update_job(self, job_id: str, status: str, *, attempts: int | None = None, error_message: str | None = None) -> dict[str, Any]:
         values: dict[str, Any] = {"status": status, "updated_at": datetime.now(timezone.utc).isoformat(), "error_message": error_message}
         if attempts is not None:
             values["attempts"] = attempts
+        if status == "running":
+            values["worker_id"] = os.getenv("RENDER_INSTANCE_ID") or os.getenv("HOSTNAME") or "hermes-worker"
+            values["heartbeat_at"] = values["updated_at"]
         return await self.db.update("hermes_jobs", values, where={"id": f"eq.{job_id}"})
 
     async def update_product(self, product_id: str, *, status: str | None = None, current_stage: str | None = None, title: str | None = None, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -297,6 +310,22 @@ class PersistentStore:
             run["job_error"] = job.get("error_message")
             run["updated_at"] = job.get("updated_at", run.get("completed_at") or run.get("created_at"))
         return runs
+
+    async def ensure_offer_draft(self, product_id: str) -> dict[str, Any]:
+        """Prepare one price-pending draft after the ebook passes every artifact gate."""
+        existing = await self.db.select(
+            "hermes_offers",
+            params={"select": "*", "product_id": f"eq.{product_id}", "status": "eq.draft", "limit": "1"},
+        )
+        if existing:
+            return existing[0]
+        return await self.db.insert("hermes_offers", {
+            "product_id": product_id,
+            "price": None,
+            "link_checkout": None,
+            "status": "draft",
+            "approval_required": True,
+        })
 
     async def record_worker_health(self, status: str, message: str) -> None:
         now = datetime.now(timezone.utc).isoformat()
