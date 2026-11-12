@@ -25,6 +25,7 @@ from .schemas_ext import KiwifyPublicationRequest, ProductUpdateRequest, is_kiwi
 from .services.analytics import analytics_service
 from .services.autonomy import AutonomyService
 from .services.integrations import integration_service
+from .services.market_radar import validate_and_record_niche
 from .services.persistence import PersistentStore
 from .services.quality import quality_service
 from .services.radar import radar_service
@@ -416,10 +417,58 @@ async def products():
 @app.post("/api/v1/products", response_model=ProductResponse, status_code=202)
 async def create_product(request: ProductCreateRequest):
     try:
-        product, job = await store.create_product_and_job(request.topic, request.metadata, request.idempotency_key)
+        signals = await db.select(
+            "hermes_market_signals",
+            params={
+                "select": "id,niche,source,demand_estimated,positive,data_consulted",
+                "niche": "eq." + request.topic.strip(),
+                "positive": "eq.true",
+                "order": "data_consulted.desc",
+                "limit": "1",
+            },
+        )
+        if not signals:
+            raise HTTPException(
+                status_code=409,
+                detail="Radar bloqueou a produção: não existe sinal positivo registrado para este nicho. Execute POST /api/v1/radar/validate primeiro.",
+            )
+        metadata = dict(request.metadata or {})
+        metadata["market_validation"] = {
+            "signal_id": signals[0]["id"],
+            "source": signals[0]["source"],
+            "demand_estimated": signals[0].get("demand_estimated"),
+            "validated_at": signals[0]["data_consulted"],
+        }
+        product, job = await store.create_product_and_job(request.topic, metadata, request.idempotency_key)
         await queue.enqueue(str(job["id"]))
-    except SupabaseError as exc: raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except SupabaseError as exc:
+        raise HTTPException(status_code=503, detail="database unavailable while checking market evidence") from exc
     return await product_response(product)
+
+
+@app.post("/api/v1/radar/validate")
+async def radar_validate(payload: dict[str, Any]):
+    niche = str(payload.get("niche") or "").strip()
+    if len(niche) < 3 or len(niche) > 180:
+        raise HTTPException(status_code=422, detail="niche must contain between 3 and 180 characters")
+    try:
+        result = await validate_and_record_niche(store, niche)
+    except Exception as exc:
+        logger.exception("market radar source query failed")
+        raise HTTPException(status_code=503, detail="Google Trends source unavailable; no demand conclusion recorded") from exc
+    return {
+        "niche": niche,
+        "demand_exists": result["demand_exists"],
+        "decision": "positive" if result["demand_exists"] else "insufficient_evidence",
+        "source": result["source"],
+        "source_url": result["source_url"],
+        "queried_at": result["queried_at"],
+        "signals": result["matches"],
+        "competition": None,
+        "limitations": result["limitations"],
+    }
 
 
 @app.get("/api/v1/products/{product_id}", response_model=ProductResponse)
