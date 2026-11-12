@@ -203,7 +203,7 @@ async def test_gemini_circuit_breaker_opens_after_five_transient_failures(monkey
 
     gateway = GeminiAdapter(api_key="test-key", model="gemini-test")
     for _ in range(5):
-        with pytest.raises(httpx.HTTPStatusError):
+        with pytest.raises(RuntimeError, match="IA indisponível"):
             await gateway.complete("test")
 
     assert calls == 5
@@ -212,6 +212,6 @@ async def test_gemini_circuit_breaker_opens_after_five_transient_failures(monkey
     assert calls == 5
 
     now += 61
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(RuntimeError, match="IA indisponível"):
         await gateway.complete("test")
     assert calls == 6
