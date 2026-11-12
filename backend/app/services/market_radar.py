@@ -75,7 +75,7 @@ async def validate_and_record_niche(store, niche: str) -> dict[str, Any]:
         (item["demand_estimated_floor"] for item in evidence if item["demand_estimated_floor"] is not None),
         default=None,
     )
-    await store.db.insert("hermes_market_signals", {
+    saved = await store.db.insert("hermes_market_signals", {
         "niche": niche.strip(),
         "source": result["source"],
         "source_url": result["source_url"],
@@ -85,4 +85,5 @@ async def validate_and_record_niche(store, niche: str) -> dict[str, Any]:
         "data_consulted": result["queried_at"],
         "positive": result["demand_exists"],
     })
+    result["signal_id"] = saved.get("id") if isinstance(saved, dict) else None
     return result
