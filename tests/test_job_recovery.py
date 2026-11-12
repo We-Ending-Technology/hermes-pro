@@ -81,8 +81,8 @@ async def test_recovery_requeues_stale_running_and_retrying_jobs():
     await recover_pending(store, queue)
 
     age = (datetime.now(timezone.utc) - store.cutoff).total_seconds()
-    assert 89 <= age <= 91
-    assert ("stale-product", "retrying", {"error_message": "recovered after stale worker lease (>90s)"}) in store.updates
+    assert 74 <= age <= 76
+    assert ("stale-product", "retrying", {"error_message": "recovered after stale worker lease (>75s)"}) in store.updates
     assert ("remove", "stale-product", False) in queue.calls
     assert ("product", "stale-product") in queue.calls
     assert ("agent", "stale-agent") in queue.calls
