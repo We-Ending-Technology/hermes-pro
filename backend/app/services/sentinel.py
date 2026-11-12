@@ -102,6 +102,19 @@ async def sentinel_tick(settings: Any, store: PersistentStore, queue) -> dict[st
     results = {}
     for component, healthy in checks.items():
         if healthy:
+            open_rows = await store.db.select(
+                "hermes_incidents",
+                params={"select": "id", "component": f"eq.{component}", "status": "eq.open", "limit": "1"},
+            )
+            if open_rows:
+                now = datetime.now(timezone.utc).isoformat()
+                await store.db.update("hermes_incidents", {
+                    "status": "resolved",
+                    "result": "componente voltou a responder no health check",
+                    "requires_human": False,
+                    "updated_at": now,
+                    "resolved_at": now,
+                }, where={"id": f"eq.{open_rows[0]['id']}"})
             results[component] = "healthy"
             continue
 
@@ -126,7 +139,7 @@ async def sentinel_tick(settings: Any, store: PersistentStore, queue) -> dict[st
             resolved=resolved,
             requires_human=False,
         )
-        if attempts >= 3:
+        if attempts == 3:
             await _record_incident(
                 store, component, details[component],
                 "falha persistente após três verificações",
