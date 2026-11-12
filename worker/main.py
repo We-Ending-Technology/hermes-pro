@@ -700,6 +700,10 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         metadata["artifact_validation"] = artifact_gate
         publication_ready = bool(cover_artwork)
         final_status = "ready_to_publish" if publication_ready else "review_required"
+        if publication_ready:
+            offer_draft = await store.ensure_offer_draft(product_id)
+            metadata["offer_draft_id"] = offer_draft.get("id")
+            metadata["offer_status"] = "draft_pending_human_price_and_checkout"
         await store.update_product(
             product_id,
             status=final_status,
