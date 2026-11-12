@@ -1,7 +1,7 @@
 import base64
 import json
 from functools import lru_cache
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -52,8 +52,8 @@ class Settings(BaseSettings):
     hotmart_client_secret: str | None = Field(default=None, validation_alias="HOTMART_CLIENT_SECRET")
     hotmart_webhook_token: str | None = Field(default=None, validation_alias="HOTMART_WEBHOOK_TOKEN")
     kiwify_webhook_token: str | None = Field(default=None, validation_alias="KIWIFY_WEBHOOK_TOKEN")
-    kiwify_api_client_id: str | None = Field(default=None, validation_alias="KIWIFY_API_CLIENT_ID")
-    kiwify_api_client_secret: str | None = Field(default=None, validation_alias="KIWIFY_API_CLIENT_SECRET")
+    kiwify_api_client_id: str | None = Field(default=None, validation_alias=AliasChoices("KIWIFY_API_CLIENT_ID", "KIWIFY_API_KEY", "KIWIFY_CLIENT_ID"))
+    kiwify_api_client_secret: str | None = Field(default=None, validation_alias=AliasChoices("KIWIFY_API_CLIENT_SECRET", "KIWIFY_CLIENT_SECRET"))
     kiwify_account_id: str | None = Field(default=None, validation_alias="KIWIFY_ACCOUNT_ID")
     hermes_public_api_url: str = Field(default="https://hermes-pro-api-commercial.onrender.com", validation_alias="HERMES_PUBLIC_API_URL")
     telegram_bot_token: str | None = Field(default=None, validation_alias="TELEGRAM_BOT_TOKEN")
