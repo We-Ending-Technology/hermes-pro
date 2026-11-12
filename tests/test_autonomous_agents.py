@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -23,7 +24,7 @@ def test_gemini_agent_configuration_does_not_require_openai_key():
 
 
 def test_gemini_default_model_is_current_flash():
-    assert Settings().gemini_model == "gemini-3.8-flash"
+    assert Settings().gemini_model == "gemini-3.1-flash-lite"
 
 
 class FakeGateway:
@@ -33,7 +34,10 @@ class FakeGateway:
     async def complete(self, prompt: str, *, system: str | None = None):
         self.calls.append((prompt, system))
         return SimpleNamespace(
-            content=f"resultado-{len(self.calls)}",
+            content=json.dumps({
+                "specialists": {name: f"Análise de {name}" for name, _ in orchestrator.SPECIALISTS},
+                "synthesis": "Resultado consolidado do Hermes Chefe",
+            }),
             provider="gemini",
             model="test-model",
         )
@@ -51,9 +55,11 @@ async def test_chief_runs_specialists_without_openai_credentials(monkeypatch):
 
     result = await orchestrator.run_chief("Diagnostique o sistema", settings)
 
-    assert len(gateway.calls) == 11
+    assert len(gateway.calls) == 1
     assert result["agent"] == "Hermes Chefe"
     assert result["steps"] == 11
+    assert result["model_calls"] == 1
+    assert result["output"] == "Resultado consolidado do Hermes Chefe"
     assert result["provider"] == "gemini"
     assert set(result["specialists"]) == {
         "Hermes Radar",
