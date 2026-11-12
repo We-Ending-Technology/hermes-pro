@@ -25,3 +25,7 @@ create table if not exists public.hermes_jobs_dead_letter (
 
 create unique index if not exists hermes_jobs_dead_letter_job_uq
   on public.hermes_jobs_dead_letter(job_id);
+
+alter table public.hermes_jobs_dead_letter enable row level security;
+revoke all on table public.hermes_jobs_dead_letter from anon, authenticated;
+grant all on table public.hermes_jobs_dead_letter to service_role;
