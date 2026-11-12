@@ -96,7 +96,7 @@ async def sentinel_tick(settings: Any, store: PersistentStore, queue) -> dict[st
     )
     worker = worker_rows[0] if worker_rows else {}
     worker_age = _age_seconds(worker.get("checked_at"))
-    checks["worker"] = bool(worker and worker.get("status") == "ok" and worker_age is not None and worker_age <= 90)
+    checks["worker"] = bool(worker and worker.get("status") == "ok" and worker_age is not None and worker_age <= 75)
     details["worker"] = f"heartbeat age={round(worker_age)}s" if worker_age is not None else "heartbeat missing or invalid"
 
     results = {}
