@@ -65,18 +65,27 @@ async def lifespan(app: FastAPI):
         registry.register(SpecialistAgent(agent_name, instructions, ai_gateway))
 
     worker_task = None
+    sentinel_task = None
     if settings.embedded_worker_enabled:
         worker_task = asyncio.create_task(_run_embedded_worker(), name="hermes-embedded-worker")
         logger.info("embedded worker enabled")
+    if settings.sentinel_enabled:
+        from .services.sentinel import run_sentinel
+        sentinel_task = asyncio.create_task(
+            run_sentinel(settings, store, queue, settings.sentinel_interval_seconds),
+            name="hermes-sentinel",
+        )
+        logger.info("Hermes Sentinel enabled")
     try:
         yield
     finally:
-        if worker_task is not None:
-            worker_task.cancel()
-            try:
-                await worker_task
-            except asyncio.CancelledError:
-                pass
+        for task in (sentinel_task, worker_task):
+            if task is not None:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
         await queue.close()
 
 
