@@ -174,3 +174,44 @@ async def test_groq_adapter_uses_compatible_chat_completions_api(monkeypatch):
     assert captured["json"]["response_format"] == {"type": "json_object"}
     assert captured["json"]["max_completion_tokens"] == 2048
 
+
+
+@pytest.mark.asyncio
+async def test_gemini_circuit_breaker_opens_after_five_transient_failures(monkeypatch):
+    import backend.app.ai_gateway.adapters as adapters
+
+    now = 100.0
+    calls = 0
+
+    class FakeAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def always_rate_limited(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        request = httpx.Request("POST", "https://generativelanguage.googleapis.com/test")
+        response = httpx.Response(429, request=request)
+        raise httpx.HTTPStatusError("rate limited", request=request, response=response)
+
+    monkeypatch.setattr(adapters.httpx, "AsyncClient", lambda timeout: FakeAsyncClient())
+    monkeypatch.setattr(adapters, "_post_with_retries", always_rate_limited)
+    monkeypatch.setattr(adapters.time, "monotonic", lambda: now)
+
+    gateway = GeminiAdapter(api_key="test-key", model="gemini-test")
+    for _ in range(5):
+        with pytest.raises(httpx.HTTPStatusError):
+            await gateway.complete("test")
+
+    assert calls == 5
+    with pytest.raises(RuntimeError, match="circuit breaker aberto"):
+        await gateway.complete("test")
+    assert calls == 5
+
+    now += 61
+    with pytest.raises(httpx.HTTPStatusError):
+        await gateway.complete("test")
+    assert calls == 6
