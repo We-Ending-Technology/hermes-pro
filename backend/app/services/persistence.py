@@ -77,7 +77,7 @@ class PersistentStore:
             "hermes_jobs",
             params={
                 "select": "*",
-                "or": f"(status.eq.pending,status.eq.retrying,and(status.eq.running,updated_at.lt.{cutoff}))",
+                "or": f"(and(status.eq.pending,updated_at.lt.{cutoff}),and(status.eq.retrying,updated_at.lt.{cutoff}),and(status.eq.running,updated_at.lt.{cutoff}))",
                 "order": "created_at.asc",
             },
         )
