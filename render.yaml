@@ -18,6 +18,12 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-3.5-flash-lite
+      - key: GEMINI_TIMEOUT_SECONDS
+        value: "45"
+      - key: SENTINEL_ENABLED
+        value: "true"
+      - key: SENTINEL_INTERVAL_SECONDS
+        value: "60"
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_CHAT_MODEL
