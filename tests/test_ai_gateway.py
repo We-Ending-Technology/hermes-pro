@@ -215,3 +215,29 @@ async def test_gemini_circuit_breaker_opens_after_five_transient_failures(monkey
     with pytest.raises(RuntimeError, match="IA indisponível"):
         await gateway.complete("test")
     assert calls == 6
+
+
+@pytest.mark.asyncio
+async def test_retry_after_seconds_is_respected(monkeypatch):
+    calls = 0
+    delays = []
+
+    async def no_sleep(delay):
+        delays.append(delay)
+
+    monkeypatch.setattr("backend.app.ai_gateway.adapters.asyncio.sleep", no_sleep)
+    monkeypatch.setattr("backend.app.ai_gateway.adapters.random.uniform", lambda _a, _b: 0)
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(429, headers={"Retry-After": "3"}, request=request)
+        return httpx.Response(200, json={"ok": True}, request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        response = await _post_with_retries(client, "https://provider.test", headers={}, json={})
+
+    assert response.status_code == 200
+    assert calls == 2
+    assert delays == [3.0]
