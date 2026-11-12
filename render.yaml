@@ -58,6 +58,12 @@ services:
         sync: false
       - key: KIWIFY_WEBHOOK_TOKEN
         sync: false
+      - key: KIWIFY_API_CLIENT_ID
+        sync: false
+      - key: KIWIFY_API_CLIENT_SECRET
+        sync: false
+      - key: KIWIFY_ACCOUNT_ID
+        sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_CHAT_ID
