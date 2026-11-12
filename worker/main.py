@@ -13,7 +13,7 @@ from backend.app.ai_gateway.factory import build_ai_gateway
 from backend.app.core.config import get_settings
 from backend.app.db.supabase import SupabaseREST
 from backend.app.queue import JobQueue
-from backend.app.services.artifacts import build_artifacts, validate_artifacts
+from backend.app.services.artifacts import (build_docx_artifact, build_pdf_artifact, prepare_artifact_context, validate_artifacts)
 from backend.app.services.ai_images import generate_cover_artwork
 from backend.app.services.ebook_validation import (
     MIN_CHAPTERS,
@@ -426,7 +426,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
                 raise ValueError("existing ebook no longer passes deterministic content validation")
             ai_provider = str(existing_metadata.get("ai_provider") or settings.ai_provider)
             ai_model = str(existing_metadata.get("ai_model") or settings.gemini_model)
-            await store.update_product(product_id, current_stage="reviewer")
+            await store.update_product(product_id, current_stage="review_content")
             review_data = normalize_review_result(existing_metadata.get("review") or {}, content_gate)
             if not review_data.get("approved"):
                 gateway = build_ai_gateway(settings)
@@ -451,6 +451,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
                 )
                 review_data = normalize_review_result(review_data, content_gate)
         else:
+            await store.update_product(product_id, current_stage="create_outline")
             strategy_prompt = (
                 f"Create a concise product strategy for the digital ebook topic: {topic}. "
                 "Return valid JSON with keys: positioning, audience, title, subtitle, outline "
@@ -465,7 +466,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             if await checkpoint():
                 return
 
-            await store.update_product(product_id, current_stage="writer")
+            await store.update_product(product_id, current_stage="generate_content")
             writer_prompt = (
                 f"Using this strategy, write the ebook for topic '{topic}'. "
                 f"Strategy: {json.dumps(strategy_data, ensure_ascii=False)}\n"
@@ -591,7 +592,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             metadata["marketing_pack"] = marketing_pack
             metadata["marketing_pack_status"] = "ready"
 
-        await store.update_product(product_id, status="generating_artifacts", current_stage="cover", title=title, metadata=metadata)
+        await store.update_product(product_id, status="generating_artifacts", current_stage="generate_cover", title=title, metadata=metadata)
         cover_artwork = None
         cover_art_metadata = {
             "provider": "local_vector",
@@ -629,13 +630,27 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         )
         logger.info("artifact rendering queued product=%s", product_id)
         async with ARTIFACT_RENDER_SEMAPHORE:
-            artifacts = await asyncio.to_thread(
-                build_artifacts,
+            artifact_context = await asyncio.to_thread(
+                prepare_artifact_context,
                 title or topic,
                 subtitle,
                 json.dumps(writer_data, ensure_ascii=False),
-                cover_artwork=cover_artwork,
+                cover_artwork,
             )
+            await store.update_product(product_id, current_stage="generate_pdf")
+            pdf_artifact = await asyncio.to_thread(
+                build_pdf_artifact, title or topic, subtitle, artifact_context
+            )
+            await store.update_product(product_id, current_stage="generate_docx")
+            docx_artifact = await asyncio.to_thread(
+                build_docx_artifact, title or topic, subtitle, artifact_context
+            )
+            artifacts = {
+                "cover": (f"{artifact_context['slug']}/cover.png", artifact_context["cover"], "image/png"),
+                "pdf": pdf_artifact,
+                "docx": docx_artifact,
+            }
+            await store.update_product(product_id, current_stage="validate_files")
             artifact_gate = await asyncio.to_thread(validate_artifacts, artifacts)
         logger.info(
             "artifact rendering completed product=%s artifacts=%s pages=%s illustrations=%s",
