@@ -82,6 +82,15 @@ class PersistentStore:
             },
         )
 
+    async def touch_job(self, job_id: str) -> None:
+        """Refresh the durable lease while a worker is actively processing a job."""
+        now = datetime.now(timezone.utc).isoformat()
+        await self.db.update(
+            "hermes_jobs",
+            {"updated_at": now, "heartbeat_at": now},
+            where={"id": f"eq.{job_id}", "status": "eq.running"},
+        )
+
     async def update_job(self, job_id: str, status: str, *, attempts: int | None = None, error_message: str | None = None) -> dict[str, Any]:
         values: dict[str, Any] = {"status": status, "updated_at": datetime.now(timezone.utc).isoformat(), "error_message": error_message}
         if attempts is not None:
