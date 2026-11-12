@@ -19,3 +19,7 @@ create unique index if not exists hermes_incidents_one_open_per_component
 
 create index if not exists hermes_incidents_created_idx
   on public.hermes_incidents(created_at desc);
+
+alter table public.hermes_incidents enable row level security;
+revoke all on table public.hermes_incidents from anon, authenticated;
+grant all on table public.hermes_incidents to service_role;
