@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from backend.app.ai_gateway.factory import build_ai_gateway
+from backend.app.ai_gateway.base import AIResponse
 from backend.app.core.config import get_settings
 from backend.app.db.supabase import SupabaseREST
 from backend.app.queue import JobQueue
@@ -467,21 +468,78 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
                 return
 
             await store.update_product(product_id, current_stage="generate_content")
-            writer_prompt = (
-                f"Using this strategy, write the ebook for topic '{topic}'. "
-                f"Strategy: {json.dumps(strategy_data, ensure_ascii=False)}\n"
-                "Write a complete, practical ebook targeting at least 4,000 words, with 8 to 10 chapters. "
-                "Each chapter must contain at least 350 substantive words; introduction and conclusion at least 250 words each. "
-                "Include concrete examples, step-by-step procedures, checklists, templates and original explanations; do not pad or repeat. "
-                "Create at least four original, topic-specific illustration briefs, each with title, description, caption, alt_text, chapter_index and 3-4 practical steps. "
-                "Return valid JSON with keys: introduction, chapters (array of objects with title and content), conclusion, illustrations."
+            outline = strategy_data.get("outline") if isinstance(strategy_data, dict) else None
+            chapter_titles = [str(item).strip() for item in outline if str(item).strip()] if isinstance(outline, list) else []
+            if len(chapter_titles) < 8:
+                raise ValueError("ebook outline must contain at least eight chapter titles")
+
+            generated_chapters = []
+            chapter_responses = []
+            for chapter_index, chapter_title in enumerate(chapter_titles[:10]):
+                if await checkpoint():
+                    return
+                chapter_prompt = (
+                    f"Escreva somente o capítulo {chapter_index + 1} de um ebook sobre '{topic}'. "
+                    f"Título obrigatório: {chapter_title}. Estratégia: {json.dumps(strategy_data, ensure_ascii=False)[:2500]}. "
+                    "Retorne JSON com title e content. O conteúdo deve ter pelo menos 450 palavras substantivas, "
+                    "com explicação original, exemplo brasileiro plausível, procedimento passo a passo, checklist e critérios de decisão. "
+                    "Não repita capítulos anteriores, não invente estatísticas, fontes, depoimentos ou resultados. "
+                    "Não use preenchimento artificial."
+                )
+                chapter_response, chapter_data = await complete_json_response(
+                    gateway,
+                    chapter_prompt,
+                    "Você é autor técnico do Hermes. Retorne apenas JSON válido com title e content.",
+                    label=f"writer_chapter_{chapter_index + 1}",
+                    validator=lambda value: (
+                        isinstance(value.get("title"), str)
+                        and bool(value["title"].strip())
+                        and isinstance(value.get("content"), str)
+                        and len(value["content"].split()) >= 350
+                    ),
+                )
+                generated_chapters.append({"title": chapter_title, "content": chapter_data["content"]})
+                chapter_responses.append(chapter_response)
+
+            if await checkpoint():
+                return
+            frontmatter_prompt = (
+                f"Crie introdução, conclusão e quatro briefs de ilustração para o ebook '{topic}'. "
+                f"Capítulos: {json.dumps(chapter_titles[:10], ensure_ascii=False)}. "
+                "Retorne JSON com introduction, conclusion e illustrations. "
+                "Introdução e conclusão devem ter pelo menos 250 palavras cada. "
+                "Crie quatro ilustrações específicas dos capítulos, cada uma com title, description, caption, alt_text, "
+                "chapter_index e pelo menos três steps. Não invente estatísticas, pesquisas ou fontes."
             )
-            writer, writer_data = await complete_json_response(
+            frontmatter_response, frontmatter = await complete_json_response(
                 gateway,
-                writer_prompt,
-                "You are the Hermes Pro writer. Return only valid JSON. Produce original, useful educational content and do not fabricate citations.",
-                label="writer",
-                validator=is_ebook_payload,
+                frontmatter_prompt,
+                "Você é editor de estrutura editorial. Retorne somente JSON válido.",
+                label="writer_frontmatter",
+                validator=lambda value: (
+                    isinstance(value.get("introduction"), str)
+                    and len(value["introduction"].split()) >= 200
+                    and isinstance(value.get("conclusion"), str)
+                    and len(value["conclusion"].split()) >= 200
+                    and isinstance(value.get("illustrations"), list)
+                    and len(value["illustrations"]) >= 4
+                    and all(
+                        isinstance(item, dict)
+                        and all(isinstance(item.get(key), str) and item[key].strip() for key in ("title", "description", "caption", "alt_text"))
+                        for item in value["illustrations"][:4]
+                    )
+                ),
+            )
+            writer_data = {
+                "introduction": frontmatter["introduction"],
+                "chapters": generated_chapters,
+                "conclusion": frontmatter["conclusion"],
+                "illustrations": frontmatter["illustrations"][:4],
+            }
+            writer = AIResponse(
+                content=json.dumps(writer_data, ensure_ascii=False),
+                provider=frontmatter_response.provider,
+                model=frontmatter_response.model,
             )
             if await checkpoint():
                 return
