@@ -16,7 +16,7 @@ create index if not exists hermes_market_signals_niche_date_idx
 create table if not exists public.hermes_offers (
   id uuid primary key default gen_random_uuid(),
   product_id uuid not null references public.hermes_products(id) on delete restrict,
-  price numeric(12,2) not null check (price > 0),
+  price numeric(12,2) check (price is null or price > 0),
   link_checkout text,
   status text not null default 'draft' check (status in ('draft','active','paused')),
   approval_required boolean not null default true,
@@ -27,3 +27,7 @@ create table if not exists public.hermes_offers (
 
 create index if not exists hermes_offers_product_idx
   on public.hermes_offers(product_id, created_at desc);
+
+create unique index if not exists hermes_offers_one_draft_per_product
+  on public.hermes_offers(product_id)
+  where status = 'draft';
