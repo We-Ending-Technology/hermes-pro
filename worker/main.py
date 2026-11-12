@@ -408,7 +408,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             return
         await store.update_job(job_id, "running", attempts=attempts, error_message=None)
         gateway = build_ai_gateway(settings)
-        await store.update_product(product_id, status="generating", current_stage="topic")
+        await store.update_product(product_id, status="generating", current_stage="create_outline")
 
         payload = job.get("payload") or {}
         reuse_existing_content = bool(payload.get("reuse_existing_content"))
@@ -703,7 +703,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
         await store.update_product(
             product_id,
             status=final_status,
-            current_stage="studio" if publication_ready else "cover",
+            current_stage="commercial_offer" if publication_ready else "generate_cover",
             metadata=metadata,
         )
         await store.update_job(job_id, "completed", attempts=attempts)
