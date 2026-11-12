@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     autonomy_max_review_required_products: int = Field(default=3, ge=1, le=100, validation_alias="AUTONOMY_MAX_REVIEW_REQUIRED_PRODUCTS")
     gemini_api_key: str | None = Field(default=None, validation_alias="GEMINI_API_KEY")
     gemini_model: str = Field(default="gemini-3.8-flash", validation_alias="GEMINI_MODEL")
+    gemini_timeout_seconds: int = Field(default=45, ge=5, le=300, validation_alias="GEMINI_TIMEOUT_SECONDS")
     ai_image_provider: str = Field(default="ovhcloud", validation_alias="AI_IMAGE_PROVIDER")
     ai_image_required: bool = Field(default=True, validation_alias="AI_IMAGE_REQUIRED")
     ai_horde_api_key: str = Field(default="0000000000", validation_alias="AI_HORDE_API_KEY")
