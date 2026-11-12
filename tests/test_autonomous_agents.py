@@ -51,15 +51,21 @@ async def test_chief_runs_specialists_without_openai_credentials(monkeypatch):
 
     result = await orchestrator.run_chief("Diagnostique o sistema", settings)
 
-    assert len(gateway.calls) == 5
+    assert len(gateway.calls) == 11
     assert result["agent"] == "Hermes Chefe"
-    assert result["steps"] == 5
+    assert result["steps"] == 11
     assert result["provider"] == "gemini"
     assert set(result["specialists"]) == {
         "Hermes Radar",
         "Hermes Factory",
         "Hermes Dev",
         "Hermes Analyst",
+        "Hermes Designer",
+        "Hermes Auditor",
+        "Hermes Executor",
+        "Hermes Comercial",
+        "Hermes Rentabilidade",
+        "Hermes Sentinel",
     }
 
 
