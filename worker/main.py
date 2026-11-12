@@ -758,7 +758,7 @@ async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
     for job in await store.list_recoverable_jobs(stale_before):
         status = job.get("status")
         if status == "running":
-            await store.update_job(str(job["id"]), "retrying", error_message="recovered after stale worker lease (>90s)")
+            await store.update_job(str(job["id"]), "retrying", error_message="recovered after stale worker lease (>75s)")
             await queue.remove_processing(str(job["id"]), agent=job.get("job_type") == "agent_run")
             status = "retrying"
         if status not in {"pending", "retrying"}:
