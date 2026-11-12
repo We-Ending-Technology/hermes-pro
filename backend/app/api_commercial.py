@@ -96,14 +96,23 @@ async def ready() -> dict[str, Any]:
             # the real OAuth + products request before declaring it connected.
             api_configured = item["status"] in {"configured", "connected"}
             webhook_only = item["status"] == "webhook_configured"
+            missing_kiwify_credentials = [
+                env_name for env_name, value in (
+                    ("KIWIFY_API_CLIENT_ID", settings.kiwify_api_client_id),
+                    ("KIWIFY_API_CLIENT_SECRET", settings.kiwify_api_client_secret),
+                    ("KIWIFY_ACCOUNT_ID", settings.kiwify_account_id),
+                ) if not str(value or "").strip()
+            ]
+            kiwify_message = item["message"]
+            if missing_kiwify_credentials:
+                kiwify_message += " Variáveis ausentes no backend: " + ", ".join(missing_kiwify_credentials) + "."
+            elif api_configured:
+                kiwify_message += " A conexão OAuth deve ser confirmada em /api/v1/kiwify/status."
             checks.append({
                 "name": name,
                 "status": "configured" if api_configured else ("webhook_only" if webhook_only else "optional_missing"),
                 "configured": api_configured or webhook_only,
-                "message": item["message"] + (
-                    " A conexão OAuth deve ser confirmada em /api/v1/kiwify/status."
-                    if api_configured else ""
-                ),
+                "message": kiwify_message,
                 "required": False,
             })
         else:
