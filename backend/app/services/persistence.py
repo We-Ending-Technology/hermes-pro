@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+import os
 
 from ..db.supabase import SupabaseREST
 from ..models.jobs import Job, JobStatus
@@ -95,6 +96,9 @@ class PersistentStore:
         values: dict[str, Any] = {"status": status, "updated_at": datetime.now(timezone.utc).isoformat(), "error_message": error_message}
         if attempts is not None:
             values["attempts"] = attempts
+        if status == "running":
+            values["worker_id"] = os.getenv("RENDER_INSTANCE_ID") or os.getenv("HOSTNAME") or "hermes-worker"
+            values["heartbeat_at"] = values["updated_at"]
         return await self.db.update("hermes_jobs", values, where={"id": f"eq.{job_id}"})
 
     async def update_product(self, product_id: str, *, status: str | None = None, current_stage: str | None = None, title: str | None = None, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
