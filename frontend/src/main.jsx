@@ -301,7 +301,51 @@ function SalesView({ data, load }) {
 function AnalyticsView({ data, load }) { return <Page title="Analytics" sub="Insights calculados a partir dos dados persistidos."><Button primary onClick={load}>Atualizar analytics</Button>{data ? <div className="two-col"><div className="panel"><pre>{JSON.stringify(data, null, 2)}</pre></div></div> : <Empty text="Nenhuma leitura carregada." />}</Page>; }
 function ChatView({ chat, input, setInput, send }) { return <Page title="Hermes" sub="Assistente operacional conectado ao AI Gateway."><div className="panel chat-panel"><div className="chat-history">{chat.length ? chat.map((m, i) => <div className={`bubble ${m.role}`} key={i}><span>{m.role === "user" ? "Você" : "Hermes"}</span><p>{m.text}</p>{m.meta && <small>{m.meta}</small>}</div>) : <p>Envie uma instrução. Se o Gemini estiver indisponível, o erro será mostrado claramente.</p>}</div><form className="chat-form" onSubmit={send}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Fale com Hermes…"/><Button primary type="submit">Enviar ↗</Button></form></div></Page>; }
 function DiagnosticsPanel({ data }) { if (!data) return <Empty text="Diagnóstico ainda não executado." />; return <div className="panel diagnostics-grid">{data.checks.map((x, i) => <div className="diag-row" key={`${x.name}-${i}`}><i className={x.status === "online" || x.status === "ready" ? "online" : "offline"}></i><strong>{x.name}</strong><span>{x.status}</span><small>{x.message || ""}</small></div>)}</div>; }
-function Integrations({ items, diagnostics, runDiagnostics }) { return <Page title="Integrações" sub="Estado das conexões sem expor segredos."><Button primary onClick={runDiagnostics}>Testar conexões</Button><DiagnosticsPanel data={diagnostics} /><div className="integration-list">{items.length ? items.map(x => <div className="panel" key={x.name}><strong>{x.name}</strong><p>{x.status}</p><small>{x.message}</small></div>) : <Empty text="Nenhuma integração retornada pelo backend." />}</div></Page>; }
+function Integrations({ items, diagnostics, runDiagnostics }) {
+  const [kiwify, setKiwify] = useState(null);
+  const [busy, setBusy] = useState("");
+  const [message, setMessage] = useState("");
+  const testKiwify = async () => {
+    setBusy("test");
+    setMessage("");
+    try {
+      const result = await call("/api/v1/kiwify/status");
+      setKiwify(result);
+      setMessage(result.message || (result.connected ? "Kiwify autenticada." : "Credenciais detectadas; conexão ainda não confirmada."));
+    } catch (error) {
+      setMessage(error.message);
+      setKiwify({ connected: false });
+    } finally { setBusy(""); }
+  };
+  const setupKiwifyWebhook = async () => {
+    setBusy("webhook");
+    setMessage("");
+    try {
+      const result = await call("/api/v1/kiwify/webhook/setup", { method: "POST" });
+      setMessage(result.message || "Webhook configurado.");
+      await testKiwify();
+    } catch (error) {
+      setMessage(error.message);
+    } finally { setBusy(""); }
+  };
+  return <Page title="Integrações" sub="Teste as conexões reais e configure o recebimento de vendas.">
+    <div className="panel">
+      <div className="section-heading"><div><K>KIWIFY</K><h3>Conexão comercial</h3></div><strong>{kiwify?.connected ? "Conectada" : kiwify?.configured ? "Credenciais detectadas" : "Aguardando teste"}</strong></div>
+      <p>{kiwify?.message || "Teste o OAuth para confirmar que o Hermes consegue consultar o catálogo da sua conta."}</p>
+      {kiwify?.connected && <p>Produtos retornados pela API: <b>{kiwify.product_count ?? "consulta concluída"}</b></p>}
+      <div className="form-footer">
+        <Button primary onClick={testKiwify} disabled={Boolean(busy)}>{busy === "test" ? "Testando…" : "Testar OAuth Kiwify"}</Button>
+        <Button onClick={setupKiwifyWebhook} disabled={Boolean(busy) || !kiwify?.connected}>{busy === "webhook" ? "Configurando…" : "Configurar webhook"}</Button>
+        <a href="https://dashboard.kiwify.com.br" target="_blank" rel="noreferrer">Abrir painel Kiwify ↗</a>
+      </div>
+      {message && <p role="status">{message}</p>}
+      <small>O webhook é criado uma única vez para evitar duplicatas. A criação do produto, upload do PDF/capa e geração do checkout continuam no painel da Kiwify.</small>
+    </div>
+    <Button onClick={runDiagnostics}>Testar todas as conexões</Button>
+    <DiagnosticsPanel data={diagnostics} />
+    <div className="integration-list">{items.length ? items.map(x => <div className="panel" key={x.name}><strong>{x.name}</strong><p>{x.status}</p><small>{x.message}</small></div>) : <Empty text="Nenhuma integração retornada pelo backend." />}</div>
+  </Page>;
+}
 function Experiments({ products, radar }) { return <Page title="Experimentos" sub="Área para comparar temas e resultados reais."><div className="metric-grid"><Metric label="Produtos" value={products.length}/><Metric label="Radar disponível" value={radar ? "sim" : "não"}/></div><Empty text="Os experimentos usam somente produtos e análises persistidos; não há conversões inventadas." /></Page>; }
 function Agents() {
   const [status, setStatus] = useState(null);
@@ -351,6 +395,6 @@ function Agents() {
 }
 function Automation({ jobs }) { const active = useMemo(() => jobs.filter(j => ["pending", "running", "retrying"].includes(j.status)).length, [jobs]); return <Page title="Automação" sub="Visão operacional da fila e do worker."><div className="metric-grid"><Metric label="Jobs ativos" value={active}/><Metric label="Jobs totais" value={jobs.length}/></div><Empty text="A execução automática ocorre no worker; este painel não finge agendamentos que ainda não existem no backend." /></Page>; }
 function Logs({ jobs }) { return <Page title="Logs" sub="Eventos de jobs retornados pelo backend."><div className="job-list">{jobs.map(j => <div className="panel" key={j.id}><strong>{j.status}</strong><p>{j.id}</p><small>{j.error_message || "sem erro"}</small></div>)}</div></Page>; }
-function Guides() { return <Page title="Guias" sub="Operação do Hermes Pro."><div className="two-col"><div className="panel"><h3>1. Conexão</h3><p>Vercel hospeda a interface. O backend fica no Render. O cliente usa o proxy Vercel e cai para o Render diretamente quando o proxy falhar.</p></div><div className="panel"><h3>2. Produção</h3><p>Fábrica cria produto e job. Redis entrega ao worker. Gemini produz e revisa conteúdo. Supabase persiste estado e artefatos.</p></div><div className="panel"><h3>3. Hotmart</h3><p>O Hermes consulta o catálogo disponível e recebe vendas por webhook. A criação inicial do produto continua no painel Hotmart.</p></div><div className="panel"><h3>4. Se estiver offline</h3><p>Abra Integrações e execute o diagnóstico. Se Render estiver offline, o painel mostrará a conexão necessária em vez de um erro NOT_FOUND genérico.</p></div></div></Page>; }
+function Guides() { return <Page title="Guias" sub="Operação do Hermes Pro."><div className="two-col"><div className="panel"><h3>1. Conexão</h3><p>Vercel hospeda a interface. O backend fica no Render. O cliente usa o proxy Vercel e cai para o Render diretamente quando o proxy falhar.</p></div><div className="panel"><h3>2. Produção</h3><p>Fábrica cria produto e job. Redis entrega ao worker. Gemini produz e revisa conteúdo. Supabase persiste estado e artefatos.</p></div><div className="panel"><h3>3. Kiwify</h3><p>Teste OAuth e configure o webhook em Integrações. A criação do produto, o upload do PDF/capa e o checkout são concluídos no painel Kiwify; depois vincule o checkout na guia Publicação.</p></div><div className="panel"><h3>4. Se estiver offline</h3><p>Abra Integrações e execute o diagnóstico. Se Render estiver offline, o painel mostrará a conexão necessária em vez de um erro NOT_FOUND genérico.</p></div></div></Page>; }
 
 createRoot(document.getElementById("root")).render(<App />);
