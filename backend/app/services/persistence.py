@@ -307,6 +307,22 @@ class PersistentStore:
             run["updated_at"] = job.get("updated_at", run.get("completed_at") or run.get("created_at"))
         return runs
 
+    async def ensure_offer_draft(self, product_id: str) -> dict[str, Any]:
+        """Prepare one price-pending draft after the ebook passes every artifact gate."""
+        existing = await self.db.select(
+            "hermes_offers",
+            params={"select": "*", "product_id": f"eq.{product_id}", "status": "eq.draft", "limit": "1"},
+        )
+        if existing:
+            return existing[0]
+        return await self.db.insert("hermes_offers", {
+            "product_id": product_id,
+            "price": None,
+            "link_checkout": None,
+            "status": "draft",
+            "approval_required": True,
+        })
+
     async def record_worker_health(self, status: str, message: str) -> None:
         now = datetime.now(timezone.utc).isoformat()
         await self.db.upsert(
