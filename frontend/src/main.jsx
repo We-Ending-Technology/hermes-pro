@@ -389,7 +389,7 @@ function Agents() {
       <div className="form-footer"><span>Chefe → especialistas → Worker → Supabase</span><Button primary type="submit" disabled={sending}>{sending ? "Enviando…" : "Executar missão ↗"}</Button></div>
     </form>
     <div className="panel"><div className="section-heading"><div><K>HISTÓRICO</K><h3>Execuções</h3></div></div>
-      {runs.length ? runs.slice(0,10).map(r => <div className="list-row" key={r.id}><strong>{r.status}</strong><span>{r.instruction}</span><small>{r.agent}</small></div>) : <Empty text="Nenhuma execução de agente ainda." />}
+      {runs.length ? runs.slice(0,10).map(r => <article className="panel" key={r.id}><div className="list-row"><strong>{r.job_status || r.status}</strong><span>{r.instruction}</span><small>{r.agent} · {r.attempts ?? 0}/{r.max_attempts ?? 3}</small></div>{r.output?.output && <details><summary>Ver síntese do Chefe</summary><p>{r.output.output}</p><details><summary>Análises dos especialistas</summary>{Object.entries(r.output.specialists || {}).map(([name, finding]) => <p key={name}><b>{name}:</b> {finding}</p>)}</details></details>}{r.job_error && <p role="alert">{r.job_error}</p>}</article>) : <Empty text="Nenhuma execução de agente ainda." />}
     </div>
   </Page>;
 }
