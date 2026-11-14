@@ -103,7 +103,7 @@ def test_manual_factory_request_creates_product_without_fabricating_market_valid
     }
     job = {"id": job_id}
     select = AsyncMock(return_value=[])
-    create = AsyncMock(return_value=(product, job))
+    create = AsyncMock(side_effect=lambda topic, metadata, idempotency_key: ({**product, "metadata": metadata}, job))
     enqueue = AsyncMock()
     monkeypatch.setattr(main_module.db, "select", select)
     monkeypatch.setattr(main_module.store, "create_product_and_job", create)
