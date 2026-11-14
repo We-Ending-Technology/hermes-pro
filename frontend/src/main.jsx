@@ -116,8 +116,12 @@ function App() {
     event.preventDefault();
     if (!topic.trim()) return;
     const product = await action(() => call("/api/v1/products", {
-      method: "POST", body: JSON.stringify({ topic: topic.trim() })
-    }), "Produto criado e colocado na fila real.");
+      method: "POST",
+      body: JSON.stringify({
+        topic: topic.trim(),
+        metadata: { manual_market_override: true }
+      })
+    }), "Produto criado e colocado na fila real. A demanda de mercado ficará identificada como não validada.");
     if (product) { setSelected(product); setTopic(""); setView("Jobs"); }
   };
 
