@@ -423,28 +423,41 @@ async def products():
 @app.post("/api/v1/products", response_model=ProductResponse, status_code=202)
 async def create_product(request: ProductCreateRequest):
     try:
-        signals = await db.select(
-            "hermes_market_signals",
-            params={
-                "select": "id,niche,source,demand_estimated,positive,data_consulted",
-                "niche": "eq." + request.topic.strip(),
-                "positive": "eq.true",
-                "order": "data_consulted.desc",
-                "limit": "1",
-            },
-        )
-        if not signals:
-            raise HTTPException(
-                status_code=409,
-                detail="Radar bloqueou a produção: não existe sinal positivo registrado para este nicho. Execute POST /api/v1/radar/validate primeiro.",
-            )
         metadata = dict(request.metadata or {})
-        metadata["market_validation"] = {
-            "signal_id": signals[0]["id"],
-            "source": signals[0]["source"],
-            "demand_estimated": signals[0].get("demand_estimated"),
-            "validated_at": signals[0]["data_consulted"],
-        }
+        # A direct, authenticated request from the private Factory UI is an
+        # explicit operator decision to create a draft. Keep market research
+        # advisory in this path; never fabricate a positive demand signal.
+        manual_market_override = metadata.pop("manual_market_override", False) is True
+        if manual_market_override:
+            metadata["market_validation"] = {
+                "status": "manual_override",
+                "source": "operator_request",
+                "reason": "Solicitação explícita do operador; demanda de mercado não foi validada.",
+                "validated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        else:
+            signals = await db.select(
+                "hermes_market_signals",
+                params={
+                    "select": "id,niche,source,demand_estimated,positive,data_consulted",
+                    "niche": "eq." + request.topic.strip(),
+                    "positive": "eq.true",
+                    "order": "data_consulted.desc",
+                    "limit": "1",
+                },
+            )
+            if not signals:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Radar bloqueou a produção automática: não existe sinal positivo registrado para este nicho. Valide a oportunidade no Radar ou solicite a criação manual pela Fábrica.",
+                )
+            metadata["market_validation"] = {
+                "status": "validated",
+                "signal_id": signals[0]["id"],
+                "source": signals[0]["source"],
+                "demand_estimated": signals[0].get("demand_estimated"),
+                "validated_at": signals[0]["data_consulted"],
+            }
         product, job = await store.create_product_and_job(request.topic, metadata, request.idempotency_key)
         await queue.enqueue(str(job["id"]))
     except HTTPException:

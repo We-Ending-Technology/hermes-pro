@@ -85,3 +85,64 @@ def test_ai_provider_key_configured_recognizes_groq_fallback():
     assert not _ai_provider_key_configured("groq", Settings())
     assert _ai_provider_key_configured("gemini", Settings(gemini_api_key="test-gemini-key"))
 
+def test_manual_factory_request_creates_product_without_fabricating_market_validation(monkeypatch):
+    from datetime import datetime, timezone
+    from unittest.mock import AsyncMock
+    from backend.app import main as main_module
+
+    product_id = "2d04a4c1-3b7a-4590-8a96-d158c1a12f27"
+    job_id = "7c9f1cd0-5fe4-49b7-b1eb-12bcc3dcf072"
+    product = {
+        "id": product_id,
+        "topic": "guia prático de organização financeira",
+        "title": None,
+        "status": "queued",
+        "current_stage": "create_outline",
+        "metadata": {},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    job = {"id": job_id}
+    select = AsyncMock(return_value=[])
+    create = AsyncMock(side_effect=lambda topic, metadata, idempotency_key: ({**product, "metadata": metadata}, job))
+    enqueue = AsyncMock()
+    monkeypatch.setattr(main_module.db, "select", select)
+    monkeypatch.setattr(main_module.store, "create_product_and_job", create)
+    monkeypatch.setattr(main_module.queue, "enqueue", enqueue)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/products",
+            json={
+                "topic": "guia prático de organização financeira",
+                "metadata": {"manual_market_override": True},
+            },
+            headers={"X-Hermes-API-Key": "test-hermes-key"},
+        )
+
+    assert response.status_code == 202
+    assert response.json()["metadata"]["market_validation"]["status"] == "manual_override"
+    assert "não foi validada" in response.json()["metadata"]["market_validation"]["reason"]
+    select.assert_not_awaited()
+    create.assert_awaited_once()
+    enqueue.assert_awaited_once_with(job_id)
+
+
+def test_automatic_factory_request_still_requires_positive_market_signal(monkeypatch):
+    from unittest.mock import AsyncMock
+    from backend.app import main as main_module
+
+    select = AsyncMock(return_value=[])
+    create = AsyncMock()
+    monkeypatch.setattr(main_module.db, "select", select)
+    monkeypatch.setattr(main_module.store, "create_product_and_job", create)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/products",
+            json={"topic": "nicho sem evidência positiva"},
+            headers={"X-Hermes-API-Key": "test-hermes-key"},
+        )
+
+    assert response.status_code == 409
+    create.assert_not_awaited()
+
