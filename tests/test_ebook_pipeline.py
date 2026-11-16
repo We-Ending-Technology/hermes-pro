@@ -26,7 +26,7 @@ def _valid_content():
                 "alt_text": "Diagrama ilustrativo do procedimento.",
                 "steps": ["Planejar", "Executar", "Validar"],
             }
-            for index in range(1, 5)
+            for index in range(1, 9)
         ],
     }
 
@@ -53,7 +53,7 @@ def test_ebook_artifact_pipeline_builds_and_validates_pdf_docx_and_cover():
     gate = validate_artifacts(artifacts)
     assert gate["approved"] is True
     assert gate["page_count"] >= 40
-    assert gate["illustration_count"] >= 4
+    assert gate["illustration_count"] >= 8
     assert artifacts["cover"][1].startswith(bytes.fromhex("89504e470d0a1a0a"))
     assert artifacts["pdf"][1].startswith(b"%PDF-")
     assert artifacts["docx"][1].startswith(bytes.fromhex("504b0304"))
