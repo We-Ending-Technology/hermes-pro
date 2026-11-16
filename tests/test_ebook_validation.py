@@ -25,7 +25,7 @@ def _valid_content():
                 "Revise os resultados e faça ajustes",
             ],
         }
-        for index in range(1, 5)
+        for index in range(1, 9)
     ]
     return {
         "introduction": paragraph,
@@ -43,7 +43,7 @@ def test_complete_ebook_passes_commercial_content_gate():
     assert result["approved"] is True
     assert result["word_count"] >= 12000
     assert result["chapter_count"] >= 10
-    assert result["illustration_count"] == 4
+    assert result["illustration_count"] == 8
     assert result["required_standard"]["minimum_pages"] == 40
 
 
@@ -70,15 +70,15 @@ def test_missing_internal_illustrations_block_approval():
     assert any("Ilustrações insuficientes" in finding for finding in result["findings"])
 
 
-def test_artifact_pipeline_embeds_four_illustrations_and_reaches_forty_pages():
+def test_artifact_pipeline_embeds_eight_illustrations_and_reaches_forty_pages():
     content = _valid_content()
     artifacts = build_artifacts("Guia de Teste", "Manual ilustrado", __import__("json").dumps(content, ensure_ascii=False))
     gate = validate_artifacts(artifacts)
     assert gate["approved"] is True, gate["findings"]
     assert gate["page_count"] >= 40
-    assert gate["illustration_count"] >= 4
-    assert gate["pdf_image_count"] >= 5
-    assert gate["docx_image_count"] >= 5
+    assert gate["illustration_count"] >= 8
+    assert gate["pdf_image_count"] >= 9
+    assert gate["docx_image_count"] >= 9
 
 
 def test_publication_requires_content_and_artifact_quality_gate():
@@ -87,7 +87,7 @@ def test_publication_requires_content_and_artifact_quality_gate():
         "metadata": {
             "artifact_status": "ready",
             "quality_score": 95,
-            "quality_gate": {"approved": True, "page_count": 40, "illustration_count": 4, "ai_cover_generated": True},
+            "quality_gate": {"approved": True, "page_count": 40, "illustration_count": 8, "ai_cover_generated": True},
             "cover_art": {"provider": "ovhcloud", "model": "stable-diffusion-xl-base-v10", "generated": True},
             "marketing_pack_status": "ready",
             "marketing_pack": {
@@ -115,9 +115,9 @@ def test_publication_requires_content_and_artifact_quality_gate():
     product["metadata"]["quality_gate"]["page_count"] = 39
     assert is_kiwify_publishable_product(product) is False
     product["metadata"]["quality_gate"]["page_count"] = 40
-    product["metadata"]["quality_gate"]["illustration_count"] = 3
+    product["metadata"]["quality_gate"]["illustration_count"] = 7
     assert is_kiwify_publishable_product(product) is False
-    product["metadata"]["quality_gate"]["illustration_count"] = 4
+    product["metadata"]["quality_gate"]["illustration_count"] = 8
     product["metadata"]["quality_gate"]["approved"] = False
     assert is_kiwify_publishable_product(product) is False
     product["metadata"]["quality_gate"]["approved"] = True
@@ -241,7 +241,7 @@ async def test_short_ebook_expansion_adds_missing_chapters_and_illustrations(mon
     assert "Contexto adicional prático." in revised["introduction"]
     assert "Exemplo adicional para o capítulo dois." in revised["chapters"][1]["content"]
     assert len(revised["chapters"]) == 8
-    assert len(revised["illustrations"]) == 4
+    assert len(revised["illustrations"]) == 8
     assert "Próximas ações" in revised["conclusion"]
     assert "segunda rodada" in revised["chapters"][7]["content"]
     assert captured["labels"] == ["writer_revision_round_1", "writer_revision_round_2"]
