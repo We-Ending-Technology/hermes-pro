@@ -5,6 +5,7 @@ import ctypes
 import gc
 import json
 import logging
+import re
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -68,6 +69,59 @@ def _release_worker_memory(label: str) -> None:
         trimmed,
         round(memory / (1024 * 1024), 1) if memory is not None else "unknown",
     )
+
+
+
+def normalize_outline_titles(strategy_data: dict[str, Any], topic: str) -> list[str]:
+    """Normalize AI outlines and deterministically complete missing chapters before generation."""
+    raw = strategy_data.get("outline")
+    if isinstance(raw, str):
+        raw = [line.strip().lstrip("-* ").strip() for line in raw.splitlines() if line.strip()]
+    elif not isinstance(raw, list):
+        raw = strategy_data.get("chapter_titles") or strategy_data.get("chapters") or []
+        if isinstance(raw, str):
+            raw = [line.strip().lstrip("-* ").strip() for line in raw.splitlines() if line.strip()]
+    if not isinstance(raw, list):
+        raw = []
+
+    titles: list[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        if isinstance(item, dict):
+            value = item.get("title") or item.get("chapter_title") or item.get("name")
+        else:
+            value = item
+        title = re.sub(r"^\s*(?:cap[ií]tulo\s+)?\d+[.):\-]\s*", "", str(value or ""), flags=re.IGNORECASE).strip()
+        key = " ".join(title.casefold().split())
+        if title and key not in seen:
+            titles.append(title)
+            seen.add(key)
+
+    subject = str(topic or "este tema").strip().rstrip(".")
+    templates = [
+        f"Fundamentos de {subject}: conceitos e princípios essenciais",
+        f"Diagnóstico de {subject}: como avaliar a situação e identificar necessidades",
+        f"Planejamento de {subject}: objetivos, prioridades e preparação",
+        f"Ferramentas e recursos para aplicar {subject} com eficiência",
+        f"Implementação de {subject}: passo a passo para começar",
+        f"Exemplos práticos e estudos de caso sobre {subject}",
+        f"Rotina de execução e acompanhamento de {subject}",
+        f"Erros comuns e riscos na aplicação de {subject}",
+        f"Avaliação e melhoria contínua dos resultados de {subject}",
+        f"Plano de ação de 30 dias para evoluir em {subject}",
+    ]
+    for candidate in templates:
+        if len(titles) >= MIN_CHAPTERS:
+            break
+        key = " ".join(candidate.casefold().split())
+        if key not in seen:
+            titles.append(candidate)
+            seen.add(key)
+
+    strategy_data["outline"] = titles
+    if len(titles) < MIN_CHAPTERS:
+        raise ValueError("Não foi possível completar o sumário com dez capítulos.")
+    return titles[:MIN_CHAPTERS]
 
 
 async def notify_owner(settings: Any, message: str) -> None:
@@ -471,10 +525,19 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
                 return
 
             await store.update_product(product_id, current_stage="generate_content")
-            outline = strategy_data.get("outline") if isinstance(strategy_data, dict) else None
-            chapter_titles = [str(item).strip() for item in outline if str(item).strip()] if isinstance(outline, list) else []
+            if not isinstance(strategy_data, dict):
+                raise ValueError("A estratégia do ebook não retornou um objeto JSON válido.")
+            outline = strategy_data.get("outline")
+            chapter_titles = normalize_outline_titles(strategy_data, topic)
             if len(chapter_titles) < MIN_CHAPTERS:
-                raise ValueError(f"ebook outline must contain at least {MIN_CHAPTERS} chapter titles")
+                raise ValueError(f"ebook outline repair failed: expected {MIN_CHAPTERS} chapter titles")
+            if not isinstance(outline, list) or len(outline) < MIN_CHAPTERS:
+                logger.warning(
+                    "ebook outline normalized before generation topic=%s original_count=%s final_count=%s",
+                    str(topic)[:120],
+                    len(outline) if isinstance(outline, list) else 0,
+                    len(chapter_titles),
+                )
 
             generated_chapters = []
             chapter_responses = []
