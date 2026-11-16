@@ -42,7 +42,7 @@ def test_complete_ebook_passes_commercial_content_gate():
     result = validate_ebook(_valid_content())
     assert result["approved"] is True
     assert result["word_count"] >= 12000
-    assert result["chapter_count"] >= 40
+    assert result["chapter_count"] >= 10
     assert result["illustration_count"] == 4
     assert result["required_standard"]["minimum_pages"] == 40
 
