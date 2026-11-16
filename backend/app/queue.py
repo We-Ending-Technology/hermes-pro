@@ -21,6 +21,10 @@ class JobQueue:
     async def enqueue(self, job_id: str) -> None:
         await self.redis.lpush(QUEUE_NAME, json.dumps({"job_id": job_id}))
 
+    async def enqueue_priority(self, job_id: str) -> None:
+        """Place a bounded pilot/recovery job at the next dequeue position."""
+        await self.redis.rpush(QUEUE_NAME, json.dumps({"job_id": job_id}))
+
     async def enqueue_agent(self, job_id: str) -> None:
         await self.redis.lpush(AGENT_QUEUE_NAME, json.dumps({"job_id": job_id}))
 
