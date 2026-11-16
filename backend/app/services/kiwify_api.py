@@ -16,7 +16,6 @@ class KiwifyAPIClient:
     """Small async client for Kiwify's documented OAuth, products, sales and webhook API."""
 
     base_url = "https://public-api.kiwify.com/v1"
-    oauth_url = "https://public-api.kiwify.com/oauth/token"
 
     def __init__(self, settings: Any):
         self.client_id = str(getattr(settings, "kiwify_api_client_id", "") or "").strip()
@@ -41,7 +40,7 @@ class KiwifyAPIClient:
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=8.0)) as client:
                 response = await client.post(
-                    self.oauth_url,
+                    f"{self.base_url}/oauth/token",
                     data={"client_id": self.client_id, "client_secret": self.client_secret},
                     headers={"Content-Type": "application/x-www-form-urlencoded"},
                 )
