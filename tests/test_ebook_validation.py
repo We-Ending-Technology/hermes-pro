@@ -10,7 +10,7 @@ from backend.app.services.ebook_validation import validate_ebook
 
 
 def _valid_content():
-    paragraph = " ".join(["conteudo original pratico com exemplo e explicacao detalhada"] * 60)
+    paragraph = " ".join(["conteudo original pratico com exemplo e explicacao detalhada"] * 220)
     illustrations = [
         {
             "title": f"Fluxo visual {index}",
@@ -31,7 +31,7 @@ def _valid_content():
         "introduction": paragraph,
         "chapters": [
             {"title": f"Capítulo {index}", "content": paragraph}
-            for index in range(1, 9)
+            for index in range(1, 11)
         ],
         "conclusion": paragraph,
         "illustrations": illustrations,
@@ -41,10 +41,10 @@ def _valid_content():
 def test_complete_ebook_passes_commercial_content_gate():
     result = validate_ebook(_valid_content())
     assert result["approved"] is True
-    assert result["word_count"] >= 3500
-    assert result["chapter_count"] >= 8
+    assert result["word_count"] >= 12000
+    assert result["chapter_count"] >= 10
     assert result["illustration_count"] == 4
-    assert result["required_standard"]["minimum_pages"] == 10
+    assert result["required_standard"]["minimum_pages"] == 40
 
 
 def test_short_ebook_is_rejected_even_if_ai_reviewer_would_approve():
@@ -70,12 +70,12 @@ def test_missing_internal_illustrations_block_approval():
     assert any("Ilustrações insuficientes" in finding for finding in result["findings"])
 
 
-def test_artifact_pipeline_embeds_four_illustrations_and_reaches_ten_pages():
+def test_artifact_pipeline_embeds_four_illustrations_and_reaches_forty_pages():
     content = _valid_content()
     artifacts = build_artifacts("Guia de Teste", "Manual ilustrado", __import__("json").dumps(content, ensure_ascii=False))
     gate = validate_artifacts(artifacts)
     assert gate["approved"] is True, gate["findings"]
-    assert gate["page_count"] >= 10
+    assert gate["page_count"] >= 40
     assert gate["illustration_count"] >= 4
     assert gate["pdf_image_count"] >= 5
     assert gate["docx_image_count"] >= 5
@@ -87,7 +87,7 @@ def test_publication_requires_content_and_artifact_quality_gate():
         "metadata": {
             "artifact_status": "ready",
             "quality_score": 95,
-            "quality_gate": {"approved": True, "page_count": 10, "illustration_count": 4, "ai_cover_generated": True},
+            "quality_gate": {"approved": True, "page_count": 40, "illustration_count": 4, "ai_cover_generated": True},
             "cover_art": {"provider": "ovhcloud", "model": "stable-diffusion-xl-base-v10", "generated": True},
             "marketing_pack_status": "ready",
             "marketing_pack": {
@@ -112,9 +112,9 @@ def test_publication_requires_content_and_artifact_quality_gate():
         },
     }
     assert is_kiwify_publishable_product(product) is True
-    product["metadata"]["quality_gate"]["page_count"] = 9
+    product["metadata"]["quality_gate"]["page_count"] = 39
     assert is_kiwify_publishable_product(product) is False
-    product["metadata"]["quality_gate"]["page_count"] = 10
+    product["metadata"]["quality_gate"]["page_count"] = 40
     product["metadata"]["quality_gate"]["illustration_count"] = 3
     assert is_kiwify_publishable_product(product) is False
     product["metadata"]["quality_gate"]["illustration_count"] = 4
@@ -209,7 +209,7 @@ async def test_short_ebook_expansion_adds_missing_chapters_and_illustrations(mon
                 "conclusion_words": 220,
                 "chapter_word_counts": [
                     {"title": f"Capítulo {index}", "words": 400 if index in (1, 3) else 250}
-                    for index in range(1, 9)
+                    for index in range(1, 11)
                 ],
             }
         return {

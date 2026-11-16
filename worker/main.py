@@ -162,7 +162,7 @@ def is_marketing_pack_payload(value: Any) -> bool:
 
 
 async def revise_ebook_if_needed(gateway: Any, topic: str, writer_response: Any, writer_data: dict):
-    """Run up to two targeted editorial passes; never approve content that misses deterministic gates."""
+    """Run up to five targeted editorial passes; never approve content that misses deterministic gates."""
     best_response = writer_response
     best_gate = validate_ebook(writer_data)
     if best_gate["approved"]:
@@ -185,13 +185,13 @@ async def revise_ebook_if_needed(gateway: Any, topic: str, writer_response: Any,
             for key in ("title", "description", "caption", "alt_text")
         )
 
-    for round_index in range(2):
+    for round_index in range(5):
         chapter_counts = best_gate.get("chapter_word_counts") or []
         needs = []
         if int(best_gate.get("word_count", 0)) < MIN_TOTAL_WORDS:
             needs.append({"section": "overall_content", "target_total_words": MIN_TOTAL_WORDS + 500})
         if int(best_gate.get("introduction_words", 0)) < MIN_INTRODUCTION_WORDS:
-            needs.append({"section": "introduction", "target_words": 260})
+            needs.append({"section": "introduction", "target_words": MIN_INTRODUCTION_WORDS + 100})
         for index, item in enumerate(chapter_counts):
             current_words = int(item.get("words", 0))
             if current_words < MIN_CHAPTER_WORDS:
@@ -200,14 +200,14 @@ async def revise_ebook_if_needed(gateway: Any, topic: str, writer_response: Any,
                     "index": index,
                     "title": item.get("title", f"Capítulo {index + 1}"),
                     "current_words": current_words,
-                    "target_final_words": 380,
-                    "minimum_addition_words": max(120, 380 - current_words),
+                    "target_final_words": MIN_CHAPTER_WORDS + 100,
+                    "minimum_addition_words": max(120, MIN_CHAPTER_WORDS + 100 - current_words),
                 })
         missing_chapters = max(0, MIN_CHAPTERS - len(chapter_counts))
         if missing_chapters:
-            needs.append({"section": "new_chapters", "count": missing_chapters, "target_words_each": 400})
+            needs.append({"section": "new_chapters", "count": missing_chapters, "target_words_each": MIN_CHAPTER_WORDS + 100})
         if int(best_gate.get("conclusion_words", 0)) < MIN_CONCLUSION_WORDS:
-            needs.append({"section": "conclusion", "target_words": 260})
+            needs.append({"section": "conclusion", "target_words": MIN_INTRODUCTION_WORDS + 100})
         if int(best_gate.get("illustration_count", 0)) < MIN_ILLUSTRATIONS:
             needs.append({"section": "illustrations", "count": MIN_ILLUSTRATIONS})
 
@@ -218,10 +218,10 @@ async def revise_ebook_if_needed(gateway: Any, topic: str, writer_response: Any,
             "chapter_additions (array de objetos {index, content}), new_chapters "
             "(array de objetos {title, content}), conclusion_addition (string) e illustrations "
             "(array de objetos {title, description, caption, alt_text, chapter_index, steps}). "
-            "REGRA CRÍTICA: cada capítulo listado em needs deve terminar com pelo menos 380 palavras. "
+            "REGRA CRÍTICA: cada capítulo listado em needs deve terminar com pelo menos 900 palavras. "
             "A adição de cada capítulo deve conter, no mínimo, o número de palavras indicado em minimum_addition_words; "
-            "não devolva um parágrafo curto. O manuscrito final deve ter pelo menos 4.000 palavras, "
-            "8 capítulos completos e quatro briefs de ilustração específicos do tema. "
+            "não devolva um parágrafo curto. O manuscrito final deve ter pelo menos 12.500 palavras, "
+            "10 capítulos completos com pelo menos 800 palavras cada e quatro briefs de ilustração específicos do tema. "
             "Use exemplos, procedimentos, checklists, critérios de decisão e aplicações reais. "
             "Não invente fontes, estatísticas, pesquisas ou resultados de mercado. "
             f"PENDÊNCIAS EXATAS: {json.dumps(needs, ensure_ascii=False)}\n"

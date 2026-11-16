@@ -35,7 +35,7 @@ def publishable_product():
         "metadata": {
             "artifact_status": "ready",
             "quality_score": "85",
-            "quality_gate": {"approved": True, "page_count": 10, "illustration_count": 4, "ai_cover_generated": True},
+            "quality_gate": {"approved": True, "page_count": 40, "illustration_count": 4, "ai_cover_generated": True},
             "cover_art": {"provider": "ovhcloud", "model": "stable-diffusion-xl-base-v10", "generated": True},
             "marketing_pack_status": "ready",
             "marketing_pack": {
@@ -76,8 +76,8 @@ def test_legacy_or_unfinished_status_cannot_be_published(status):
 
 @pytest.mark.parametrize("metadata_change", [
     {"quality_gate": {"approved": False}},
-    {"quality_gate": {"approved": True, "page_count": 9, "illustration_count": 4}},
-    {"quality_gate": {"approved": True, "page_count": 10, "illustration_count": 3}},
+    {"quality_gate": {"approved": True, "page_count": 39, "illustration_count": 4}},
+    {"quality_gate": {"approved": True, "page_count": 40, "illustration_count": 3}},
     {"quality_score": "79"},
     {"artifact_status": "not_verified"},
     {"artifacts": {"pdf": "http://storage.example/product.pdf"}},
