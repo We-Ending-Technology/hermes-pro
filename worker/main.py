@@ -887,8 +887,19 @@ async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
             status = "retrying"
         if status not in {"pending", "retrying"}:
             continue
+        # Refresh the durable lease before enqueueing so each recovery scan
+        # cannot enqueue the same pending job again every few seconds.
+        await store.update_job(
+            str(job["id"]),
+            "pending",
+            error_message=job.get("error_message"),
+        )
         if job["job_type"] == "product_generation":
-            await queue.enqueue(str(job["id"]))
+            payload = job.get("payload") or {}
+            if payload.get("priority") is True:
+                await queue.enqueue_priority(str(job["id"]))
+            else:
+                await queue.enqueue(str(job["id"]))
             recovered += 1
         elif job["job_type"] == "agent_run":
             await queue.enqueue_agent(str(job["id"]))
