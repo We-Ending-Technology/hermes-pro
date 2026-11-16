@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import re
 from datetime import datetime, timedelta, timezone
@@ -83,8 +84,8 @@ async def generate_product_cover(product_id: str, force: bool = False):
 
     try:
         artwork = await generate_cover_artwork(title, subtitle, content_data, settings)
-        cover_png = await __import__("asyncio").to_thread(build_cover, title, subtitle, artwork)
-        width, height = await __import__("asyncio").to_thread(_validate_cover, cover_png)
+        cover_png = await asyncio.to_thread(build_cover, title, subtitle, artwork)
+        width, height = await asyncio.to_thread(_validate_cover, cover_png)
         object_path = f"{product_id}/{_slug(title)}/cover.png"
         cover_url = await storage.upload(object_path, cover_png, "image/png")
 
