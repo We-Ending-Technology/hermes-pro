@@ -10,12 +10,12 @@ from backend.app.services.ebook_validation import validate_ebook
 
 
 def _valid_content():
-    paragraph = " ".join(["conteudo tecnico aplicavel"] * 150)
+    paragraph = " ".join(["conteudo tecnico aplicavel"] * 600)
     return {
         "introduction": paragraph,
         "chapters": [
             {"title": f"Capitulo {index}", "content": paragraph}
-            for index in range(1, 9)
+            for index in range(1, 11)
         ],
         "conclusion": paragraph,
         "illustrations": [
@@ -52,7 +52,7 @@ def test_ebook_artifact_pipeline_builds_and_validates_pdf_docx_and_cover():
 
     gate = validate_artifacts(artifacts)
     assert gate["approved"] is True
-    assert gate["page_count"] >= 10
+    assert gate["page_count"] >= 40
     assert gate["illustration_count"] >= 4
     assert artifacts["cover"][1].startswith(bytes.fromhex("89504e470d0a1a0a"))
     assert artifacts["pdf"][1].startswith(b"%PDF-")
