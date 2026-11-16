@@ -11,7 +11,7 @@ from typing import Any
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Inches
+from docx.shared import Inches, Pt
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
