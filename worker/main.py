@@ -279,7 +279,7 @@ async def revise_ebook_if_needed(gateway: Any, topic: str, writer_response: Any,
             "REGRA CRÍTICA: cada capítulo listado em needs deve terminar com pelo menos 900 palavras. "
             "A adição de cada capítulo deve conter, no mínimo, o número de palavras indicado em minimum_addition_words; "
             "não devolva um parágrafo curto. O manuscrito final deve ter pelo menos 12.500 palavras, "
-            "10 capítulos completos com pelo menos 800 palavras cada e quatro briefs de ilustração específicos do tema. "
+            "10 capítulos completos com pelo menos 800 palavras cada e oito briefs de ilustração específicos do tema. "
             "Use exemplos, procedimentos, checklists, critérios de decisão e aplicações reais. "
             "Não invente fontes, estatísticas, pesquisas ou resultados de mercado. "
             f"PENDÊNCIAS EXATAS: {json.dumps(needs, ensure_ascii=False)}\n"
@@ -576,11 +576,11 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             if await checkpoint():
                 return
             frontmatter_prompt = (
-                f"Crie introdução, conclusão e quatro briefs de ilustração para o ebook '{topic}'. "
+                f"Crie introdução, conclusão e oito briefs de ilustração para o ebook '{topic}'. "
                 f"Capítulos: {json.dumps(chapter_titles[:10], ensure_ascii=False)}. "
                 "Retorne JSON com introduction, conclusion e illustrations. "
                 "Introdução e conclusão devem ter pelo menos 400 palavras cada. "
-                "Crie quatro ilustrações específicas dos capítulos, cada uma com title, description, caption, alt_text, "
+                "Crie oito ilustrações específicas dos capítulos, cada uma com title, description, caption, alt_text, "
                 "chapter_index e pelo menos três steps. Não invente estatísticas, pesquisas ou fontes."
             )
             frontmatter_response, frontmatter = await complete_json_response(
@@ -594,11 +594,11 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
                     and isinstance(value.get("conclusion"), str)
                     and len(value["conclusion"].split()) >= 350
                     and isinstance(value.get("illustrations"), list)
-                    and len(value["illustrations"]) >= 4
+                    and len(value["illustrations"]) >= MIN_ILLUSTRATIONS
                     and all(
                         isinstance(item, dict)
                         and all(isinstance(item.get(key), str) and item[key].strip() for key in ("title", "description", "caption", "alt_text"))
-                        for item in value["illustrations"][:4]
+                        for item in value["illustrations"][:MIN_ILLUSTRATIONS]
                     )
                 ),
             )
@@ -606,7 +606,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
                 "introduction": frontmatter["introduction"],
                 "chapters": generated_chapters,
                 "conclusion": frontmatter["conclusion"],
-                "illustrations": frontmatter["illustrations"][:4],
+                "illustrations": frontmatter["illustrations"][:MIN_ILLUSTRATIONS],
             }
             writer = AIResponse(
                 content=json.dumps(writer_data, ensure_ascii=False),
