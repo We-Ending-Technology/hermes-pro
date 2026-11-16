@@ -5,6 +5,7 @@ import ctypes
 import gc
 import json
 import logging
+import re
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -77,7 +78,7 @@ def normalize_outline_titles(strategy_data: dict[str, Any], topic: str) -> list[
     if not isinstance(raw, list):
         raw = strategy_data.get("chapter_titles") or strategy_data.get("chapters") or []
     if isinstance(raw, str):
-        raw = [line.strip(" -*\\t") for line in raw.splitlines() if line.strip()]
+        raw = [line.strip().lstrip("-* ").strip() for line in raw.splitlines() if line.strip()]
     if not isinstance(raw, list):
         raw = []
 
@@ -88,7 +89,7 @@ def normalize_outline_titles(strategy_data: dict[str, Any], topic: str) -> list[
             value = item.get("title") or item.get("chapter_title") or item.get("name")
         else:
             value = item
-        title = re.sub(r"^\\s*(?:cap[ií]tulo\\s+)?\\d+[.):\\-]\\s*", "", str(value or ""), flags=re.IGNORECASE).strip()
+        title = re.sub(r"^\s*(?:cap[ií]tulo\s+)?\d+[.):\-]\s*", "", str(value or ""), flags=re.IGNORECASE).strip()
         key = " ".join(title.casefold().split())
         if title and key not in seen:
             titles.append(title)
