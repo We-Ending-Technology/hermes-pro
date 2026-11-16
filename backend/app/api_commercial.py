@@ -187,6 +187,35 @@ async def hotmart_webhook(request: Request, x_hotmart_hottok: str | None = Heade
 
 
 
+@router.post("/api/v1/webhooks/kiwify/test")
+async def kiwify_webhook_test(request: Request) -> dict[str, Any]:
+    """Validate Kiwify's signed test delivery without recording a sale or touching buyer data."""
+    secret = settings.kiwify_webhook_token or ""
+    if not secret:
+        raise HTTPException(status_code=503, detail="Kiwify webhook signing token is not configured")
+
+    raw_body = await request.body()
+    signature = request.query_params.get("signature", "")
+    if not verify_kiwify_signature(raw_body, secret, signature):
+        raise HTTPException(status_code=401, detail="invalid Kiwify webhook signature")
+
+    try:
+        payload = json.loads(raw_body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="invalid JSON payload") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="webhook payload must be a JSON object")
+
+    event_name = str(payload.get("webhook_event_type") or payload.get("event") or "unknown").strip()[:80]
+    return {
+        "ok": True,
+        "test": True,
+        "persisted": False,
+        "event": event_name,
+        "message": "Assinatura e formato do webhook validados; nenhum evento comercial foi registrado.",
+    }
+
+
 @router.post("/api/v1/webhooks/kiwify")
 async def kiwify_webhook(request: Request) -> dict[str, Any]:
     """Receive Kiwify JSON events signed with HMAC-SHA1 over the raw body."""
