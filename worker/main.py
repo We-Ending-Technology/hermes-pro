@@ -422,9 +422,12 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             writer_content = str(existing_metadata.get("content") or "")
             if not isinstance(writer_data, dict) or not writer_content:
                 raise ValueError("existing ebook content is unavailable for validation-only job")
-            content_gate = validate_ebook(writer_data)
+            _, writer_data, content_gate = await revise_ebook_if_needed(
+                gateway, topic, None, writer_data
+            )
+            writer_content = json.dumps(writer_data, ensure_ascii=False)
             if not content_gate.get("approved"):
-                raise ValueError("existing ebook no longer passes deterministic content validation")
+                raise ValueError("existing ebook could not reach the deterministic commercial content standard after five editorial passes")
             ai_provider = str(existing_metadata.get("ai_provider") or settings.ai_provider)
             ai_model = str(existing_metadata.get("ai_model") or settings.gemini_model)
             await store.update_product(product_id, current_stage="review_content")
@@ -470,8 +473,8 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             await store.update_product(product_id, current_stage="generate_content")
             outline = strategy_data.get("outline") if isinstance(strategy_data, dict) else None
             chapter_titles = [str(item).strip() for item in outline if str(item).strip()] if isinstance(outline, list) else []
-            if len(chapter_titles) < 8:
-                raise ValueError("ebook outline must contain at least eight chapter titles")
+            if len(chapter_titles) < MIN_CHAPTERS:
+                raise ValueError(f"ebook outline must contain at least {MIN_CHAPTERS} chapter titles")
 
             generated_chapters = []
             chapter_responses = []
@@ -481,7 +484,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
                 chapter_prompt = (
                     f"Escreva somente o capítulo {chapter_index + 1} de um ebook sobre '{topic}'. "
                     f"Título obrigatório: {chapter_title}. Estratégia: {json.dumps(strategy_data, ensure_ascii=False)[:2500]}. "
-                    "Retorne JSON com title e content. O conteúdo deve ter pelo menos 450 palavras substantivas, "
+                    "Retorne JSON com title e content. O conteúdo deve ter pelo menos 900 palavras substantivas, "
                     "com explicação original, exemplo brasileiro plausível, procedimento passo a passo, checklist e critérios de decisão. "
                     "Não repita capítulos anteriores, não invente estatísticas, fontes, depoimentos ou resultados. "
                     "Não use preenchimento artificial."
@@ -495,7 +498,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
                         isinstance(value.get("title"), str)
                         and bool(value["title"].strip())
                         and isinstance(value.get("content"), str)
-                        and len(value["content"].split()) >= 350
+                        and len(value["content"].split()) >= 850
                     ),
                 )
                 generated_chapters.append({"title": chapter_title, "content": chapter_data["content"]})
@@ -507,7 +510,7 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
                 f"Crie introdução, conclusão e quatro briefs de ilustração para o ebook '{topic}'. "
                 f"Capítulos: {json.dumps(chapter_titles[:10], ensure_ascii=False)}. "
                 "Retorne JSON com introduction, conclusion e illustrations. "
-                "Introdução e conclusão devem ter pelo menos 250 palavras cada. "
+                "Introdução e conclusão devem ter pelo menos 400 palavras cada. "
                 "Crie quatro ilustrações específicas dos capítulos, cada uma com title, description, caption, alt_text, "
                 "chapter_index e pelo menos três steps. Não invente estatísticas, pesquisas ou fontes."
             )
@@ -518,9 +521,9 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
                 label="writer_frontmatter",
                 validator=lambda value: (
                     isinstance(value.get("introduction"), str)
-                    and len(value["introduction"].split()) >= 200
+                    and len(value["introduction"].split()) >= 350
                     and isinstance(value.get("conclusion"), str)
-                    and len(value["conclusion"].split()) >= 200
+                    and len(value["conclusion"].split()) >= 350
                     and isinstance(value.get("illustrations"), list)
                     and len(value["illustrations"]) >= 4
                     and all(
