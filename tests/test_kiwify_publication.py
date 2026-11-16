@@ -35,7 +35,7 @@ def publishable_product():
         "metadata": {
             "artifact_status": "ready",
             "quality_score": "85",
-            "quality_gate": {"approved": True, "page_count": 40, "illustration_count": 4, "ai_cover_generated": True},
+            "quality_gate": {"approved": True, "page_count": 40, "illustration_count": 8, "ai_cover_generated": True},
             "cover_art": {"provider": "ovhcloud", "model": "stable-diffusion-xl-base-v10", "generated": True},
             "marketing_pack_status": "ready",
             "marketing_pack": {
