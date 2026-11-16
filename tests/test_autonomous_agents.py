@@ -57,7 +57,7 @@ async def test_chief_runs_specialists_without_openai_credentials(monkeypatch):
 
     assert len(gateway.calls) == 1
     assert result["agent"] == "Hermes Chefe"
-    assert result["steps"] == 11
+    assert result["steps"] == 12
     assert result["model_calls"] == 1
     assert result["output"] == "Resultado consolidado do Hermes Chefe"
     assert result["provider"] == "gemini"
@@ -67,6 +67,7 @@ async def test_chief_runs_specialists_without_openai_credentials(monkeypatch):
         "Hermes Dev",
         "Hermes Analyst",
         "Hermes Designer",
+        "Hermes Capas",
         "Hermes Auditor",
         "Hermes Executor",
         "Hermes Comercial",

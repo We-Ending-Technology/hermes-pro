@@ -354,7 +354,7 @@ def build_artifacts(title: str, subtitle: str, content: str, cover_artwork: byte
 
 
 def validate_artifacts(artifacts: dict[str, tuple[str, bytes, str]]) -> dict[str, Any]:
-    """Validate file signatures, embedded images and the ten-page commercial minimum."""
+    """Validate file signatures, embedded images and the forty-page commercial minimum."""
     required = {"cover", "docx", "pdf"}
     if set(artifacts) != required:
         return {

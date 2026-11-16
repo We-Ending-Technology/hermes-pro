@@ -31,6 +31,8 @@ from .services.quality import quality_service
 from .services.radar import radar_service
 from .services.sales import SalesService
 from .services.storage import SupabaseStorage
+from .services.ebook_validation import validate_ebook
+from .api_covers import router as covers_router
 
 logger = logging.getLogger("hermes.api")
 settings = get_settings()
@@ -121,6 +123,7 @@ app.add_middleware(
 )
 app.include_router(commercial_router)
 app.include_router(kiwify_api_router)
+app.include_router(covers_router)
 
 
 async def product_response(row: dict) -> ProductResponse:
@@ -318,6 +321,7 @@ async def agents_status():
             {"name": "Hermes Dev", "role": "engineering", "status": "ready" if ready else "blocked"},
             {"name": "Hermes Analyst", "role": "data_analysis", "status": "ready" if ready else "blocked"},
             {"name": "Hermes Designer", "role": "editorial_design", "status": "ready" if ready else "blocked"},
+            {"name": "Hermes Capas", "role": "ebook_cover_generation", "status": "ready" if ready else "blocked"},
             {"name": "Hermes Auditor", "role": "quality_and_security_audit", "status": "ready" if ready else "blocked"},
             {"name": "Hermes Executor", "role": "task_execution", "status": "ready" if ready else "blocked"},
             {"name": "Hermes Comercial", "role": "commercial_operations", "status": "ready" if ready else "blocked"},
@@ -487,6 +491,73 @@ async def radar_validate(payload: dict[str, Any]):
         "signals": result["matches"],
         "competition": None,
         "limitations": result["limitations"],
+    }
+
+
+@app.post("/api/v1/products/{product_id}/rebuild-existing")
+async def rebuild_existing_ebook(product_id: str):
+    """Rebuild files from existing content only when no paid text-model call is needed."""
+    row = await store.get_product(product_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="product not found")
+    metadata = dict(row.get("metadata") or {})
+    content_data = metadata.get("content_data")
+    if not isinstance(content_data, dict):
+        raise HTTPException(status_code=409, detail="Existing structured ebook content is unavailable.")
+
+    content_gate = validate_ebook(content_data)
+    if not content_gate.get("approved"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Rebuild blocked: existing content has not passed the current commercial gate.",
+                "findings": content_gate.get("findings") or [],
+                "metrics": {
+                    "words": content_gate.get("word_count"),
+                    "chapters": content_gate.get("chapter_count"),
+                    "illustrations": content_gate.get("illustration_count"),
+                },
+            },
+        )
+
+    review = metadata.get("review") or {}
+    if review.get("approved") is not True:
+        raise HTTPException(status_code=409, detail="Existing editorial review is not approved; no text-model call was started.")
+
+    pack = metadata.get("marketing_pack") or {}
+    faq = pack.get("faq") if isinstance(pack, dict) else None
+    posts = pack.get("social_posts") if isinstance(pack, dict) else None
+    pack_ready = (
+        metadata.get("marketing_pack_status") == "ready"
+        and isinstance(pack.get("product_description"), str) and len(pack["product_description"].strip()) >= 300
+        and isinstance(pack.get("short_description"), str) and len(pack["short_description"].strip()) >= 80
+        and isinstance(pack.get("target_audience"), str) and len(pack["target_audience"].strip()) >= 20
+        and isinstance(pack.get("contents"), list) and len(pack["contents"]) >= 5
+        and isinstance(pack.get("benefits"), list) and len(pack["benefits"]) >= 4
+        and isinstance(faq, list) and len(faq) >= 3
+        and isinstance(pack.get("keywords"), list) and len(pack["keywords"]) >= 5
+        and isinstance(posts, list) and len(posts) >= 3
+    )
+    if not pack_ready:
+        raise HTTPException(status_code=409, detail="Existing marketing pack is incomplete; rebuild blocked to avoid a paid text-model call.")
+
+    provider = str(settings.ai_image_provider or "ovhcloud").strip().lower()
+    if provider not in {"ovhcloud", "aihorde"}:
+        raise HTTPException(status_code=409, detail="Only free cover-image providers are allowed for this rebuild.")
+
+    try:
+        updated, job = await store.create_product_validation_job(product_id)
+        await queue.enqueue(str(job["id"]))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "product_id": product_id,
+        "job_id": str(job["id"]),
+        "status": job.get("status", "pending"),
+        "mode": "reuse_existing_content",
+        "text_generation": "skipped_if_existing_checks_remain_valid",
+        "image_provider": provider,
+        "content_gate": content_gate,
     }
 
 
