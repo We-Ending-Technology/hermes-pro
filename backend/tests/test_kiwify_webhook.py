@@ -91,3 +91,37 @@ def test_kiwify_signature_requires_lowercase_hex():
     signature = hmac.new(b"test-secret", body, hashlib.sha1).hexdigest().upper()
 
     assert api_commercial.verify_kiwify_signature(body, "test-secret", signature) is False
+
+
+
+def test_kiwify_webhook_test_route_validates_signature_without_recording_sale(monkeypatch):
+    client, store = _client(monkeypatch)
+    body = b'{"webhook_event_type":"order_approved","order_status":"paid"}'
+    signature = hmac.new(b"test-secret", body, hashlib.sha1).hexdigest()
+
+    response = client.post(
+        f"/api/v1/webhooks/kiwify/test?signature={signature}",
+        content=body,
+        headers={"content-type": "application/json"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert response.json()["test"] is True
+    assert response.json()["persisted"] is False
+    assert response.json()["event"] == "order_approved"
+    assert store.events == {}
+
+
+def test_kiwify_webhook_test_route_rejects_invalid_signature_without_recording_sale(monkeypatch):
+    client, store = _client(monkeypatch)
+    body = b'{"webhook_event_type":"order_approved","order_status":"paid"}'
+
+    response = client.post(
+        f"/api/v1/webhooks/kiwify/test?signature={'0' * 40}",
+        content=body,
+        headers={"content-type": "application/json"},
+    )
+
+    assert response.status_code == 401
+    assert store.events == {}
