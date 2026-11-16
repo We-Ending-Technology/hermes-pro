@@ -75,10 +75,12 @@ def _release_worker_memory(label: str) -> None:
 def normalize_outline_titles(strategy_data: dict[str, Any], topic: str) -> list[str]:
     """Normalize AI outlines and deterministically complete missing chapters before generation."""
     raw = strategy_data.get("outline")
-    if not isinstance(raw, list):
-        raw = strategy_data.get("chapter_titles") or strategy_data.get("chapters") or []
     if isinstance(raw, str):
         raw = [line.strip().lstrip("-* ").strip() for line in raw.splitlines() if line.strip()]
+    elif not isinstance(raw, list):
+        raw = strategy_data.get("chapter_titles") or strategy_data.get("chapters") or []
+        if isinstance(raw, str):
+            raw = [line.strip().lstrip("-* ").strip() for line in raw.splitlines() if line.strip()]
     if not isinstance(raw, list):
         raw = []
 
