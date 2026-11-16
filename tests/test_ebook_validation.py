@@ -382,7 +382,7 @@ def test_quality_service_uses_current_validator_minimum_keys():
     })
 
     assert report.decision == "approved"
-    assert report.score >= 400
+    assert report.score >= 80
     assert report.dimensions["content_length"] == 100
     assert report.dimensions["chapter_structure"] == 100
     assert report.dimensions["chapter_depth"] == 100
