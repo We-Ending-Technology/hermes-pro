@@ -301,7 +301,7 @@ async def test_content_that_passed_deterministic_gate_uses_validation_only_job()
                 "findings": [],
                 "word_count": 5668,
                 "chapter_count": 8,
-                "illustration_count": 4,
+                "illustration_count": 8,
                 "introduction_words": 314,
                 "conclusion_words": 307,
                 "chapter_word_counts": [{"title": f"Capítulo {i}", "words": 600} for i in range(8)],
