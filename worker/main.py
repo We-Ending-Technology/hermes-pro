@@ -86,14 +86,18 @@ def normalize_outline_titles(strategy_data: dict[str, Any], topic: str) -> list[
 
     titles: list[str] = []
     seen: set[str] = set()
+    non_chapter_heading = re.compile(
+        r"^(?:introdução|conclusão|considerações finais|prefácio|apresentação|sumário|introduction|conclusion|preface|contents)(?:\\b|[:—-])",
+        flags=re.IGNORECASE,
+    )
     for item in raw:
         if isinstance(item, dict):
             value = item.get("title") or item.get("chapter_title") or item.get("name")
         else:
             value = item
-        title = re.sub(r"^\s*(?:cap[ií]tulo\s+)?\d+[.):\-]\s*", "", str(value or ""), flags=re.IGNORECASE).strip()
+        title = re.sub(r"^\\s*(?:cap[ií]tulo\\s+)?\\d+[.):\\-]\\s*", "", str(value or ""), flags=re.IGNORECASE).strip()
         key = " ".join(title.casefold().split())
-        if title and key not in seen:
+        if title and not non_chapter_heading.match(title) and key not in seen:
             titles.append(title)
             seen.add(key)
 
@@ -513,7 +517,9 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             strategy_prompt = (
                 f"Create a concise product strategy for the digital ebook topic: {topic}. "
                 "Return valid JSON with keys: positioning, audience, title, subtitle, outline "
-                "(array of chapter titles)."
+                "(array of at least 12 substantive chapter titles). "
+                "The outline must contain at least 10 real chapters, excluding introduction, conclusion, "
+                "preface, summary and final remarks; do not use those as chapter titles."
             )
             strategist, strategy_data = await complete_json_response(
                 gateway,
