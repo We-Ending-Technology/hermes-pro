@@ -12,7 +12,7 @@ MIN_CONCLUSION_WORDS = 300
 MIN_ILLUSTRATIONS = 4
 MIN_PAGES = 40
 
-_WORD_RE = re.compile(r"[\\wÀ-ÿ]+(?:['’.-][\\wÀ-ÿ]+)*", re.UNICODE)
+_WORD_RE = re.compile(r"[\wÀ-ÿ]+(?:['’.-][\wÀ-ÿ]+)*", re.UNICODE)
 
 
 def count_words(value: Any) -> int:
