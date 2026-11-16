@@ -100,15 +100,15 @@ def normalize_outline_titles(strategy_data: dict[str, Any], topic: str) -> list[
     subject = str(topic or "este tema").strip().rstrip(".")
     templates = [
         f"Fundamentos de {subject}: conceitos e princípios essenciais",
-        f"Diagnóstico: como avaliar a situação e identificar necessidades",
-        f"Planejamento: objetivos, prioridades e preparação",
-        f"Ferramentas, recursos e métodos para aplicar o conhecimento",
-        f"Implementação prática: passo a passo para começar",
-        f"Exemplos aplicados, exercícios e modelos de referência",
-        f"Rotina de execução, acompanhamento e organização",
-        f"Erros comuns, riscos e como prevenir problemas",
-        f"Análise de resultados, ajustes e melhoria contínua",
-        f"Plano de ação: próximos passos e evolução em 30 dias",
+        f"Diagnóstico de {subject}: como avaliar a situação e identificar necessidades",
+        f"Planejamento de {subject}: objetivos, prioridades e preparação",
+        f"Ferramentas e recursos para aplicar {subject} com eficiência",
+        f"Implementação de {subject}: passo a passo para começar",
+        f"Exemplos práticos e estudos de caso sobre {subject}",
+        f"Rotina de execução e acompanhamento de {subject}",
+        f"Erros comuns e riscos na aplicação de {subject}",
+        f"Avaliação e melhoria contínua dos resultados de {subject}",
+        f"Plano de ação de 30 dias para evoluir em {subject}",
     ]
     for candidate in templates:
         if len(titles) >= MIN_CHAPTERS:
