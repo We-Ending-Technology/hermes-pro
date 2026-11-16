@@ -51,3 +51,26 @@ def test_outline_repair_accepts_newline_delimited_outline():
 
     assert len(titles) == 10
     assert titles[:3] == ["Primeiro", "Segundo", "Terceiro"]
+
+
+
+def test_outline_repair_excludes_introduction_and_conclusion_from_ten_chapters():
+    strategy = {
+        "outline": [
+            "Introdução: o problema",
+            "Fundamentos",
+            "Diagnóstico",
+            "Planejamento",
+            "Ferramentas",
+            "Implementação",
+            "Exemplos",
+            "Conclusão: próximos passos",
+        ]
+    }
+
+    titles = normalize_outline_titles(strategy, "Gestão de estoque")
+
+    assert len(titles) == 10
+    assert all(not title.casefold().startswith(("introdução", "conclusão")) for title in titles)
+    assert "Fundamentos" in titles
+    assert "Diagnóstico" in titles
