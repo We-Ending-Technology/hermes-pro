@@ -2,6 +2,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator
 
+from .services.ebook_validation import MIN_PAGES
+
 
 class ProductUpdateRequest(BaseModel):
     title: str | None = Field(default=None, max_length=240)
@@ -78,7 +80,7 @@ def is_kiwify_publishable_product(product: dict) -> bool:
             and all(isinstance(post.get(key), str) and post[key].strip() for key in ("platform", "hook", "caption", "cta"))
             for post in marketing_pack.get("social_posts", [])[:3]
         )
-        and page_count >= 10
+        and page_count >= MIN_PAGES
         and illustration_count >= 4
         and quality_score >= 80
     )
