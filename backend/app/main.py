@@ -320,6 +320,7 @@ async def agents_status():
             {"name": "Hermes Dev", "role": "engineering", "status": "ready" if ready else "blocked"},
             {"name": "Hermes Analyst", "role": "data_analysis", "status": "ready" if ready else "blocked"},
             {"name": "Hermes Designer", "role": "editorial_design", "status": "ready" if ready else "blocked"},
+            {"name": "Hermes Capas", "role": "ebook_cover_generation", "status": "ready" if ready else "blocked"},
             {"name": "Hermes Auditor", "role": "quality_and_security_audit", "status": "ready" if ready else "blocked"},
             {"name": "Hermes Executor", "role": "task_execution", "status": "ready" if ready else "blocked"},
             {"name": "Hermes Comercial", "role": "commercial_operations", "status": "ready" if ready else "blocked"},
