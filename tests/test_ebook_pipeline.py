@@ -10,14 +10,14 @@ from backend.app.services.ebook_validation import validate_ebook
 
 
 def _valid_content():
-    paragraph = " ".join(["conteudo tecnico aplicavel"] * 400)
+    paragraph = " ".join(["conteudo tecnico aplicavel"] * 1200)
     return {
-        "introduction": " ".join(["introducao tecnica aplicavel"] * 100),
+        "introduction": " ".join(["introducao tecnica aplicavel"] * 400),
         "chapters": [
             {"title": f"Capitulo {index}", "content": paragraph}
             for index in range(1, 11)
         ],
-        "conclusion": " ".join(["conclusao tecnica aplicavel"] * 100),
+        "conclusion": " ".join(["conclusao tecnica aplicavel"] * 400),
         "illustrations": [
             {
                 "title": f"Ilustracao {index}",
