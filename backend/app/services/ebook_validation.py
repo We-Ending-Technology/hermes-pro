@@ -3,15 +3,16 @@ from __future__ import annotations
 import re
 from typing import Any
 
-MIN_TOTAL_WORDS = 3500
-MIN_CHAPTERS = 8
-MIN_CHAPTER_WORDS = 300
-MIN_INTRODUCTION_WORDS = 200
-MIN_CONCLUSION_WORDS = 200
+# Commercial standard: 40+ actual PDF pages, not cover or filler pages.
+MIN_TOTAL_WORDS = 12000
+MIN_CHAPTERS = 10
+MIN_CHAPTER_WORDS = 800
+MIN_INTRODUCTION_WORDS = 300
+MIN_CONCLUSION_WORDS = 300
 MIN_ILLUSTRATIONS = 4
-MIN_PAGES = 10
+MIN_PAGES = 40
 
-_WORD_RE = re.compile(r"[\wÀ-ÿ]+(?:['’.-][\wÀ-ÿ]+)*", re.UNICODE)
+_WORD_RE = re.compile(r"[\\wÀ-ÿ]+(?:['’.-][\\wÀ-ÿ]+)*", re.UNICODE)
 
 
 def count_words(value: Any) -> int:
@@ -32,7 +33,7 @@ def _valid_illustration(item: Any) -> bool:
 
 
 def validate_ebook(content_data: dict[str, Any] | None) -> dict[str, Any]:
-    """Fail-closed commercial gate: editorial approval cannot override length or illustration requirements."""
+    """Fail-closed commercial gate for substantive 40-page ebooks."""
     data = content_data if isinstance(content_data, dict) else {}
     raw_chapters = data.get("chapters")
     chapters = [item for item in raw_chapters if isinstance(item, dict)] if isinstance(raw_chapters, list) else []
