@@ -31,6 +31,7 @@ from .services.quality import quality_service
 from .services.radar import radar_service
 from .services.sales import SalesService
 from .services.storage import SupabaseStorage
+from .api_covers import router as covers_router
 
 logger = logging.getLogger("hermes.api")
 settings = get_settings()
@@ -121,6 +122,7 @@ app.add_middleware(
 )
 app.include_router(commercial_router)
 app.include_router(kiwify_api_router)
+app.include_router(covers_router)
 
 
 async def product_response(row: dict) -> ProductResponse:
