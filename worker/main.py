@@ -87,7 +87,7 @@ def normalize_outline_titles(strategy_data: dict[str, Any], topic: str) -> list[
     titles: list[str] = []
     seen: set[str] = set()
     non_chapter_heading = re.compile(
-        r"^(?:introdução|conclusão|considerações finais|prefácio|apresentação|sumário|introduction|conclusion|preface|contents)(?:\\b|[:—-])",
+        r"^(?:introdução|conclusão|considerações finais|prefácio|apresentação|sumário|introduction|conclusion|preface|contents)(?:\b|[:—-])",
         flags=re.IGNORECASE,
     )
     for item in raw:
@@ -95,7 +95,7 @@ def normalize_outline_titles(strategy_data: dict[str, Any], topic: str) -> list[
             value = item.get("title") or item.get("chapter_title") or item.get("name")
         else:
             value = item
-        title = re.sub(r"^\\s*(?:cap[ií]tulo\\s+)?\\d+[.):\\-]\\s*", "", str(value or ""), flags=re.IGNORECASE).strip()
+        title = re.sub(r"^\s*(?:cap[ií]tulo\s+)?\d+[.):\-]\s*", "", str(value or ""), flags=re.IGNORECASE).strip()
         key = " ".join(title.casefold().split())
         if title and not non_chapter_heading.match(title) and key not in seen:
             titles.append(title)
