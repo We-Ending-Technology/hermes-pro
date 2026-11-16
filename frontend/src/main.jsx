@@ -240,7 +240,7 @@ function App() {
       {view === "Hermes" && <ChatView chat={chat} input={chatInput} setInput={setChatInput} send={sendChat} />}
       {view === "Canais" && <RevenueChannels integrations={integrations} />}
       {view === "Radar" && <RadarView />}
-      {view === "Fábrica" && <Factory topic={topic} setTopic={setTopic} submit={createProduct} />}
+      {view === "Fábrica" && <Factory topic={topic} setTopic={setTopic} submit={createProduct} products={products} action={action} />}
       {view === "Produtos" && <Products items={products} select={selectProduct} />}
       {view === "Jobs" && <Jobs jobs={jobs} products={products} action={action} />}
       {view === "Studio" && <Studio product={selected || products[0]} notify={setNotice} refresh={refresh} />}
@@ -292,7 +292,22 @@ function Home({ dashboard, products, jobs, go, select, diagnostics, runDiagnosti
   </Page>;
 }
 function Metric({ label, value }) { return <article className="metric"><span>{label}</span><strong>{value}</strong><small>estado persistido</small></article>; }
-function Factory({ topic, setTopic, submit }) { return <Page title="Fábrica" sub="Digite um tema e crie um job real no servidor."><form className="factory-form" onSubmit={submit}><label>Tema do produto<textarea value={topic} onChange={e => setTopic(e.target.value)} minLength="3" required placeholder="Ex.: guia de marketing digital para MEIs" /></label><div className="form-footer"><span>Render → Redis → Worker → Gemini → Supabase</span><Button primary type="submit">Iniciar produção ↗</Button></div></form><div className="pipeline">{["IDEIA", "ESTRATÉGIA", "CONTEÚDO", "REVISÃO", "STUDIO", "ARTEFATOS"].map((x, i) => <span key={x}>{i ? "→ " : ""}{x}</span>)}</div></Page>; }
+function Factory({ topic, setTopic, submit, products = [], action }) {
+  const [coverProductId, setCoverProductId] = useState("");
+  const coverProduct = products.find(item => item.id === coverProductId) || products.find(item => item.metadata?.content_data && !item.metadata?.artifact_paths?.cover);
+  const coverUrl = coverProduct?.metadata?.artifacts?.cover || coverProduct?.metadata?.cover_url;
+  const hasCoverPath = Boolean(coverProduct?.metadata?.artifact_paths?.cover?.path);
+  const generateCover = () => coverProduct && action(() => call(`/api/v1/products/${coverProduct.id}/cover${hasCoverPath ? "?force=true" : ""}`, { method: "POST" }), "Agente de Capas: arquivo gerado, validado e salvo no armazenamento.");
+  const rebuild = () => coverProduct && action(() => call(`/api/v1/products/${coverProduct.id}/rebuild-existing`, { method: "POST" }), "Rebuild do ebook enfileirado sem geração de texto paga.");
+  return <Page title="Fábrica" sub="Produção editorial, capas e validação comercial com orçamento zero.">
+    <form className="factory-form" onSubmit={submit}><label>Tema do produto<textarea value={topic} onChange={e => setTopic(e.target.value)} minLength="3" required placeholder="Ex.: guia de marketing digital para MEIs" /></label><div className="form-footer"><span>Conteúdo → revisão → capa → PDF/DOCX → auditoria</span><Button primary type="submit">Iniciar produção ↗</Button></div></form>
+    <div className="pipeline">{["IDEIA", "ESTRATÉGIA", "CONTEÚDO", "REVISÃO", "CAPA", "PDF/DOCX", "AUDITORIA"].map((x, i) => <span key={x}>{i ? "→ " : ""}{x}</span>)}</div>
+    <section className="panel" style={{ marginTop: 20 }}><span className="kicker">AGENTE DE CAPAS · GRATUITO</span><h3>Gerar e validar capa do ebook</h3><p>Usa somente os provedores gratuitos configurados (OVHcloud ou AI Horde). A capa é salva no Supabase Storage e validada como PNG vertical de 1200×1800 ou superior.</p>
+      <label>Selecionar ebook<select value={coverProduct?.id || coverProductId} onChange={e => setCoverProductId(e.target.value)}><option value="">Escolha um ebook com conteúdo</option>{products.filter(p => p.metadata?.content_data).map(p => <option key={p.id} value={p.id}>{p.title || p.topic}{p.metadata?.artifact_paths?.cover?.path ? " · já tem capa" : " · sem capa"}</option>)}</select></label>
+      <div className="form-footer"><span>{coverProduct ? (hasCoverPath ? "Capa registrada — pode regenerar" : "Capa pendente") : "Nenhum ebook com conteúdo disponível"}</span><Button primary onClick={generateCover} disabled={!coverProduct}>{hasCoverPath ? "Regenerar capa" : "Gerar capa"} ↗</Button><Button onClick={rebuild} disabled={!coverProduct || (coverProduct.metadata?.content_data?.illustrations || []).length < 8}>Reconstruir PDF/DOCX</Button></div>
+      {coverUrl && <img src={coverUrl} alt={`Capa de ${coverProduct?.title || coverProduct?.topic}`} style={{ display: "block", width: "min(220px, 100%)", marginTop: 16, borderRadius: 8 }} />}
+    </section></Page>;
+}
 function ProductCard({ p, onClick }) {
   const cover = p.metadata?.artifacts?.cover || p.metadata?.cover_url;
   return <article className="product-card detailed" onClick={onClick}>
