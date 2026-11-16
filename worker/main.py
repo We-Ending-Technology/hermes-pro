@@ -86,6 +86,10 @@ def normalize_outline_titles(strategy_data: dict[str, Any], topic: str) -> list[
 
     titles: list[str] = []
     seen: set[str] = set()
+    non_chapter_heading = re.compile(
+        r"^(?:introdução|conclusão|considerações finais|prefácio|apresentação|sumário|introduction|conclusion|preface|contents)(?:\b|[:—-])",
+        flags=re.IGNORECASE,
+    )
     for item in raw:
         if isinstance(item, dict):
             value = item.get("title") or item.get("chapter_title") or item.get("name")
@@ -93,7 +97,7 @@ def normalize_outline_titles(strategy_data: dict[str, Any], topic: str) -> list[
             value = item
         title = re.sub(r"^\s*(?:cap[ií]tulo\s+)?\d+[.):\-]\s*", "", str(value or ""), flags=re.IGNORECASE).strip()
         key = " ".join(title.casefold().split())
-        if title and key not in seen:
+        if title and not non_chapter_heading.match(title) and key not in seen:
             titles.append(title)
             seen.add(key)
 
@@ -513,7 +517,9 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
             strategy_prompt = (
                 f"Create a concise product strategy for the digital ebook topic: {topic}. "
                 "Return valid JSON with keys: positioning, audience, title, subtitle, outline "
-                "(array of chapter titles)."
+                "(array of at least 12 substantive chapter titles). "
+                "The outline must contain at least 10 real chapters, excluding introduction, conclusion, "
+                "preface, summary and final remarks; do not use those as chapter titles."
             )
             strategist, strategy_data = await complete_json_response(
                 gateway,
@@ -887,8 +893,19 @@ async def recover_pending(store: PersistentStore, queue: JobQueue) -> None:
             status = "retrying"
         if status not in {"pending", "retrying"}:
             continue
+        # Refresh the durable lease before enqueueing so each recovery scan
+        # cannot enqueue the same pending job again every few seconds.
+        await store.update_job(
+            str(job["id"]),
+            "pending",
+            error_message=job.get("error_message"),
+        )
         if job["job_type"] == "product_generation":
-            await queue.enqueue(str(job["id"]))
+            payload = job.get("payload") or {}
+            if payload.get("priority") is True:
+                await queue.enqueue_priority(str(job["id"]))
+            else:
+                await queue.enqueue(str(job["id"]))
             recovered += 1
         elif job["job_type"] == "agent_run":
             await queue.enqueue_agent(str(job["id"]))

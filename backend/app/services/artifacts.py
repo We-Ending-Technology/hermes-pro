@@ -11,7 +11,7 @@ from typing import Any
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Inches
+from docx.shared import Inches, Pt
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -188,6 +188,11 @@ def build_docx(
     illustrations = illustration_bytes or []
     briefs = illustration_briefs or []
     doc = Document()
+    normal_style = doc.styles["Normal"]
+    normal_style.font.name = "Calibri"
+    normal_style.font.size = Pt(12)
+    normal_style.paragraph_format.line_spacing = 1.35
+    normal_style.paragraph_format.space_after = Pt(9)
     if cover_bytes:
         paragraph = doc.add_paragraph()
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -244,18 +249,18 @@ def build_pdf(
     doc = SimpleDocTemplate(
         output,
         pagesize=A4,
-        rightMargin=48,
-        leftMargin=48,
-        topMargin=48,
-        bottomMargin=48,
+        rightMargin=60,
+        leftMargin=60,
+        topMargin=60,
+        bottomMargin=60,
         title=title,
         author="Hermes Pro",
     )
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle("HermesTitle", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=24, leading=29, alignment=TA_CENTER, spaceAfter=16)
-    subtitle_style = ParagraphStyle("HermesSubtitle", parent=styles["Normal"], fontName="Helvetica", fontSize=11, leading=16, alignment=TA_CENTER, textColor=colors.HexColor("#475569"), spaceAfter=22)
-    body_style = ParagraphStyle("HermesBody", parent=styles["BodyText"], fontName="Helvetica", fontSize=10.5, leading=15, spaceAfter=9)
-    heading_style = ParagraphStyle("HermesHeading", parent=styles["Heading1"], fontName="Helvetica-Bold", fontSize=18, leading=23, spaceBefore=6, spaceAfter=14)
+    title_style = ParagraphStyle("HermesTitle", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=26, leading=32, alignment=TA_CENTER, spaceAfter=18)
+    subtitle_style = ParagraphStyle("HermesSubtitle", parent=styles["Normal"], fontName="Helvetica", fontSize=12, leading=18, alignment=TA_CENTER, textColor=colors.HexColor("#475569"), spaceAfter=24)
+    body_style = ParagraphStyle("HermesBody", parent=styles["BodyText"], fontName="Helvetica", fontSize=12.5, leading=20, spaceAfter=12, allowWidows=0, allowOrphans=0)
+    heading_style = ParagraphStyle("HermesHeading", parent=styles["Heading1"], fontName="Helvetica-Bold", fontSize=20, leading=27, spaceBefore=8, spaceAfter=16, keepWithNext=True)
 
     story = []
     if cover_bytes:
