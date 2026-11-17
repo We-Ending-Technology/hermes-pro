@@ -23,7 +23,7 @@ class SalesService:
     async def summary(self, range_start: date | None = None, range_end: date | None = None) -> dict[str, Any]:
         params: dict[str, str] = {
             "select": "amount,currency,event_type,occurred_at,provider",
-            "or": "(provider.eq.hotmart,provider.eq.kiwify)",
+            "or": "(provider.eq.hotmart,provider.eq.kiwify,provider.eq.shopify)",
             "order": "occurred_at.desc",
         }
         start = datetime.combine(range_start, time.min, tzinfo=timezone.utc).isoformat() if range_start else None
@@ -71,10 +71,10 @@ class SalesService:
             "ticket": round(ticket, 2),
             "status": "ok",
             "message": (
-                "Faturamento bruto em BRL, antes de taxas, comissões, impostos e custos de aquisição. "
-                "Não é lucro."
-                + (f" Moedas excluídas deste total: {', '.join(excluded_currencies)}." if excluded_currencies else "")
-            ),
+                "Nenhuma venda paga registrada ainda. O Hermes atualizará este painel ao receber o primeiro evento de pedido pago. "
+                if not approved else
+                "Faturamento bruto em BRL, antes de taxas, comissões, impostos e custos de aquisição. Não é lucro. "
+            ) + (f" Moedas excluídas deste total: {', '.join(excluded_currencies)}." if excluded_currencies else ""),
         }
 
 
