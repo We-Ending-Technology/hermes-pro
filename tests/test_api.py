@@ -146,3 +146,72 @@ def test_automatic_factory_request_still_requires_positive_market_signal(monkeyp
     assert response.status_code == 409
     create.assert_not_awaited()
 
+def test_shopify_webhook_verifies_signature_and_store_before_recording(monkeypatch):
+    import base64
+    import hashlib
+    import hmac
+    import json
+    from unittest.mock import AsyncMock
+    from backend.app import api_commercial
+
+    secret = "shopify-test-secret"
+    domain = "0200rp-kz.myshopify.com"
+    monkeypatch.setattr(api_commercial.settings, "shopify_webhook_secret", secret)
+    monkeypatch.setattr(api_commercial.settings, "shopify_store_domain", domain)
+    append_event = AsyncMock(return_value={})
+    monkeypatch.setattr(api_commercial.store, "append_event", append_event)
+
+    payload = {
+        "id": 123,
+        "currency": "BRL",
+        "current_total_price": "29.90",
+        "email": "buyer@example.com",
+        "customer": {"email": "buyer@example.com"},
+    }
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+    signature = base64.b64encode(hmac.new(secret.encode(), raw, hashlib.sha256).digest()).decode()
+    headers = {
+        "Content-Type": "application/json",
+        "X-Shopify-Hmac-Sha256": signature,
+        "X-Shopify-Topic": "orders/paid",
+        "X-Shopify-Webhook-Id": "hook-123",
+        "X-Shopify-Shop-Domain": domain,
+    }
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/webhooks/shopify", content=raw, headers=headers)
+        invalid_signature = client.post(
+            "/api/v1/webhooks/shopify",
+            content=raw,
+            headers={**headers, "X-Shopify-Hmac-Sha256": "invalid"},
+        )
+        wrong_store = client.post(
+            "/api/v1/webhooks/shopify",
+            content=raw,
+            headers={**headers, "X-Shopify-Shop-Domain": "other.myshopify.com"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "duplicate": False, "event": "PURCHASE_APPROVED"}
+    assert invalid_signature.status_code == 401
+    assert wrong_store.status_code == 403
+    append_event.assert_awaited_once()
+    saved_payload = append_event.await_args.args[2]
+    assert "email" not in saved_payload
+    assert "customer" not in saved_payload
+    assert append_event.await_args.args[:2] == ("shopify", "PURCHASE_APPROVED")
+
+
+def test_shopify_webhook_is_public_but_requires_configuration(monkeypatch):
+    from backend.app import api_commercial
+
+    monkeypatch.setattr(api_commercial.settings, "shopify_webhook_secret", None)
+    monkeypatch.setattr(api_commercial.settings, "shopify_store_domain", None)
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/webhooks/shopify",
+            content=b"{}",
+            headers={"X-Shopify-Hmac-Sha256": "x"},
+        )
+    assert response.status_code == 503
+
