@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     kiwify_api_client_id: str | None = Field(default=None, validation_alias=AliasChoices("KIWIFY_API_CLIENT_ID", "KIWIFY_API_KEY", "KIWIFY_CLIENT_ID"))
     kiwify_api_client_secret: str | None = Field(default=None, validation_alias=AliasChoices("KIWIFY_API_CLIENT_SECRET", "KIWIFY_CLIENT_SECRET"))
     kiwify_account_id: str | None = Field(default=None, validation_alias="KIWIFY_ACCOUNT_ID")
+    shopify_store_domain: str | None = Field(default=None, validation_alias="SHOPIFY_STORE_DOMAIN")
+    shopify_webhook_secret: str | None = Field(default=None, validation_alias="SHOPIFY_WEBHOOK_SECRET")
     hermes_public_api_url: str = Field(default="https://hermes-pro-api-commercial.onrender.com", validation_alias="HERMES_PUBLIC_API_URL")
     telegram_bot_token: str | None = Field(default=None, validation_alias="TELEGRAM_BOT_TOKEN")
     telegram_chat_id: str | None = Field(default=None, validation_alias="TELEGRAM_CHAT_ID")
