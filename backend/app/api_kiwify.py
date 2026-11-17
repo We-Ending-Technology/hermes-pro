@@ -23,23 +23,39 @@ async def kiwify_api_status() -> dict[str, Any]:
         return {
             "configured": False,
             "connected": False,
+            "account_verified": False,
             "webhook_token_configured": bool(client.webhook_token),
-            "message": "Configure KIWIFY_API_CLIENT_ID, KIWIFY_API_CLIENT_SECRET e KIWIFY_ACCOUNT_ID no ambiente privado do backend.",
+            "message": "Credenciais incompletas no backend. O Hermes precisa de Client ID, Client Secret e Account ID.",
         }
     try:
-        result = await client.list_products(page_size=1, page_number=1)
-        pagination = result.get("pagination") or {}
+        account = await client.account_details()
+        returned_account_id = str(account.get("id") or "").strip()
+        expected_account_id = str(client.account_id or "").strip()
+        if not returned_account_id or returned_account_id != expected_account_id:
+            return {
+                "configured": True,
+                "connected": False,
+                "account_verified": False,
+                "webhook_token_configured": bool(client.webhook_token),
+                "message": "OAuth funcionou, mas a identidade retornada pela Kiwify não corresponde ao Account ID configurado. Nenhuma publicação foi realizada.",
+            }
+
+        products = await client.list_products(page_size=1, page_number=1)
+        pagination = products.get("pagination") or {}
         return {
             "configured": True,
             "connected": True,
-            "webhook_token_configured": bool(client.webhook_token),
+            "account_verified": True,
+            "account_id": returned_account_id,
             "product_count": pagination.get("count"),
-            "message": "Autenticação OAuth e consulta de produtos confirmadas.",
+            "webhook_token_configured": bool(client.webhook_token),
+            "message": "OAuth validado, Account ID confirmado e consulta de produtos autorizada.",
         }
     except KiwifyAPIError as exc:
         return {
             "configured": True,
             "connected": False,
+            "account_verified": False,
             "webhook_token_configured": bool(client.webhook_token),
             "message": str(exc),
         }

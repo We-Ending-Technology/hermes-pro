@@ -93,6 +93,10 @@ class KiwifyAPIClient:
                 raise KiwifyAPIError(502, "Falha de comunicação com a API Kiwify.") from exc
         raise KiwifyAPIError(401, "A autenticação da API Kiwify expirou.")
 
+    async def account_details(self) -> dict[str, Any]:
+        """Return the account identified by the configured Kiwify Account ID."""
+        return await self._request("GET", "/account-details")
+
     async def list_products(self, page_size: int = 100, page_number: int = 1) -> dict[str, Any]:
         return await self._request(
             "GET", "/products",
