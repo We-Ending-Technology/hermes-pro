@@ -1,3 +1,5 @@
+from backend.app.services.sales import SalesService
+
 class FakeSupabase:
     def __init__(self, rows):
         self.rows = rows
