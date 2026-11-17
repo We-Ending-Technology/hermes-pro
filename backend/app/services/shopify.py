@@ -119,7 +119,7 @@ def normalize_shopify_event(topic: str, payload: dict[str, Any]) -> dict[str, An
     amount, currency = _refund_amount(payload)
     return {
         "event_type": "PURCHASE_REFUNDED",
-        "external_id": f"refunds/create:{refund_id}",
+        "external_id": f"refunds/create:{order_id}:{refund_id}",
         "amount": float(amount),
         "currency": currency,
         "order_id": str(order_id),
