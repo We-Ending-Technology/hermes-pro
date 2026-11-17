@@ -70,6 +70,10 @@ services:
         sync: false
       - key: KIWIFY_ACCOUNT_ID
         sync: false
+      - key: SHOPIFY_STORE_DOMAIN
+        value: 0200rp-kz.myshopify.com
+      - key: SHOPIFY_WEBHOOK_SECRET
+        sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_CHAT_ID
