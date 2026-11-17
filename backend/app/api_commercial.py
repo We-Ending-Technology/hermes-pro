@@ -11,6 +11,7 @@ from .core.config import get_settings
 from .db.supabase import SupabaseREST, SupabaseError
 from .services.hotmart import HotmartClient, HotmartError
 from .services.kiwify import normalize_kiwify_event, sanitize_kiwify_payload, verify_kiwify_signature
+from .services.shopify import normalize_shopify_domain, normalize_shopify_event, sanitize_shopify_payload, verify_shopify_signature
 from .services.integrations import integration_service
 from .services.persistence import PersistentStore
 from .services.telegram import TelegramNotifier
@@ -87,7 +88,7 @@ async def ready() -> dict[str, Any]:
         },
     ]
 
-    for name in ("Hotmart", "Kiwify", "Telegram"):
+    for name in ("Hotmart", "Kiwify", "Shopify", "Telegram"):
         item = configured[name.lower()]
         if name == "Kiwify":
             # Kiwify's integration registry uses "configured" when the API
@@ -113,6 +114,15 @@ async def ready() -> dict[str, Any]:
                 "status": "configured" if api_configured else ("webhook_only" if webhook_only else "optional_missing"),
                 "configured": api_configured or webhook_only,
                 "message": kiwify_message,
+                "required": False,
+            })
+        elif name == "Shopify":
+            webhook_configured = item["status"] == "configured"
+            checks.append({
+                "name": name,
+                "status": "configured" if webhook_configured else "optional_missing",
+                "configured": webhook_configured,
+                "message": item["message"],
                 "required": False,
             })
         else:
@@ -256,3 +266,61 @@ async def kiwify_webhook(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="could not persist Kiwify event; webhook may be retried") from exc
 
     return {"ok": True, "duplicate": False, "event": event["event_type"]}
+
+@router.post("/api/v1/webhooks/shopify")
+async def shopify_webhook(
+    request: Request,
+    x_shopify_hmac_sha256: str | None = Header(default=None),
+    x_shopify_topic: str | None = Header(default=None),
+    x_shopify_webhook_id: str | None = Header(default=None),
+    x_shopify_shop_domain: str | None = Header(default=None),
+) -> dict[str, Any]:
+    """Accept only signed Shopify paid-order/refund events; buyer PII is discarded."""
+    secret = settings.shopify_webhook_secret or ""
+    expected_domain = normalize_shopify_domain(settings.shopify_store_domain)
+    if not secret or not expected_domain:
+        raise HTTPException(status_code=503, detail="Shopify webhook credentials are not configured")
+
+    raw_body = await request.body()
+    if not verify_shopify_signature(raw_body, secret, x_shopify_hmac_sha256 or ""):
+        raise HTTPException(status_code=401, detail="invalid Shopify webhook signature")
+
+    received_domain = normalize_shopify_domain(x_shopify_shop_domain)
+    if not received_domain or not hmac.compare_digest(received_domain, expected_domain):
+        raise HTTPException(status_code=403, detail="Shopify store domain does not match configured store")
+
+    try:
+        payload = json.loads(raw_body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="invalid JSON payload") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="webhook payload must be a JSON object")
+
+    topic = str(x_shopify_topic or "").strip().lower()
+    if not topic:
+        raise HTTPException(status_code=400, detail="missing Shopify webhook topic")
+    try:
+        event = normalize_shopify_event(topic, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if event is None:
+        return {"ok": True, "ignored": True, "topic": topic}
+
+    safe_payload = sanitize_shopify_payload(topic, payload, event, x_shopify_webhook_id)
+    try:
+        await store.append_event(
+            "shopify",
+            event["event_type"],
+            safe_payload,
+            external_id=event["external_id"],
+            amount=event["amount"],
+            currency=event["currency"],
+        )
+    except SupabaseError as exc:
+        message = str(exc).lower()
+        if "duplicate" in message or "unique" in message or "23505" in message:
+            return {"ok": True, "duplicate": True, "event": event["event_type"]}
+        raise HTTPException(status_code=503, detail="could not persist Shopify event; webhook may be retried") from exc
+
+    return {"ok": True, "duplicate": False, "event": event["event_type"]}
+
