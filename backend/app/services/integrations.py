@@ -14,12 +14,14 @@ class IntegrationService:
             supabase_message = "Defina SUPABASE_URL e uma chave secreta de servidor."
         supabase_configured = bool(settings.supabase_url and supabase_server_key)
         redis_configured = bool(settings.redis_url and settings.redis_url.strip())
+        shopify_configured = bool(settings.shopify_store_domain and settings.shopify_webhook_secret)
         return [
             {"name": "Gemini", "status": "connected" if settings.gemini_api_key else "not_configured", "message": "Chave configurada" if settings.gemini_api_key else "Defina GEMINI_API_KEY no Render."},
             {"name": "Supabase", "status": "connected" if supabase_configured else "not_configured", "message": supabase_message},
             {"name": "Redis", "status": "configured" if redis_configured else "not_configured", "message": "URL configurada" if redis_configured else "Defina REDIS_URL com a conexão privada do Render Key Value."},
             {"name": "Hotmart", "status": "connected" if settings.hotmart_client_id and settings.hotmart_client_secret else "not_configured", "message": "OAuth configurado; sincronização disponível" if settings.hotmart_client_id and settings.hotmart_client_secret else "Defina HOTMART_CLIENT_ID e HOTMART_CLIENT_SECRET."},
             {"name": "Kiwify", "status": "configured" if settings.kiwify_api_client_id and settings.kiwify_api_client_secret and settings.kiwify_account_id else ("webhook_configured" if settings.kiwify_webhook_token else "not_configured"), "message": "API OAuth configurada; valide a conexão no Hermes. Cadastro de novos produtos continua sendo feito no painel Kiwify, pois não há endpoint público documentado para criar produtos." if settings.kiwify_api_client_id and settings.kiwify_api_client_secret and settings.kiwify_account_id else ("Webhook HMAC-SHA1 configurado; API de produtos/vendas ainda sem credenciais." if settings.kiwify_webhook_token else "Configure Client ID, Client Secret, Account ID e token de webhook no Render.")},
+            {"name": "Shopify", "status": "configured" if shopify_configured else "not_configured", "message": "Domínio da loja e segredo do webhook configurados; o Hermes pode receber pedidos pagos e reembolsos." if shopify_configured else "Defina SHOPIFY_STORE_DOMAIN e SHOPIFY_WEBHOOK_SECRET no Render e cadastre os webhooks orders/paid e refunds/create."},
             {"name": "Telegram", "status": "connected" if settings.telegram_bot_token and settings.telegram_chat_id else "not_configured", "message": "Notificações configuradas" if settings.telegram_bot_token and settings.telegram_chat_id else "Defina TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID."},
         ]
 
