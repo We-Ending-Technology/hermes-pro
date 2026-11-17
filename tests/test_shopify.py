@@ -65,7 +65,7 @@ def test_normalizes_successful_refund_transaction():
     }
     event = normalize_shopify_event("refunds/create", payload)
     assert event["event_type"] == "PURCHASE_REFUNDED"
-    assert event["external_id"] == "refunds/create:900"
+    assert event["external_id"] == "refunds/create:123:900"
     assert event["amount"] == 9.9
     assert event["currency"] == "BRL"
     safe = sanitize_shopify_payload("refunds/create", payload, event)
