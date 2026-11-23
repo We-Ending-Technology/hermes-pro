@@ -1,2 +1,4 @@
 User-agent: *
 Allow: /
+
+Sitemap: https://projeto-viral2-wet.onrender.com/sitemap.xml
