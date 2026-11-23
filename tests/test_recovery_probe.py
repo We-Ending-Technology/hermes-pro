@@ -41,3 +41,14 @@ async def test_recovery_probe_is_idempotent_and_queues_only_nonterminal_job():
     second = await recovery_probe_tick(store, queue)
     assert second["status"] == "already_completed"
     assert queue.enqueued == ["probe-1"]
+
+
+@pytest.mark.asyncio
+async def test_recovery_probe_does_not_bypass_retry_lease_after_restart():
+    store, queue = FakeStore(), FakeQueue()
+    store.job["status"] = "retrying"
+
+    result = await recovery_probe_tick(store, queue)
+
+    assert result["status"] == "waiting_for_retry_lease"
+    assert queue.enqueued == []
