@@ -79,9 +79,14 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
-          test "$(psql -h localhost -U postgres -d hermes_test -At -c "SELECT count(*) FROM public.hermes_agents WHERE approved_by = 'system_seed' AND status = 'active'")" = "12"
-          test "$(psql -h localhost -U postgres -d hermes_test -At -c "SELECT bool_and(relrowsecurity)::text FROM pg_class WHERE oid IN ('public.hermes_agents'::regclass, 'public.hermes_agent_execution_runs'::regclass)")" = "t"
-          test "$(psql -h localhost -U postgres -d hermes_test -At -c "SELECT has_table_privilege('anon', 'public.hermes_agents', 'SELECT')")" = "f"
-          test "$(psql -h localhost -U postgres -d hermes_test -At -c "SELECT has_table_privilege('service_role', 'public.hermes_agents', 'SELECT')")" = "t"
+          SEED_COUNT="$(psql -h localhost -U postgres -d hermes_test -At -c "SELECT count(*) FROM public.hermes_agents WHERE approved_by = 'system_seed' AND status = 'active'")"
+          RLS_ENABLED="$(psql -h localhost -U postgres -d hermes_test -At -c "SELECT bool_and(relrowsecurity)::text FROM pg_class WHERE oid IN ('public.hermes_agents'::regclass, 'public.hermes_agent_execution_runs'::regclass)")"
+          ANON_SELECT="$(psql -h localhost -U postgres -d hermes_test -At -c "SELECT has_table_privilege('anon', 'public.hermes_agents', 'SELECT')")"
+          SERVICE_SELECT="$(psql -h localhost -U postgres -d hermes_test -At -c "SELECT has_table_privilege('service_role', 'public.hermes_agents', 'SELECT')")"
+          echo "seed_count=$SEED_COUNT rls_enabled=$RLS_ENABLED anon_select=$ANON_SELECT service_role_select=$SERVICE_SELECT"
+          test "$SEED_COUNT" = "12"
+          test "$RLS_ENABLED" = "t"
+          test "$ANON_SELECT" = "f"
+          test "$SERVICE_SELECT" = "t"
           psql -h localhost -U postgres -d hermes_test -v ON_ERROR_STOP=1 -c "DO \$\$ BEGIN INSERT INTO public.hermes_agents (slug, name, role, instructions, capabilities, permissions) VALUES ('invalid-publisher', 'Invalid Publisher', 'publisher', 'This must be rejected by the capability allowlist.', '[\"publish\"]'::jsonb, '[\"ai.complete\"]'::jsonb); RAISE EXCEPTION 'capability allowlist failed'; EXCEPTION WHEN check_violation THEN NULL; END \$\$"
           psql -h localhost -U postgres -d hermes_test -v ON_ERROR_STOP=1 -c "DO \$\$ BEGIN INSERT INTO public.hermes_agents (slug, name, role, instructions, status, approval_required, approved_by) VALUES ('invalid-active', 'Invalid Active', 'specialist', 'This must be rejected without approval.', 'active', false, NULL); RAISE EXCEPTION 'activation approval constraint failed'; EXCEPTION WHEN check_violation THEN NULL; END \$\$"
