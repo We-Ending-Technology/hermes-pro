@@ -9,10 +9,28 @@ from worker.main import recover_pending
 class FakeDB:
     def __init__(self):
         self.updates = []
+        self.memory = {}
 
     async def update(self, table, values, *, where):
         self.updates.append((table, values, where))
         return {"id": where["id"].removeprefix("eq.")}
+
+    async def select(self, table, params):
+        if table != "hermes_agent_memory":
+            return []
+        key = str(params.get("key") or "").removeprefix("eq.")
+        if key:
+            value = self.memory.get(key)
+            return [{"value": value["value"]}] if value else []
+        if params.get("source") == "eq.worker_recovery":
+            return list(self.memory.values())[: int(params.get("limit", 8))]
+        return []
+
+    async def upsert(self, table, values, *, conflict):
+        assert table == "hermes_agent_memory"
+        assert conflict == "key"
+        self.memory[values["key"]] = dict(values)
+        return dict(values)
 
 
 class FakeStore:
@@ -86,6 +104,9 @@ async def test_chief_receives_live_operational_facts(monkeypatch):
             "hermes_system_health": [
                 {"component": "worker", "status": "ok", "message": "Redis PING succeeded"}
             ],
+            "hermes_agent_memory": [
+                {"key": "worker_recovery:transient_provider:test", "value": {"category": "transient_provider", "last_outcome": "recovered"}, "updated_at": "2026-11-23T00:00:00Z"}
+            ],
         }.get(table, [])
     store.db.select = fake_select
     captured = {}
@@ -103,6 +124,7 @@ async def test_chief_receives_live_operational_facts(monkeypatch):
     assert "review_required" in captured["instruction"]
     assert "PURCHASE_APPROVED" in captured["instruction"]
     assert "Redis PING succeeded" in captured["instruction"]
+    assert "transient_provider" in captured["instruction"]
     saved = next(values for table, values, _ in store.db.updates if table == "hermes_agent_runs" and values.get("status") == "completed")
     assert saved["output"]["operational_context"]["sales"]["approved_purchase_events"] == 1
 
@@ -113,3 +135,53 @@ async def test_persistent_recovery_requeues_retrying_agent_job():
     store.recoverable_jobs = [{"id": "run-1", "job_type": "agent_run", "status": "retrying"}]
     await recover_pending(store, queue)
     assert queue.enqueued == ["run-1"]
+
+
+@pytest.mark.asyncio
+async def test_agent_job_persists_failure_learning_then_marks_it_recovered(monkeypatch):
+    calls = {"count": 0}
+
+    async def fail_then_succeed(instruction, settings):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("Gemini HTTP 503 temporarily unavailable")
+        return {"output": "Tarefa concluída após recuperação", "specialists": {}}
+
+    monkeypatch.setattr(agent_jobs, "run_chief", fail_then_succeed)
+    store, queue = FakeStore(), FakeQueue()
+
+    await agent_jobs.process_agent("run-1", store, SimpleNamespace(), queue)
+    assert store.job["status"] == "retrying"
+    assert len(store.db.memory) == 1
+    key, record = next(iter(store.db.memory.items()))
+    assert record["value"]["category"] == "transient_provider"
+    assert record["value"]["last_outcome"] == "retry_scheduled"
+
+    store.job["status"] = "pending"
+    await agent_jobs.process_agent("run-1", store, SimpleNamespace(), queue)
+
+    assert store.job["status"] == "completed"
+    assert calls["count"] == 2
+    learned = store.db.memory[key]["value"]
+    assert learned["last_outcome"] == "recovered"
+    assert learned["successful_job_id"] == "run-1"
+    assert learned["successful_attempt"] == 2
+
+
+@pytest.mark.asyncio
+async def test_agent_job_does_not_retry_permanent_model_configuration_failure(monkeypatch):
+    async def fail_configuration(instruction, settings):
+        raise RuntimeError("Gemini HTTP 404 model not found")
+
+    monkeypatch.setattr(agent_jobs, "run_chief", fail_configuration)
+    store, queue = FakeStore(), FakeQueue()
+
+    await agent_jobs.process_agent("run-1", store, SimpleNamespace(), queue)
+
+    assert store.job["status"] == "failed"
+    assert store.job["attempts"] == 1
+    assert queue.enqueued == []
+    learned = next(iter(store.db.memory.values()))["value"]
+    assert learned["category"] == "configuration"
+    assert learned["retryable"] is False
+    assert learned["last_outcome"] == "needs_review"

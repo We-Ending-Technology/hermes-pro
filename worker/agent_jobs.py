@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from backend.app.agents.orchestrator import run_chief
 from backend.app.core.config import Settings
 from backend.app.services.persistence import PersistentStore
+from backend.app.services.recovery_learning import mark_recovered, remember_failure
 
 logger = logging.getLogger("hermes.agent-worker")
 
@@ -28,7 +29,7 @@ async def _safe_select(store: PersistentStore, table: str, params: dict) -> list
 
 async def build_operational_context(store: PersistentStore, settings: Settings) -> dict:
     """Collect bounded, non-sensitive operational facts for the Chief and specialists."""
-    products, jobs, sales, health = await asyncio.gather(
+    products, jobs, sales, health, recovery_lessons = await asyncio.gather(
         _safe_select(store, "hermes_products", {
             "select": "id,title,topic,status,current_stage,updated_at",
             "order": "updated_at.desc",
@@ -48,6 +49,12 @@ async def build_operational_context(store: PersistentStore, settings: Settings) 
             "select": "component,status,message,checked_at",
             "order": "checked_at.desc",
             "limit": "20",
+        }),
+        _safe_select(store, "hermes_agent_memory", {
+            "select": "key,value,source,updated_at",
+            "source": "eq.worker_recovery",
+            "order": "updated_at.desc",
+            "limit": "8",
         }),
     )
 
@@ -105,6 +112,10 @@ async def build_operational_context(store: PersistentStore, settings: Settings) 
             "recent": sales[:10],
         },
         "system_health": health,
+        "recovery_lessons": [
+            {"key": row.get("key"), "value": row.get("value") or {}, "updated_at": row.get("updated_at")}
+            for row in recovery_lessons
+        ],
     }
 
 
@@ -114,6 +125,7 @@ async def process_agent(job_id: str, store: PersistentStore, settings: Settings,
         return
 
     attempts = int(job.get("attempts", 0))
+    previous_error = str(job.get("error_message") or "").strip()
     max_attempts = int(job.get("max_attempts", 3))
     if attempts >= max_attempts:
         await store.update_job(job_id, "failed", attempts=attempts, error_message="maximum attempts reached")
@@ -150,6 +162,8 @@ async def process_agent(job_id: str, store: PersistentStore, settings: Settings,
             f"{instruction}\n\n"
             "DADOS OPERACIONAIS REAIS COLETADOS DO BANCO DO HERMES (JSON):\n"
             f"{json.dumps(operational_context, ensure_ascii=False, default=str)}\n\n"
+            "APRENDIZADOS DE RECUPERAÇÃO PERSISTIDOS (JSON): use como histórico, confirme se o padrão se aplica e não repita tentativas cegas.\n"
+            f"{json.dumps(operational_context.get('recovery_lessons', []), ensure_ascii=False, default=str)}\n\n"
             "Use esses dados como evidência principal. Diferencie contagens da amostra recente "
             "de totais históricos. Não diga que faltam logs ou telemetria quando os dados acima "
             "respondem à pergunta. Se algum campo estiver vazio, declare apenas aquela lacuna."
@@ -184,9 +198,26 @@ async def process_agent(job_id: str, store: PersistentStore, settings: Settings,
             "error_message": None,
         }, where={"id": f"eq.{job_id}"})
         await store.update_job(job_id, "completed", attempts=attempts, error_message=None)
+        if previous_error:
+            try:
+                await mark_recovered(store.db, error_message=previous_error, job_id=job_id, attempt=attempts)
+            except Exception:
+                logger.exception("could not persist successful recovery learning job=%s", job_id)
     except Exception as exc:
         message = str(exc)[:1000]
-        if attempts < max_attempts:
+        failure_learning = None
+        try:
+            failure_learning = await remember_failure(
+                store.db,
+                job_id=job_id,
+                error_message=message,
+                attempt=attempts,
+                max_attempts=max_attempts,
+            )
+        except Exception:
+            logger.exception("could not persist failure learning job=%s", job_id)
+        retryable = bool((failure_learning or {}).get("retryable", True))
+        if attempts < max_attempts and retryable:
             await store.update_job(job_id, "retrying", attempts=attempts, error_message=message)
             await store.db.update("hermes_agent_runs", {
                 "status": "pending",
