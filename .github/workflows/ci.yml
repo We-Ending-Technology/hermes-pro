@@ -41,3 +41,47 @@ jobs:
           name: hermes-pro-source-${{ github.sha }}
           path: hermes-pro-source.zip
           retention-days: 90
+
+  migration-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hermes_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hermes_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Bootstrap the existing memory table and service roles
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d hermes_test -v ON_ERROR_STOP=1 \\
+            -c "CREATE ROLE anon" \\
+            -c "CREATE ROLE authenticated" \\
+            -c "CREATE ROLE service_role BYPASSRLS" \\
+            -c "CREATE EXTENSION IF NOT EXISTS pgcrypto" \\
+            -c "CREATE TABLE public.hermes_agent_memory (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), key text NOT NULL UNIQUE, value jsonb NOT NULL DEFAULT '{}'::jsonb, source text NOT NULL DEFAULT 'agent', updated_at timestamptz NOT NULL DEFAULT now())"
+      - name: Apply dynamic agent migration to disposable PostgreSQL
+        env:
+          PGPASSWORD: postgres
+        run: psql -h localhost -U postgres -d hermes_test -v ON_ERROR_STOP=1 -f supabase/migrations/20261123150000_dynamic_agent_factory.sql
+      - name: Verify seeds, RLS, grants, and approval constraints
+        env:
+          PGPASSWORD: postgres
+        run: |
+          test "$(psql -h localhost -U postgres -d hermes_test -At -c "SELECT count(*) FROM public.hermes_agents WHERE approved_by = 'system_seed' AND status = 'active'")" = "12"
+          test "$(psql -h localhost -U postgres -d hermes_test -At -c "SELECT bool_and(relrowsecurity)::text FROM pg_class WHERE oid IN ('public.hermes_agents'::regclass, 'public.hermes_agent_execution_runs'::regclass)")" = "t"
+          test "$(psql -h localhost -U postgres -d hermes_test -At -c "SELECT has_table_privilege('anon', 'public.hermes_agents', 'SELECT')")" = "f"
+          test "$(psql -h localhost -U postgres -d hermes_test -At -c "SELECT has_table_privilege('service_role', 'public.hermes_agents', 'SELECT')")" = "t"
+          psql -h localhost -U postgres -d hermes_test -v ON_ERROR_STOP=1 -c "DO \\$\\$ BEGIN INSERT INTO public.hermes_agents (slug, name, role, instructions, capabilities, permissions) VALUES ('invalid-publisher', 'Invalid Publisher', 'publisher', 'This must be rejected by the capability allowlist.', '[\"publish\"]'::jsonb, '[\"ai.complete\"]'::jsonb); RAISE EXCEPTION 'capability allowlist failed'; EXCEPTION WHEN check_violation THEN NULL; END \\$\\$"
+          psql -h localhost -U postgres -d hermes_test -v ON_ERROR_STOP=1 -c "DO \\$\\$ BEGIN INSERT INTO public.hermes_agents (slug, name, role, instructions, status, approval_required, approved_by) VALUES ('invalid-active', 'Invalid Active', 'specialist', 'This must be rejected without approval.', 'active', false, NULL); RAISE EXCEPTION 'activation approval constraint failed'; EXCEPTION WHEN check_violation THEN NULL; END \\$\\$"
