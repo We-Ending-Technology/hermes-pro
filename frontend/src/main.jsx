@@ -413,6 +413,47 @@ function Agents() {
 }
 function Automation({ jobs }) { const active = useMemo(() => jobs.filter(j => ["pending", "running", "retrying"].includes(j.status)).length, [jobs]); return <Page title="Automação" sub="Visão operacional da fila e do worker."><div className="metric-grid"><Metric label="Jobs ativos" value={active}/><Metric label="Jobs totais" value={jobs.length}/></div><Empty text="A execução automática ocorre no worker; este painel não finge agendamentos que ainda não existem no backend." /></Page>; }
 function Logs({ jobs }) { return <Page title="Logs" sub="Eventos de jobs retornados pelo backend."><div className="job-list">{jobs.map(j => <div className="panel" key={j.id}><strong>{j.status}</strong><p>{j.id}</p><small>{j.error_message || "sem erro"}</small></div>)}</div></Page>; }
-function Guides() { return <Page title="Guias" sub="Operação do Hermes Pro."><div className="two-col"><div className="panel"><h3>1. Conexão</h3><p>Vercel hospeda a interface. O backend fica no Render. O cliente usa o proxy Vercel e cai para o Render diretamente quando o proxy falhar.</p></div><div className="panel"><h3>2. Produção</h3><p>Fábrica cria produto e job. Redis entrega ao worker. Gemini produz e revisa conteúdo. Supabase persiste estado e artefatos.</p></div><div className="panel"><h3>3. Kiwify</h3><p>Teste OAuth e configure o webhook em Integrações. A criação do produto, o upload do PDF/capa e o checkout são concluídos no painel Kiwify; depois vincule o checkout na guia Publicação.</p></div><div className="panel"><h3>4. Se estiver offline</h3><p>Abra Integrações e execute o diagnóstico. Se Render estiver offline, o painel mostrará a conexão necessária em vez de um erro NOT_FOUND genérico.</p></div></div></Page>; }
+function Guides() {
+  return <Page title="Guias" sub="Manual operacional: produtos digitais, canais dark, vídeos originais e monetização.">
+    <div className="panel">
+      <span className="kicker">VISÃO GERAL</span>
+      <h3>Como o Hermes deve operar</h3>
+      <p>Radar pesquisa demanda e concorrência; Estratégia escolhe público e ângulo; Fábrica cria o produto; Quality audita conteúdo e arquivos; Publicação vincula o checkout Kiwify; Studio prepara materiais; Distribuição adapta peças para cada canal; Analytics mede tráfego e vendas reais.</p>
+      <p><b>Regra de verdade:</b> ideia, rascunho, arquivo gerado, publicação enviada, publicação confirmada, venda aprovada e receita líquida são estados diferentes. O painel só pode avançar quando houver evidência.</p>
+    </div>
+    <div className="two-col">
+      <div className="panel"><h3>1. Infraestrutura</h3><p>Vercel entrega a interface; Render executa a API FastAPI; Supabase guarda produtos, jobs, eventos e arquivos; Redis coordena a fila. Serviços gratuitos podem dormir, ter limites e sofrer atrasos. O Hermes deve sinalizar indisponibilidade sem prometer operação 24/7.</p></div>
+      <div className="panel"><h3>2. Produtos e Kiwify</h3><p>O ebook precisa passar por revisão, validação de PDF/DOCX/capa e pacote comercial. O produto é cadastrado na Kiwify, recebe configuração de entrega automática e checkout oficial; depois o checkout é associado ao produto no Hermes. O webhook precisa ser conferido no painel Kiwify e validado por evento de teste, sem compra real.</p></div>
+      <div className="panel"><h3>3. Canais de venda</h3><p>O site é a página central de marca e conversão. Kiwify processa o checkout. YouTube, TikTok, Instagram e Facebook distribuem conteúdo orgânico; Pinterest pode funcionar como descoberta visual. Cada canal exige conta, permissões oficiais e validação da publicação. Nenhuma conta deve ser conectada por senha compartilhada ou automação não autorizada.</p></div>
+      <div className="panel"><h3>4. Guia do canal dark</h3><p>Comece com um canal-piloto e um nicho específico. Defina promessa editorial, público, identidade visual, tom narrativo e séries próprias. Só abra canais adicionais quando o formato-piloto demonstrar retenção e consistência. Não replique o mesmo vídeo em massa sem adaptação.</p></div>
+    </div>
+    <div className="panel">
+      <span className="kicker">FÁBRICA DE VÍDEOS · MODELO DE PRODUÇÃO</span>
+      <h3>Qual IA faz os vídeos?</h3>
+      <p><b>Vídeo:</b> o workspace conectado do ElevenLabs lista Seedance 2.5 como modelo padrão de vídeo, além de Veo, Kling, Runway e outros. <b>Voz:</b> há modelos ElevenLabs TTS, incluindo Eleven v4. <b>Montagem:</b> o workspace oferece composição de vídeo/áudio. Isso confirma disponibilidade no workspace, mas não confirma créditos gratuitos nem que o gerador esteja integrado ao backend Hermes.</p>
+      <p><b>Decisão de arquitetura:</b> usar Seedance 2.5 como candidato principal para cenas originais; usar TTS para narração quando a voz sintética for necessária; compor cenas, voz, música licenciada e legendas. Antes de qualquer geração, o Hermes precisa consultar saldo/custo e bloquear automaticamente se houver cobrança ou créditos pagos. Até essa integração ser implementada e testada, a produção de vídeo fica planejada, não ativa.</p>
+      <ol>
+        <li>Radar encontra uma pergunta real do público e registra fontes e região.</li>
+        <li>Roteirista cria roteiro autoral com gancho, desenvolvimento, conclusão e CTA útil.</li>
+        <li>Diretor divide o roteiro em cenas, define enquadramento, ritmo, estilo e continuidade visual.</li>
+        <li>Gerador cria cenas próprias; narrador produz voz; editor sincroniza, adiciona legendas, trilha com licença e identidade do canal.</li>
+        <li>Quality verifica fatos, direitos, áudio, legendas, repetição, proporção 9:16/16:9 e presença de CTA.</li>
+        <li>Distribuição prepara versões específicas para Shorts, TikTok, Reels e Pinterest; publica somente após OAuth e confirmação da plataforma.</li>
+        <li>Analytics registra URL, data, visualizações, retenção, cliques e vendas confirmadas, sem estimar números ausentes.</li>
+      </ol>
+    </div>
+    <div className="two-col">
+      <div className="panel"><h3>5. Como buscar monetização</h3><p>O canal precisa construir audiência e cumprir os requisitos vigentes do programa de cada plataforma. No YouTube, conteúdo com IA pode monetizar, mas precisa ser original e autêntico; vídeos genéricos, repetitivos, produzidos em massa ou reaproveitados sem transformação substancial podem ser inelegíveis. Monetização nunca é garantida pelo uso de IA.</p></div>
+      <div className="panel"><h3>6. Direitos e transparência</h3><p>Não baixar vídeos virais, filmes, séries, anime, esportes ou vídeos de terceiros para republicar. Usar roteiro, narração, imagens, trilhas e cenas próprias ou com licença comercial comprovada. Informar conteúdo sintético/alterado quando parecer real e representar pessoas, locais ou eventos de forma que possa confundir o público.</p></div>
+      <div className="panel"><h3>7. Distribuição e vendas</h3><p>O conteúdo deve entregar valor antes de convidar para o site. A chamada leva a uma página coerente com o vídeo, com descrição honesta, preço e checkout oficial. Cada canal recebe título, legenda, thumbnail, duração e CTA adaptados; não usar spam, comentários automáticos ou mensagens em massa.</p></div>
+      <div className="panel"><h3>8. Conexões e status</h3><p>Integrações sociais só aparecem como conectadas depois do OAuth oficial e de uma chamada de leitura bem-sucedida. Enquanto não houver autorização, o status é “pendente”. A publicação só vira “publicada” após retorno/URL da plataforma. Kiwify “configurada” não significa webhook testado nem entrega comprovada.</p></div>
+    </div>
+    <div className="panel">
+      <span className="kicker">LIMITES DE CUSTO</span>
+      <h3>Política de orçamento zero</h3>
+      <p>O sistema pode pesquisar, planejar, revisar e executar rotinas que não gerem cobrança dentro das quotas gratuitas disponíveis. Qualquer ferramenta de vídeo, voz, imagem ou IA que não exponha saldo e custo antes da execução deve ficar bloqueada. Não fazer teste pago, compra fictícia, assinatura, upgrade, anúncio ou consumo de crédito pago.</p>
+    </div>
+  </Page>;
+}
 
 createRoot(document.getElementById("root")).render(<App />);
