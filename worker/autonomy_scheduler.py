@@ -162,6 +162,34 @@ async def supervision_tick(settings: Settings, store: PersistentStore, queue) ->
         },
     }
 
+
+async def recovery_probe_tick(store: PersistentStore, queue) -> dict[str, Any]:
+    """Queue one idempotent, no-AI failure/retry/learning probe per UTC day."""
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
+    idempotency_key = "system-recovery-probe:" + now_dt.date().isoformat()
+    job = await store.create_agent_job(
+        "Run the deterministic system recovery probe. Do not call external AI or perform commercial actions.",
+        source="system_recovery_probe",
+        now=now,
+        idempotency_key=idempotency_key,
+    )
+    status = str(job.get("status") or "pending")
+    if status in {"pending", "retrying"}:
+        await queue.enqueue_agent(str(job["id"]))
+        return {
+            "status": "probe_queued",
+            "run_id": str(job["id"]),
+            "idempotency_key": idempotency_key,
+            "ai_calls": 0,
+        }
+    return {
+        "status": "already_" + status,
+        "run_id": str(job["id"]),
+        "idempotency_key": idempotency_key,
+        "ai_calls": 0,
+    }
+
 def _deterministic_content_gate_passed(metadata: dict) -> bool:
     gate = metadata.get("quality_gate") or {}
     try:
