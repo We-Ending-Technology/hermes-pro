@@ -11,7 +11,6 @@ const NAV = [
   ["◎", "Agentes"], ["⟳", "Automação"], ["⌘", "Integrações"], ["≡", "Logs"], ["?", "Guias"], ["▤", "Jobs"]
 ];
 
-const DEFAULT_RADAR = { demand: 80, competition: 45, differentiation: 75, production_difficulty: 35, pricing_potential: 70, audience_clarity: 85 };
 
 function App() {
   const [view, setView] = useState("Início");
@@ -108,6 +107,7 @@ function App() {
   };
 
   const runDiagnostics = async () => setDiagnostics(await diagnose());
+  const runRadar = niche => action(() => call("/api/v1/radar/validate", { method: "POST", body: JSON.stringify({ niche }) }), "Pesquisa de tendências consultada. Confira a fonte e as limitações antes de decidir.");
   const selectProduct = product => { setSelected(product); setView("Studio"); };
   const loadSales = () => action(() => call("/api/v1/sales"), "Vendas atualizadas.").then(setSales);
   const loadAnalytics = () => action(() => call("/api/v1/analytics"), "Analytics atualizado.").then(setAnalytics);
@@ -128,7 +128,7 @@ function App() {
       {busy && <div className="loading-line"><i /> sincronizando dados reais…</div>}
       {view === "Início" && <Home dashboard={dashboard} products={products} jobs={jobs} go={setView} select={selectProduct} diagnostics={diagnostics} runDiagnostics={runDiagnostics} />}
       {view === "Hermes" && <ChatView chat={chat} input={chatInput} setInput={setChatInput} send={sendChat} />}
-      {view === "Radar" && <RadarView data={radar} run={() => action(() => call("/api/v1/radar", { method: "POST", body: JSON.stringify(DEFAULT_RADAR) }), "Radar analisado.").then(setRadar)} />}
+      {view === "Radar" && <RadarView data={radar} run={runRadar} />}
       {view === "Fábrica" && <Factory topic={topic} setTopic={setTopic} submit={createProduct} products={products} action={action} /> }
       {view === "Produtos" && <Products items={products} select={selectProduct} />}
       {view === "Jobs" && <Jobs jobs={jobs} products={products} action={action} />}
@@ -225,7 +225,31 @@ function Studio({ product, notify, refresh }) {
     </div>
   </Page>;
 }
-function RadarView({ data, run }) { return <Page title="Radar" sub="Análise de oportunidade sem promessa de resultado."><Button primary onClick={run}>Analisar oportunidade</Button>{data && <div className="two-col"><div className="panel"><h3>Score {data.score}/100</h3><p>Confiança {data.confidence}%</p>{Object.entries(data.dimensions || {}).map(([k, v]) => <div className="health" key={k}><span>{k}</span><strong>{v}</strong></div>)}</div><div className="panel"><h3>Findings</h3>{(data.findings || []).map(x => <p key={x}>• {x}</p>)}</div></div>}</Page>; }
+function RadarView({ data, run }) {
+  const [niche, setNiche] = useState("");
+  const [loading, setLoading] = useState(false);
+  const submit = async event => {
+    event.preventDefault();
+    if (niche.trim().length < 3) return;
+    setLoading(true);
+    try { await run(niche.trim()); } finally { setLoading(false); }
+  };
+  return <Page title="Radar" sub="Consulta real ao feed público de tendências do Google Brasil; não é volume histórico de palavras-chave.">
+    <form className="factory-form" onSubmit={submit}>
+      <label>Nicho ou tema para pesquisar<input value={niche} onChange={event => setNiche(event.target.value)} minLength="3" maxLength="180" required placeholder="Ex.: organização financeira para autônomos" /></label>
+      <div className="form-footer"><span>Fonte: Google Trends Brasil · RSS público</span><Button primary type="submit" disabled={loading || niche.trim().length < 3}>{loading ? "Consultando…" : "Pesquisar tendência ↗"}</Button></div>
+    </form>
+    {data && <div className="panel">
+      <h3>{data.niche}</h3>
+      <p><b>Resultado:</b> {data.demand_exists ? "Foram encontradas tendências relacionadas." : "Nenhuma correspondência encontrada no feed consultado."}</p>
+      <p><b>Decisão:</b> {data.decision === "positive" ? "Sinal positivo preliminar — exige validação adicional." : "Evidência insuficiente — não conclua que não existe demanda."}</p>
+      <p><b>Fonte:</b> <a href={data.source_url} target="_blank" rel="noreferrer">{data.source || "Google Trends Brasil"} ↗</a></p>
+      <small>Consultado em: {data.queried_at ? new Date(data.queried_at).toLocaleString("pt-BR") : "—"}</small>
+      {(data.matches || []).length ? <div className="job-list">{data.matches.map((item, index) => <article className="panel" key={item.title + index}><strong>{item.title}</strong><p>Tráfego aproximado: {item.approx_traffic || "não informado"}</p><small>{item.published_at || "Data não informada"}</small></article>)}</div> : <p>O feed de tendências não apresentou correspondências. Isso não substitui pesquisa de palavras-chave, análise de concorrência ou histórico de busca.</p>}
+      {(data.limitations || []).map(item => <p key={item}>• {item}</p>)}
+    </div>}
+  </Page>;
+}
 function Publish({ product, integrations, refresh, notify }) {
   const getIntegration = name => integrations.find(x => x.name?.toLowerCase().includes(name));
   const kiwify = getIntegration("kiwify");
