@@ -65,7 +65,7 @@ async def remember_failure(
         "last_attempt": int(attempt),
         "max_attempts": int(max_attempts),
         "occurrence_count": int(previous.get("occurrence_count") or 0) + 1,
-        "last_outcome": "retry_scheduled" if attempt < max_attempts else "needs_review",
+        "last_outcome": "retry_scheduled" if attempt < max_attempts and classification["retryable"] else "needs_review",
         "observed_at": now,
     }
     await db.upsert(
