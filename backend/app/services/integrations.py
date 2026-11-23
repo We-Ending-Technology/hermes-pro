@@ -1,6 +1,57 @@
 from ..core.config import get_settings, get_supabase_server_key
 
 
+# Public brand profiles supplied by the owner. Registration is not OAuth/API
+# authorization: publishing remains disabled until each platform is connected.
+SOCIAL_PROFILE_REGISTRY: list[dict[str, str]] = [
+    {
+        "name": "YouTube",
+        "status": "profile_registered",
+        "message": "Canal @ProjetoViral2wet cadastrado (https://www.youtube.com/@ProjetoViral2wet). OAuth/API ainda não conectado.",
+    },
+    {
+        "name": "Instagram",
+        "status": "profile_registered",
+        "message": "Perfil @projetoviral2wet cadastrado (https://www.instagram.com/projetoviral2wet/). OAuth/API ainda não conectado.",
+    },
+    {
+        "name": "TikTok",
+        "status": "profile_registered",
+        "message": "Perfil @projetoviral2wet cadastrado (https://www.tiktok.com/@projetoviral2wet). OAuth/API ainda não conectado.",
+    },
+    {
+        "name": "Pinterest",
+        "status": "profile_registered",
+        "message": "Perfil @projetoviral2 cadastrado (https://www.pinterest.com/projetoviral2/). OAuth/API ainda não conectado.",
+    },
+    {
+        "name": "Facebook",
+        "status": "profile_registered",
+        "message": "Página Projeto viral 2 wet cadastrada pelo nome. URL/ID da página e autorização ainda pendentes.",
+    },
+    {
+        "name": "Canva",
+        "status": "workspace_registered",
+        "message": "Workspace Projeto Viral identificado. Conexão de publicação/Brand Kit ainda não validada.",
+    },
+    {
+        "name": "Metricool",
+        "status": "not_connected",
+        "message": "Conector disponível, mas nenhuma rede social aparece conectada. Não agendar publicações.",
+    },
+    {
+        "name": "Google Search Console",
+        "status": "not_configured",
+        "message": "Propriedade e verificação do domínio ainda pendentes.",
+    },
+    {
+        "name": "Google Analytics",
+        "status": "not_configured",
+        "message": "Propriedade GA4 e instalação/validação da tag ainda pendentes.",
+    },
+]
+
+
 class IntegrationService:
     def status(self) -> list[dict[str, str]]:
         settings = get_settings()
@@ -15,7 +66,7 @@ class IntegrationService:
         supabase_configured = bool(settings.supabase_url and supabase_server_key)
         redis_configured = bool(settings.redis_url and settings.redis_url.strip())
         shopify_configured = bool(settings.shopify_store_domain and settings.shopify_webhook_secret)
-        return [
+        configured_integrations = [
             {"name": "Gemini", "status": "connected" if settings.gemini_api_key else "not_configured", "message": "Chave configurada" if settings.gemini_api_key else "Defina GEMINI_API_KEY no Render."},
             {"name": "Supabase", "status": "connected" if supabase_configured else "not_configured", "message": supabase_message},
             {"name": "Redis", "status": "configured" if redis_configured else "not_configured", "message": "URL configurada" if redis_configured else "Defina REDIS_URL com a conexão privada do Render Key Value."},
@@ -24,6 +75,7 @@ class IntegrationService:
             {"name": "Shopify", "status": "configured" if shopify_configured else "not_configured", "message": "Credenciais configuradas; registre os webhooks orders/paid e refunds/create na Shopify para iniciar o recebimento automático." if shopify_configured else "Defina SHOPIFY_STORE_DOMAIN e SHOPIFY_WEBHOOK_SECRET no Render e cadastre os webhooks orders/paid e refunds/create."},
             {"name": "Telegram", "status": "connected" if settings.telegram_bot_token and settings.telegram_chat_id else "not_configured", "message": "Notificações configuradas" if settings.telegram_bot_token and settings.telegram_chat_id else "Defina TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID."},
         ]
+        return configured_integrations + [dict(item) for item in SOCIAL_PROFILE_REGISTRY]
 
 
 integration_service = IntegrationService()
