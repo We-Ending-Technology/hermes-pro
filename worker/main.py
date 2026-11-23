@@ -30,7 +30,7 @@ from backend.app.services.persistence import PersistentStore
 from backend.app.services.storage import SupabaseStorage
 from backend.app.services.telegram import TelegramNotifier
 from worker.agent_jobs import process_agent
-from worker.autonomy_scheduler import autonomy_tick, supervision_tick
+from worker.autonomy_scheduler import autonomy_tick, recovery_probe_tick, supervision_tick
 from worker.json_utils import build_review_excerpt, is_ebook_payload, parse_json_object
 
 logging.basicConfig(level=logging.INFO)
@@ -975,6 +975,7 @@ async def run() -> None:
     last_heartbeat = 0.0
     last_memory_cleanup = loop.time()
     last_recovery = loop.time()
+    last_recovery_probe_tick = loop.time() - 86400
     try:
         try:
             await asyncio.wait_for(recover_pending(store, queue), timeout=60)
@@ -990,6 +991,13 @@ async def run() -> None:
             logger.exception("initial job recovery failed or timed out; worker will continue")
         while True:
             now = loop.time()
+            if (now - last_recovery_probe_tick) >= 86400:
+                try:
+                    outcome = await recovery_probe_tick(store, queue)
+                    logger.info("deterministic recovery probe: %s", outcome)
+                except Exception:
+                    logger.exception("deterministic recovery probe could not be queued; worker will continue")
+                last_recovery_probe_tick = loop.time()
             if (now - last_memory_cleanup) >= 60:
                 _release_worker_memory("periodic")
                 last_memory_cleanup = loop.time()

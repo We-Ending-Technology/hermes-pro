@@ -168,7 +168,28 @@ async def process_agent(job_id: str, store: PersistentStore, settings: Settings,
             "de totais históricos. Não diga que faltam logs ou telemetria quando os dados acima "
             "respondem à pergunta. Se algum campo estiver vazio, declare apenas aquela lacuna."
         )
-        result = await run_chief(enriched_instruction, settings)
+        if str(payload.get("source") or "") == "system_recovery_probe":
+            if attempts == 1:
+                raise RuntimeError("Synthetic HTTP 503 injected by deterministic recovery probe")
+            result = {
+                "output": "Recovery probe completed after the simulated transient failure.",
+                "agent": "Hermes Recovery Probe",
+                "steps": 2,
+                "model_calls": 0,
+                "specialists": {
+                    "failure_classifier": "transient_provider",
+                    "persistent_memory": "failure recorded and later marked recovered",
+                    "retry_worker": "same persisted job completed on second attempt",
+                },
+                "recovery_probe": {
+                    "simulated_failure_attempt": 1,
+                    "successful_attempt": attempts,
+                    "external_ai_calls": 0,
+                    "external_side_effects": False,
+                },
+            }
+        else:
+            result = await run_chief(enriched_instruction, settings)
         completed_at = _now()
         # Replace model-reported timing with authoritative persisted-job timings.
         start_dt = datetime.fromisoformat(started_at)

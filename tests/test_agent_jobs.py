@@ -185,3 +185,28 @@ async def test_agent_job_does_not_retry_permanent_model_configuration_failure(mo
     assert learned["category"] == "configuration"
     assert learned["retryable"] is False
     assert learned["last_outcome"] == "needs_review"
+
+
+@pytest.mark.asyncio
+async def test_deterministic_recovery_probe_runs_without_ai_and_closes_learning_loop(monkeypatch):
+    async def ai_must_not_run(instruction, settings):
+        raise AssertionError("recovery probe must not call an AI provider")
+
+    monkeypatch.setattr(agent_jobs, "run_chief", ai_must_not_run)
+    store, queue = FakeStore(), FakeQueue()
+    store.job["payload"]["source"] = "system_recovery_probe"
+
+    await agent_jobs.process_agent("run-1", store, SimpleNamespace(), queue)
+    assert store.job["status"] == "retrying"
+    key, record = next(iter(store.db.memory.items()))
+    assert record["value"]["category"] == "transient_provider"
+    assert record["value"]["last_outcome"] == "retry_scheduled"
+
+    store.job["status"] = "pending"
+    await agent_jobs.process_agent("run-1", store, SimpleNamespace(), queue)
+
+    assert store.job["status"] == "completed"
+    saved = next(values for table, values, _ in store.db.updates if table == "hermes_agent_runs" and values.get("status") == "completed")
+    assert saved["output"]["model_calls"] == 0
+    assert saved["output"]["recovery_probe"]["successful_attempt"] == 2
+    assert store.db.memory[key]["value"]["last_outcome"] == "recovered"
