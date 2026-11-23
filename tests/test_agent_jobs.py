@@ -166,3 +166,22 @@ async def test_agent_job_persists_failure_learning_then_marks_it_recovered(monke
     assert learned["last_outcome"] == "recovered"
     assert learned["successful_job_id"] == "run-1"
     assert learned["successful_attempt"] == 2
+
+
+@pytest.mark.asyncio
+async def test_agent_job_does_not_retry_permanent_model_configuration_failure(monkeypatch):
+    async def fail_configuration(instruction, settings):
+        raise RuntimeError("Gemini HTTP 404 model not found")
+
+    monkeypatch.setattr(agent_jobs, "run_chief", fail_configuration)
+    store, queue = FakeStore(), FakeQueue()
+
+    await agent_jobs.process_agent("run-1", store, SimpleNamespace(), queue)
+
+    assert store.job["status"] == "failed"
+    assert store.job["attempts"] == 1
+    assert queue.enqueued == []
+    learned = next(iter(store.db.memory.values()))["value"]
+    assert learned["category"] == "configuration"
+    assert learned["retryable"] is False
+    assert learned["last_outcome"] == "needs_review"
