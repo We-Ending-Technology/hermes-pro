@@ -144,3 +144,22 @@ O projeto só pode ser considerado pronto quando:
 - Não apagar jobs pausados, falhas históricas, branches ou PRs sem análise.
 - Não declarar receita, publicação, integração ou correção sem evidência independente.
 - Não modificar produção enquanto o branch/commit implantado e o backup não estiverem identificados.
+
+
+## Atualização após comparação direta de branches (2026-11-23)
+
+A comparação GitHub confirmou que `feat/hermes-foundation` e `feat/hermes-autonomous-hardening` estão DIVERGED, não apenas alguns commits fora de sincronia:
+- A comparação reportou 87 commits de diferença no sentido consultado e 163 commits atrás no outro lado.
+- A lista de arquivos divergentes inclui `backend/app/main.py`, serviços de analytics/integrations/sales, novos testes comerciais e alterações grandes no frontend (`frontend/src/main.jsx` +707/-65), além de cliente API e testes.
+- O workflow `.github/workflows/ci.yml` existe na branch da fundação e executa pytest, build do frontend e empacota um source snapshot. A presença do workflow não comprova que os testes estejam verdes; é necessário consultar runs da PR e os logs.
+- Esta divergência torna inseguro mesclar PR #13 diretamente sem revisão de commits, testes e contratos. A estratégia deve ser uma branch de integração criada a partir da versão de produção, cherry-pick seletivo ou merge assistido por arquivo, e CI completa.
+- O frontend package da branch hardening declara dependências como `latest`; isso reduz reprodutibilidade. Fixar versões e gerar lockfile deve fazer parte da estabilização antes de declarar release.
+
+## Revisão crítica das sugestões externas recebidas
+
+- Não instalar ShortSmash nem assumir que é compatível com o runtime antes de auditar repositório, licença, dependências, modelo de execução e permissões. A adoção não é necessária para provar a fábrica de vídeos.
+- Não usar Ollama local como fallback padrão: o Hermes foi desenhado para operação cloud-first e o host gratuito atual não oferece garantia de capacidade para executar modelos locais. Um fallback cloud só pode ser ativado se houver credencial e custo explicitamente autorizados; caso contrário, usar circuit breaker, fila e pausa segura.
+- Não assumir que o pacote Hermes Agent da Nous Research seja o mesmo software do repositório Hermes Pro. Cron, delegate_task, Honcho e skills só existem para este projeto se forem implementados e testados aqui.
+- Não adicionar pgvector antes de demonstrar um caso de uso de busca semântica e avaliar custo/complexidade. Memória estruturada e retrieval por tags/erro pode ser suficiente no primeiro ciclo.
+- A especificação de assinatura, cabeçalhos, política de reenvio e API de vendas da Kiwify deve ser confirmada na documentação oficial atual e por payload de teste; não codificar HMAC-SHA1, query parameter ou quotas com base apenas no texto recebido.
+- Não declarar sucesso comercial a partir de um webhook simulado. Separar eventos de teste de vendas reais conciliadas.
