@@ -13,7 +13,7 @@ test("command center hides the old English Sales orbit label", () => {
 });
 
 test("currency formatter renders Brazilian money", () => {
-  assert.equal(formatCurrency(129.9), "R$ 129,90");
+  assert.equal(formatCurrency(129.9).replace(/\u00a0/g, " "), "R$ 129,90");
 });
 
 test("status tone maps known states to stable UI semantics", () => {
