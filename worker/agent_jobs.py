@@ -205,8 +205,9 @@ async def process_agent(job_id: str, store: PersistentStore, settings: Settings,
                 logger.exception("could not persist successful recovery learning job=%s", job_id)
     except Exception as exc:
         message = str(exc)[:1000]
+        failure_learning = None
         try:
-            await remember_failure(
+            failure_learning = await remember_failure(
                 store.db,
                 job_id=job_id,
                 error_message=message,
@@ -215,7 +216,8 @@ async def process_agent(job_id: str, store: PersistentStore, settings: Settings,
             )
         except Exception:
             logger.exception("could not persist failure learning job=%s", job_id)
-        if attempts < max_attempts:
+        retryable = bool((failure_learning or {}).get("retryable", True))
+        if attempts < max_attempts and retryable:
             await store.update_job(job_id, "retrying", attempts=attempts, error_message=message)
             await store.db.update("hermes_agent_runs", {
                 "status": "pending",
