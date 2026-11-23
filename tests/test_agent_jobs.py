@@ -9,12 +9,28 @@ from worker.main import recover_pending
 class FakeDB:
     def __init__(self):
         self.updates = []
+        self.memory = {}
 
     async def update(self, table, values, *, where):
         self.updates.append((table, values, where))
         return {"id": where["id"].removeprefix("eq.")}
 
+    async def select(self, table, params):
+        if table != "hermes_agent_memory":
+            return []
+        key = str(params.get("key") or "").removeprefix("eq.")
+        if key:
+            value = self.memory.get(key)
+            return [{"value": value["value"]}] if value else []
+        if params.get("source") == "eq.worker_recovery":
+            return list(self.memory.values())[: int(params.get("limit", 8))]
+        return []
 
+    async def upsert(self, table, values, *, conflict):
+        assert table == "hermes_agent_memory"
+        assert conflict == "key"
+        self.memory[values["key"]] = dict(values)
+        return dict(values)
 class FakeStore:
     def __init__(self):
         self.job = {"id": "run-1", "job_type": "agent_run", "status": "pending", "attempts": 0, "max_attempts": 3, "payload": {"instruction": "Audite a fila"}}
