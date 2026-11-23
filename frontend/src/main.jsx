@@ -255,7 +255,7 @@ function Publish({ product, integrations, refresh, notify }) {
   const kiwify = getIntegration("kiwify");
   const hotmart = getIntegration("hotmart");
   const saved = product?.metadata?.publications?.kiwify || {};
-  const isPublishable = ["ready_to_publish", "completed"].includes(product?.status);
+  const isPublishable = product?.status === "ready_to_publish";
   const [productId, setProductId] = useState(saved.product_id || "");
   const [checkoutUrl, setCheckoutUrl] = useState(saved.checkout_url || "");
   const [saving, setSaving] = useState(false);
@@ -300,8 +300,9 @@ function Publish({ product, integrations, refresh, notify }) {
   return <Page title="Publicação" sub="Associe o checkout real da Kiwify ao ebook pronto.">
     <div className="panel">
       <h3>{product.title || product.topic}</h3>
-      <p>Kiwify — webhook: <b>{kiwify?.status === "connected" ? "configurado" : "não configurado"}</b></p>
-      <p>Hotmart — webhook: <b>{hotmart?.status || "não verificada"}</b></p>
+      <p>Kiwify — credenciais: <b>{kiwify?.status === "configured" ? "configuradas; OAuth precisa de confirmação em Integrações" : kiwify?.status || "não configuradas"}</b></p>
+      <p>Webhook: <b>não validado nesta tela; confira o status em Integrações e os logs no painel Kiwify.</b></p>
+      <p>Hotmart (opcional): <b>{hotmart?.status || "não configurada"}</b></p>
       <p>Arquivos disponíveis: <b>{artifactEntries.length ? "sim" : "não"}</b></p>
       {artifactEntries.map(([key, value]) => <p key={key}><b>{key}:</b> <a href={value} target="_blank" rel="noreferrer">abrir arquivo ↗</a></p>)}
     </div>
