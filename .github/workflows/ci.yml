@@ -80,7 +80,7 @@ jobs:
           PGPASSWORD: postgres
         run: |
           SEED_COUNT="$(psql -h localhost -U postgres -d hermes_test -At -c "SELECT count(*) FROM public.hermes_agents WHERE approved_by = 'system_seed' AND status = 'active'")"
-          RLS_ENABLED="$(psql -h localhost -U postgres -d hermes_test -At -c "SELECT bool_and(relrowsecurity)::text FROM pg_class WHERE oid IN ('public.hermes_agents'::regclass, 'public.hermes_agent_execution_runs'::regclass)")"
+          RLS_ENABLED="$(psql -h localhost -U postgres -d hermes_test -At -c "SELECT bool_and(relrowsecurity) FROM pg_class WHERE oid IN ('public.hermes_agents'::regclass, 'public.hermes_agent_execution_runs'::regclass)")"
           ANON_SELECT="$(psql -h localhost -U postgres -d hermes_test -At -c "SELECT has_table_privilege('anon', 'public.hermes_agents', 'SELECT')")"
           SERVICE_SELECT="$(psql -h localhost -U postgres -d hermes_test -At -c "SELECT has_table_privilege('service_role', 'public.hermes_agents', 'SELECT')")"
           echo "seed_count=$SEED_COUNT rls_enabled=$RLS_ENABLED anon_select=$ANON_SELECT service_role_select=$SERVICE_SELECT"
