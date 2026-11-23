@@ -113,3 +113,34 @@ async def test_persistent_recovery_requeues_retrying_agent_job():
     store.recoverable_jobs = [{"id": "run-1", "job_type": "agent_run", "status": "retrying"}]
     await recover_pending(store, queue)
     assert queue.enqueued == ["run-1"]
+
+
+@pytest.mark.asyncio
+async def test_agent_job_persists_failure_learning_then_marks_it_recovered(monkeypatch):
+    calls = {"count": 0}
+
+    async def fail_then_succeed(instruction, settings):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("Gemini HTTP 503 temporarily unavailable")
+        return {"output": "Tarefa concluída após recuperação", "specialists": {}}
+
+    monkeypatch.setattr(agent_jobs, "run_chief", fail_then_succeed)
+    store, queue = FakeStore(), FakeQueue()
+
+    await agent_jobs.process_agent("run-1", store, SimpleNamespace(), queue)
+    assert store.job["status"] == "retrying"
+    assert len(store.db.memory) == 1
+    key, record = next(iter(store.db.memory.items()))
+    assert record["value"]["category"] == "transient_provider"
+    assert record["value"]["last_outcome"] == "retry_scheduled"
+
+    store.job["status"] = "pending"
+    await agent_jobs.process_agent("run-1", store, SimpleNamespace(), queue)
+
+    assert store.job["status"] == "completed"
+    assert calls["count"] == 2
+    learned = store.db.memory[key]["value"]
+    assert learned["last_outcome"] == "recovered"
+    assert learned["successful_job_id"] == "run-1"
+    assert learned["successful_attempt"] == 2
