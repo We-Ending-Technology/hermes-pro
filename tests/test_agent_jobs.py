@@ -31,6 +31,8 @@ class FakeDB:
         assert conflict == "key"
         self.memory[values["key"]] = dict(values)
         return dict(values)
+
+
 class FakeStore:
     def __init__(self):
         self.job = {"id": "run-1", "job_type": "agent_run", "status": "pending", "attempts": 0, "max_attempts": 3, "payload": {"instruction": "Audite a fila"}}
@@ -102,6 +104,9 @@ async def test_chief_receives_live_operational_facts(monkeypatch):
             "hermes_system_health": [
                 {"component": "worker", "status": "ok", "message": "Redis PING succeeded"}
             ],
+            "hermes_agent_memory": [
+                {"key": "worker_recovery:transient_provider:test", "value": {"category": "transient_provider", "last_outcome": "recovered"}, "updated_at": "2026-11-23T00:00:00Z"}
+            ],
         }.get(table, [])
     store.db.select = fake_select
     captured = {}
@@ -119,6 +124,7 @@ async def test_chief_receives_live_operational_facts(monkeypatch):
     assert "review_required" in captured["instruction"]
     assert "PURCHASE_APPROVED" in captured["instruction"]
     assert "Redis PING succeeded" in captured["instruction"]
+    assert "transient_provider" in captured["instruction"]
     saved = next(values for table, values, _ in store.db.updates if table == "hermes_agent_runs" and values.get("status") == "completed")
     assert saved["output"]["operational_context"]["sales"]["approved_purchase_events"] == 1
 
