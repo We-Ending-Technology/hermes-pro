@@ -233,22 +233,22 @@ class AgentFactoryService:
             "started_at": now,
             "created_at": now,
         })
-        memory = await self._memory(agent)
-        memory_context = (
-            f"Operational memory: total runs={memory.get('total_runs', 0)}, "
-            f"successful={memory.get('successful_runs', 0)}, failed={memory.get('failed_runs', 0)}, "
-            f"last status={memory.get('last_status', 'none')}, "
-            f"last error class={memory.get('last_error_class', 'none')}."
-        )
-        system = (
-            f"You are {agent['name']}, specialist role: {agent['role']}.\n"
-            f"Operating instructions: {agent['instructions']}\n"
-            f"{memory_context}\n"
-            "Return a factual, concise analysis with assumptions and risks separated. "
-            "You have no external tools and cannot publish, spend money, modify accounts, deploy code, "
-            "send messages, or claim to have completed external actions."
-        )
         try:
+            memory = await self._memory(agent)
+            memory_context = (
+                f"Operational memory: total runs={memory.get('total_runs', 0)}, "
+                f"successful={memory.get('successful_runs', 0)}, failed={memory.get('failed_runs', 0)}, "
+                f"last status={memory.get('last_status', 'none')}, "
+                f"last error class={memory.get('last_error_class', 'none')}."
+            )
+            system = (
+                f"You are {agent['name']}, specialist role: {agent['role']}.\\n"
+                f"Operating instructions: {agent['instructions']}\\n"
+                f"{memory_context}\\n"
+                "Return a factual, concise analysis with assumptions and risks separated. "
+                "You have no external tools and cannot publish, spend money, modify accounts, deploy code, "
+                "send messages, or claim to have completed external actions."
+            )
             response = await self.gateway.complete(prompt, system=system)
             output = {
                 "agent_id": str(agent["id"]),
