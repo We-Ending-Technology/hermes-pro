@@ -175,10 +175,17 @@ async def recovery_probe_tick(store: PersistentStore, queue) -> dict[str, Any]:
         idempotency_key=idempotency_key,
     )
     status = str(job.get("status") or "pending")
-    if status in {"pending", "retrying"}:
+    if status == "pending":
         await queue.enqueue_agent(str(job["id"]))
         return {
             "status": "probe_queued",
+            "run_id": str(job["id"]),
+            "idempotency_key": idempotency_key,
+            "ai_calls": 0,
+        }
+    if status == "retrying":
+        return {
+            "status": "waiting_for_retry_lease",
             "run_id": str(job["id"]),
             "idempotency_key": idempotency_key,
             "ai_calls": 0,
