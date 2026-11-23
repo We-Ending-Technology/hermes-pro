@@ -62,3 +62,8 @@ AUTONOMY_INTERVAL_SECONDS=900
 ```
 
 The agent layer does not replace the existing Factory, Studio, Jobs, Worker or Supabase persistence. It orchestrates them. External marketplace/social integrations remain separate and require their own official credentials.
+
+
+## Documentação de continuidade
+
+Consulte [`docs/CONTINUITY_AND_ARCHITECTURE.md`](docs/CONTINUITY_AND_ARCHITECTURE.md) para a visão do produto, arquitetura, estado técnico registrado, critérios de validação, segurança e plano de trabalho do Hermes Pro.
