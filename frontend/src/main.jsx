@@ -245,7 +245,7 @@ function RadarView({ data, run }) {
       <p><b>Decisão:</b> {data.decision === "positive" ? "Sinal positivo preliminar — exige validação adicional." : "Evidência insuficiente — não conclua que não existe demanda."}</p>
       <p><b>Fonte:</b> <a href={data.source_url} target="_blank" rel="noreferrer">{data.source || "Google Trends Brasil"} ↗</a></p>
       <small>Consultado em: {data.queried_at ? new Date(data.queried_at).toLocaleString("pt-BR") : "—"}</small>
-      {(data.matches || []).length ? <div className="job-list">{data.matches.map((item, index) => <article className="panel" key={item.title + index}><strong>{item.title}</strong><p>Tráfego aproximado: {item.approx_traffic || "não informado"}</p><small>{item.published_at || "Data não informada"}</small></article>)}</div> : <p>O feed de tendências não apresentou correspondências. Isso não substitui pesquisa de palavras-chave, análise de concorrência ou histórico de busca.</p>}
+      {(data.signals || []).length ? <div className="job-list">{data.matches.map((item, index) => <article className="panel" key={item.title + index}><strong>{item.title}</strong><p>Tráfego aproximado: {item.approx_traffic || "não informado"}</p><small>{item.published_at || "Data não informada"}</small></article>)}</div> : <p>O feed de tendências não apresentou correspondências. Isso não substitui pesquisa de palavras-chave, análise de concorrência ou histórico de busca.</p>}
       {(data.limitations || []).map(item => <p key={item}>• {item}</p>)}
     </div>}
   </Page>;
