@@ -4,7 +4,7 @@ const PROXY_API = "";
 async function request(base, path, options = {}) {
   const response = await fetch(`${base}${path}`, {
     ...options,
-    headers: { "Content-Type": "application/json", ...(typeof localStorage !== "undefined" && localStorage.getItem("hermes_api_key") ? { "X-Hermes-API-Key": localStorage.getItem("hermes_api_key") } : {}), ...(options.headers || {}) },
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
   });
   const text = await response.text();
   let body = {};
