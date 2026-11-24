@@ -62,7 +62,9 @@ function App() {
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => { try { localStorage.setItem("wet-hermes-chat", JSON.stringify(chat.slice(-80))); } catch {} }, [chat]);\n\n  const logout = () => setView("Início");
+  useEffect(() => { try { localStorage.setItem("wet-hermes-chat", JSON.stringify(chat.slice(-80))); } catch {} }, [chat]);
+
+  const logout = () => setView("Início");
 
   const action = async (fn, success = "") => {
     setBusy(true);
