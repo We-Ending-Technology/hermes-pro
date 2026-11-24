@@ -10,6 +10,7 @@ from backend.app.ai_gateway.factory import build_ai_gateway
 from backend.app.core.config import Settings
 from backend.app.schemas_ext import is_kiwify_publishable_product
 from backend.app.services.persistence import PersistentStore
+from backend.app.services.ai_budget import get_ai_budget_status
 from backend.app.services.market_radar import validate_and_record_niche
 
 logger = logging.getLogger("hermes.autonomy")
@@ -54,6 +55,10 @@ async def supervision_tick(settings: Settings, store: PersistentStore, queue) ->
     """Queue one persistent Chief review only when actionable exceptions exist."""
     if not settings.autonomy_enabled:
         return {"status": "disabled"}
+
+    budget = await get_ai_budget_status(store.db)
+    if not budget["allowed"]:
+        return {"status": "blocked_ai_budget", "budget": budget}
 
     jobs = await store.list_jobs()
     products = await store.list_products()
@@ -220,6 +225,10 @@ async def autonomy_tick(settings: Settings, store: PersistentStore, queue) -> di
     """Create at most one new product per tick, subject to explicit capacity limits."""
     if not settings.autonomy_enabled:
         return {"status": "disabled"}
+
+    budget = await get_ai_budget_status(store.db)
+    if not budget["allowed"]:
+        return {"status": "blocked_ai_budget", "budget": budget}
 
     provider = (settings.ai_provider or "").strip().lower()
     primary_available = (
