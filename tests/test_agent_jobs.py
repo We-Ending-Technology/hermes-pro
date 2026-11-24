@@ -98,6 +98,13 @@ async def test_chief_receives_live_operational_facts(monkeypatch):
     store = FakeStore()
     async def fake_select(table, params):
         return {
+            "hermes_settings": [
+                {
+                    "kill_switch": False,
+                    "daily_ai_budget": "10",
+                    "daily_total_budget": "10",
+                }
+            ],
             "hermes_products": [
                 {"id": "p1", "title": "Manual Python", "status": "review_required", "current_stage": "reviewer"}
             ],
