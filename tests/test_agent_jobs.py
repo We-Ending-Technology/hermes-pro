@@ -16,6 +16,12 @@ class FakeDB:
         return {"id": where["id"].removeprefix("eq.")}
 
     async def select(self, table, params):
+        if table == "hermes_settings":
+            return [{
+                "kill_switch": False,
+                "daily_ai_budget": "10",
+                "daily_total_budget": "10",
+            }]
         if table != "hermes_agent_memory":
             return []
         key = str(params.get("key") or "").removeprefix("eq.")
