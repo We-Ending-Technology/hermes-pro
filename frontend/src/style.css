@@ -9,3 +9,47 @@
 
 .lowticket-grid{align-items:start}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.form-grid label,.panel>label{display:grid;gap:8px;color:#9ba6c3;font-size:11px;margin-bottom:14px}.form-grid input,.panel>label input,.panel>label textarea{width:100%;border:1px solid var(--line);border-radius:9px;background:rgba(255,255,255,.035);color:#edf0ff;padding:11px 12px;outline:none}.panel>label textarea{min-height:85px;resize:vertical}.signal-list{display:grid;gap:10px;margin:18px 0 20px}.signal-list label{display:grid;grid-template-columns:105px 1fr 28px;align-items:center;gap:10px;color:#8995b4;font:10px 'DM Mono';text-transform:uppercase}.signal-list input{accent-color:#8d78ff}.signal-list b{color:#c7c1ff;text-align:right}.lowticket-result{margin-top:16px;padding:13px;border:1px solid rgba(105,223,170,.2);border-radius:9px;background:rgba(105,223,170,.05);color:#cbd3e9}.lowticket-result b{color:var(--green);font:10px 'DM Mono'}.lowticket-result p{margin:6px 0 0;font-size:11px}.domain-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:18px 0}.domain-chip{border:1px solid var(--line);border-radius:8px;padding:10px 8px;color:#b9b1ff;background:rgba(130,112,255,.06);font:10px 'DM Mono';transition:.2s}.domain-chip:hover{border-color:var(--line-hi);background:rgba(130,112,255,.13);transform:translateY(-1px)}.domain-rules{display:grid;gap:8px;padding-top:15px;border-top:1px solid var(--line);color:#75809e;font-size:10px;line-height:1.6}.domain-rules b{color:#c6cbea}.lowticket-table{overflow-x:auto}.table-head,.table-row{display:grid;grid-template-columns:1.6fr 1.15fr .7fr .7fr .7fr .65fr .75fr;gap:12px;align-items:center;min-width:760px}.table-head{padding:0 0 10px;color:#66728f;font:9px 'DM Mono';text-transform:uppercase}.table-row{padding:13px 0;border-top:1px solid var(--line);color:#aeb7d0;font-size:10px}.table-row>span:first-child{display:grid;gap:3px;color:#e2e5f3}.table-row small{color:#6f7b99;font:9px 'DM Mono'}.table-row strong{font:9px 'DM Mono'}.table-row strong.escalar{color:var(--green)}.table-row strong.testar{color:var(--amber)}.table-row strong.matar{color:var(--red)}.decision-list{display:grid;gap:9px;margin-top:18px;color:#8995b4;font-size:11px}.decision-list span{padding:10px;border-radius:8px;background:rgba(255,255,255,.025)}.decision-list b{margin-right:7px;font:9px 'DM Mono';color:#b5a9ff}.table-panel{padding-bottom:10px}.truth{margin-top:16px}
 @media(max-width:680px){.form-grid{grid-template-columns:1fr}.domain-grid{grid-template-columns:repeat(2,1fr)}.signal-list label{grid-template-columns:85px 1fr 25px}}
+
+
+/* WET Future Luxury / obsidian + brushed metal + restrained emerald */
+:root{
+ --bg:#070a0b;--bg-soft:#0b1110;--panel:rgba(17,24,22,.82);--panel-solid:#111816;--panel-hi:#19221e;
+ --line:rgba(190,207,194,.13);--line-hi:rgba(134,191,163,.38);--muted:#89968d;--soft:#c7d0c8;
+ --violet:#9bd3b5;--violet-2:#4d9273;--cyan:#9bded5;--green:#a9d9b4;--amber:#dfc18a;--red:#e58b83;
+ --shadow:0 26px 90px rgba(0,0,0,.42);
+}
+html,body{background:#070a0b}
+body{background:radial-gradient(ellipse at 78% -18%,rgba(107,153,124,.14),transparent 36%),radial-gradient(ellipse at 0% 55%,rgba(91,117,101,.09),transparent 32%),#070a0b}
+body:before{opacity:.11;background-image:linear-gradient(rgba(224,237,225,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(224,237,225,.025) 1px,transparent 1px);background-size:84px 84px}
+.sidebar{background:linear-gradient(180deg,rgba(13,19,16,.97),rgba(7,10,9,.98));border-right-color:rgba(195,214,197,.12)}
+.brand-mark{border-radius:10px;background:linear-gradient(145deg,#d1ddd2 0%,#789887 48%,#344e41 100%);color:#08100c;box-shadow:0 10px 30px rgba(107,153,124,.2)}
+.brand-mark:after{border-color:rgba(175,208,184,.15)}
+nav button:hover{background:rgba(134,191,163,.07);border-color:rgba(134,191,163,.12)}
+nav button.selected{background:linear-gradient(100deg,rgba(134,191,163,.15),rgba(134,191,163,.025));border-color:rgba(134,191,163,.16);box-shadow:inset 2px 0 #91bba0,0 8px 22px rgba(0,0,0,.16)}
+nav button.selected:after{background:#a5d2b3;box-shadow:0 0 10px rgba(165,210,179,.5)}
+.hero{background:linear-gradient(112deg,rgba(18,27,23,.98),rgba(24,37,30,.94) 62%,rgba(17,27,23,.9));border-color:rgba(173,204,180,.17)}
+.hero:before{background:rgba(107,153,124,.13)}
+.hero-orbit{border-color:rgba(161,204,175,.28);box-shadow:0 0 85px rgba(103,148,118,.1)}
+.hero-orbit:before,.hero-orbit:after{border-color:rgba(161,204,175,.2)}
+.orbit-center{background:linear-gradient(145deg,#b4cbb8,#547d65);color:#08100c;box-shadow:0 0 50px rgba(111,165,129,.38)}
+.orbit-dot{border-color:rgba(161,204,175,.2);background:#1b2a21;color:var(--cyan)}
+.primary{background:linear-gradient(115deg,#a9c9b0,#648c72);color:#07100b;border-color:rgba(218,237,220,.22);box-shadow:0 10px 27px rgba(67,105,78,.2)}
+.primary:hover{box-shadow:0 15px 35px rgba(67,105,78,.3)}
+.panel,.metric,.product-card,.factory-form,.chat-window{background:linear-gradient(145deg,rgba(19,28,23,.88),rgba(10,15,12,.9));border-color:var(--line)}
+.panel{box-shadow:inset 0 1px rgba(220,239,222,.025)}
+.metric:after{background:rgba(134,191,163,.055)}
+.metric.violet strong,.tag,.text-button,.domain-chip{color:#a8d5b5}
+.page-intro h2,.chat-intro h2,.hero h2{letter-spacing:-.06em}
+.chat-window{border-color:rgba(161,204,175,.18)}
+.chat-form input,textarea,.form-grid input,.panel>label input,.panel>label textarea{background:#090f0c;border-color:#34463a;color:#edf4ed}
+.chat-form input:focus,textarea:focus,input:focus{border-color:#91bba0;box-shadow:0 0 0 3px rgba(145,187,160,.1)}
+.suggestions button,.domain-chip{border-color:var(--line);background:rgba(145,187,160,.045)}
+.suggestions button:hover,.domain-chip:hover{border-color:var(--line-hi);background:rgba(145,187,160,.1)}
+.lowticket-result{border-color:rgba(169,217,180,.2);background:rgba(169,217,180,.045)}
+.lowticket-result b,.decision-list b{color:#a9d9b4}
+.signal-list input{accent-color:#91bba0}
+:focus-visible{outline-color:#a9d9b4}
+::-webkit-scrollbar-thumb{background:#33473a}::-webkit-scrollbar-thumb:hover{background:#55745e}
+.empty-state{padding:24px 16px;color:#89968d;font-size:12px;line-height:1.6;border-top:1px solid var(--line)}
+@media(max-width:760px){.main{padding:20px 18px 60px}.sidebar{width:220px}.topbar{gap:12px}.top-actions{gap:7px}.api-label{font-size:9px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important}}
