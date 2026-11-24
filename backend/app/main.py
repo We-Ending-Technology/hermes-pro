@@ -95,24 +95,6 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
 
-@app.middleware("http")
-async def require_private_api_key(request: Request, call_next):
-    public_paths = {"/", "/health", "/ready", "/time", "/api/v1/webhooks/hotmart", "/api/v1/webhooks/kiwify", "/api/v1/webhooks/kiwify/test", "/api/v1/webhooks/shopify"}
-    if request.method == "OPTIONS" or request.url.path in public_paths:
-        return await call_next(request)
-    if not settings.hermes_api_key:
-        return JSONResponse({"detail": "Private API access is not configured."}, status_code=503)
-    supplied = request.headers.get("X-Hermes-API-Key", "")
-    expected = str(settings.hermes_api_key or "")
-    try:
-        valid_key = hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8"))
-    except (AttributeError, UnicodeError):
-        valid_key = False
-    if not supplied or not valid_key:
-        return JSONResponse({"detail": "Acesso privado: chave inválida ou ausente."}, status_code=401)
-    return await call_next(request)
-
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
