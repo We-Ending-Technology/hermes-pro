@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from backend.app.agents.orchestrator import run_chief
 from backend.app.core.config import Settings
 from backend.app.services.persistence import PersistentStore
+from backend.app.services.ai_budget import get_ai_budget_status
 from backend.app.services.recovery_learning import mark_recovered, remember_failure
 
 logger = logging.getLogger("hermes.agent-worker")
@@ -136,8 +137,23 @@ async def process_agent(job_id: str, store: PersistentStore, settings: Settings,
         }, where={"id": f"eq.{job_id}"})
         return
 
-    attempts += 1
     payload = job.get("payload") or {}
+    source = str(payload.get("source") or "")
+    # The deterministic recovery probe has no external model calls.
+    if source != "system_recovery_probe":
+        budget = await get_ai_budget_status(store.db)
+        if not budget["allowed"]:
+            message = "Agente pausado sem consumir tentativas: " + str(budget["message"])
+            await store.update_job(job_id, "paused", attempts=attempts, error_message=message)
+            await store.db.update("hermes_agent_runs", {
+                "status": "paused",
+                "error_message": message,
+                "completed_at": _now(),
+            }, where={"id": f"eq.{job_id}"})
+            logger.info("agent job paused by AI budget guard job=%s reason=%s", job_id, budget["reason"])
+            return
+
+    attempts += 1
     instruction = str(payload.get("instruction", "")).strip()
     if not instruction:
         await store.update_job(job_id, "failed", attempts=attempts, error_message="agent instruction is empty")
