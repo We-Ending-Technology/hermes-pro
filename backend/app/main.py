@@ -160,12 +160,6 @@ async def server_time():
     """Expose authoritative UTC time; clients render it in America/Sao_Paulo."""
     return {"utc": datetime.now(timezone.utc).isoformat(), "timezone": "America/Sao_Paulo"}
 
-@app.get("/api/v1/auth/verify")
-async def verify_private_access():
-    """Confirm the private API key without database or sales dependencies."""
-    return {"authenticated": True}
-
-
 @app.get("/health", response_model=HealthResponse)
 async def health(): return HealthResponse(status="ok", service="hermes-pro-api", environment=settings.app_env)
 
