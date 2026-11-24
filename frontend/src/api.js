@@ -76,6 +76,12 @@ export async function diagnose() {
           message: agents?.ai_provider_last_error || `${agents?.ai_provider || "IA"}: ${agents?.ai_provider_status || "sem estado"}`,
         });
         checks.push({
+          name: "Orçamento de IA",
+          status: agents?.ai_budget?.allowed === true ? "ready" : "error",
+          latency_ms: Date.now() - t,
+          message: agents?.ai_budget?.message || "Não foi possível confirmar a permissão de uso da IA.",
+        });
+        checks.push({
           name: "Fila Redis",
           status: agents?.queue_status === "ready" ? "ready" : "error",
           latency_ms: Date.now() - t,
