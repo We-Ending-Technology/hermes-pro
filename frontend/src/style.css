@@ -56,7 +56,6 @@ nav button.selected:after{background:#a5d2b3;box-shadow:0 0 10px rgba(165,210,17
 
 
 /* WET EVOLUTION PREMIUM — approved visual system, 24 Nov 2026 */
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 :root{
   color-scheme:dark;
   font-family:'Inter',system-ui,sans-serif;
