@@ -11,6 +11,7 @@ from PIL import Image
 from .core.config import get_settings
 from .db.supabase import SupabaseREST
 from .services.ai_images import AIImageError, generate_cover_artwork
+from .services.ai_budget import get_ai_budget_status
 from .services.artifacts import build_cover
 from .services.persistence import PersistentStore
 from .services.storage import StorageError, SupabaseStorage
@@ -81,6 +82,10 @@ async def generate_product_cover(product_id: str, force: bool = False):
             }
         except StorageError:
             pass
+
+    budget = await get_ai_budget_status(store.db)
+    if not budget["allowed"]:
+        raise HTTPException(status_code=402, detail=budget)
 
     try:
         artwork = await generate_cover_artwork(title, subtitle, content_data, settings)
