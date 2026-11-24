@@ -23,6 +23,7 @@ from .queue import JobQueue
 from .schemas import *
 from .schemas_ext import KiwifyPublicationRequest, ProductUpdateRequest, is_kiwify_publishable_product
 from .services.analytics import analytics_service
+from .services.ai_budget import get_ai_budget_status
 from .services.autonomy import AutonomyService
 from .services.integrations import integration_service
 from .services.market_radar import validate_and_record_niche
@@ -43,6 +44,13 @@ store = PersistentStore(db)
 sales_service = SalesService(db)
 queue = JobQueue(settings.redis_url or "redis://localhost:6379/0")
 autonomy = AutonomyService(settings, store)
+
+
+async def _require_ai_budget() -> dict[str, Any]:
+    budget = await get_ai_budget_status(store.db)
+    if not budget["allowed"]:
+        raise HTTPException(status_code=402, detail=budget)
+    return budget
 
 
 async def _run_embedded_worker() -> None:
@@ -272,11 +280,13 @@ async def agents_status():
         and worker_age_seconds is not None
         and worker_age_seconds <= 180
     )
-    # A recent transient provider error should mark the Chief degraded, but must not
-    # prevent durable queueing. The worker can retry the persisted job after recovery.
-    dispatch_ready = ai_ready and redis_ready and worker_ready
+    # Do not enqueue AI work when the persisted operator budget is zero or unknown.
+    budget_status = await get_ai_budget_status(store.db)
+    dispatch_ready = ai_ready and redis_ready and worker_ready and budget_status["allowed"]
     ready = dispatch_ready and not provider_degraded
-    if not ai_ready:
+    if not budget_status["allowed"]:
+        chief_status = "blocked_ai_budget"
+    elif not ai_ready:
         chief_status = "blocked_ai_provider_not_configured"
     elif provider_degraded:
         chief_status = "blocked_ai_provider_recent_error"
@@ -310,6 +320,7 @@ async def agents_status():
         "ai_fallback_ready": fallback_ready,
         "ai_provider_status": "degraded" if provider_degraded else ("ready" if ai_ready else "missing"),
         "ai_provider_last_error": provider_last_error,
+        "ai_budget": budget_status,
         "queue_status": "ready" if redis_ready else "unavailable",
         "worker_status": "ready" if worker_ready else "unavailable",
         "worker_last_seen_at": worker_row.get("checked_at") if worker_row else None,
@@ -346,6 +357,7 @@ async def dispatch_agent(request: AgentRunRequest):
 
 @app.post("/api/v1/agents/run", response_model=AgentRunResponse)
 async def run_agent(request: AgentRunRequest):
+    await _require_ai_budget()
     try: agent = registry.get(request.agent)
     except KeyError as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
     output = await agent.run(request.input)
@@ -354,6 +366,7 @@ async def run_agent(request: AgentRunRequest):
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
+    await _require_ai_budget()
     now = datetime.now().astimezone()
     temporal_context = now.strftime("%Y-%m-%d %H:%M:%S %Z (weekday=%A)")
     result = await ai_gateway.complete(
@@ -402,6 +415,7 @@ async def products():
 
 @app.post("/api/v1/products", response_model=ProductResponse, status_code=202)
 async def create_product(request: ProductCreateRequest):
+    await _require_ai_budget()
     try:
         metadata = dict(request.metadata or {})
         # A direct, authenticated request from the private Factory UI is an
@@ -473,6 +487,7 @@ async def radar_validate(payload: dict[str, Any]):
 @app.post("/api/v1/products/{product_id}/rebuild-existing")
 async def rebuild_existing_ebook(product_id: str):
     """Rebuild files from existing content only when no paid text-model call is needed."""
+    await _require_ai_budget()
     row = await store.get_product(product_id)
     if not row:
         raise HTTPException(status_code=404, detail="product not found")
