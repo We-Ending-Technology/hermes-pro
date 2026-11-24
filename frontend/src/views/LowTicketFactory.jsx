@@ -1,11 +1,6 @@
 import { useMemo, useState } from "react";
 
 const DOMAIN_PATTERNS = ["Nexora","Velora","Novara","Lumora","Veyra","Solvra","Nuvora","Elvora","Zenvora","Axora","Virelo","Nexivo","Velivo","Novilo","Omnira"];
-const TEST_PRODUCTS = [
-  { name:"Budget Starter Kit", niche:"Personal Finance", price:9.9, revenue:127, costs:21, conversion:2.8, status:"ESCALAR" },
-  { name:"7-Day Focus Planner", niche:"Productivity", price:7.9, revenue:43, costs:38, conversion:0.7, status:"TESTAR" },
-  { name:"AI Prompt Toolkit", niche:"AI", price:12.9, revenue:12, costs:31, conversion:0.2, status:"MATAR" }
-];
 function scoreOpportunity({ demand, competition, differentiation, difficulty, pricing, clarity }) {
   return Math.round(demand*.25+(100-competition)*.15+differentiation*.2+(100-difficulty)*.15+pricing*.15+clarity*.1);
 }
@@ -19,7 +14,7 @@ export default function LowTicketFactory() {
       <article className="metric"><span>Oportunidade</span><strong>{score}/100</strong><small>score heurístico</small></article>
       <article className="metric"><span>Preço alvo</span><strong>\${price}</strong><small>low ticket</small></article>
       <article className="metric"><span>Lucro estimado</span><strong>\${estimatedProfit.toFixed(2)}</strong><small>antes de ads/refunds</small></article>
-      <article className="metric"><span>Produtos em teste</span><strong>3</strong><small>exemplo operacional</small></article>
+      <article className="metric"><span>Produtos em teste</span><strong>0</strong><small>nenhum produto real conectado</small></article>
     </div>
     <div className="two-col lowticket-grid">
       <div className="panel">
@@ -40,7 +35,7 @@ export default function LowTicketFactory() {
     </div>
     <div className="section-heading"><div><span className="kicker violet">03 / PORTFOLIO</span><h3>Profit-first scoreboard</h3></div></div>
     <div className="panel table-panel"><div className="lowticket-table"><div className="table-head"><span>Produto</span><span>Nicho</span><span>Receita</span><span>Custos</span><span>Lucro</span><span>Conv.</span><span>Status</span></div>
-      {TEST_PRODUCTS.map(p=><div className="table-row" key={p.name}><span><b>{p.name}</b><small>\${p.price}</small></span><span>{p.niche}</span><span>\${p.revenue}</span><span>\${p.costs}</span><span>\${p.revenue-p.costs}</span><span>{p.conversion}%</span><strong className={p.status.toLowerCase()}>{p.status}</strong></div>)}
+      <div className="empty-state">Nenhum produto com vendas conectado. Os resultados aparecerão aqui quando houver dados reais da plataforma.</div>
     </div></div>
     <div className="two-col">
       <div className="panel"><span className="kicker violet">04 / DECISION ENGINE</span><h3>ESCALAR / TESTAR / MATAR</h3><p>O Hermes deve decidir pelo lucro e pelos sinais de conversão, não por faturamento isolado.</p><div className="decision-list"><span><b>ESCALAR</b> margem + conversão comprovadas</span><span><b>TESTAR</b> sinal promissor, mas gargalo identificado</span><span><b>MATAR</b> prejuízo persistente sem hipótese melhor</span></div></div>
