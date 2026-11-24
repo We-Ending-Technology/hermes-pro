@@ -2,11 +2,19 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.main import app, settings
+from backend.app import main as main_module
 
 
 @pytest.fixture(autouse=True)
-def configure_test_api_key(monkeypatch):
-    monkeypatch.setattr(settings, "hermes_api_key", "test-hermes-key")
+def configure_test_ai_budget(monkeypatch):
+    async def allow_test_budget():
+        return {
+            "allowed": True,
+            "reason": "test_budget",
+            "daily_ai_budget": "10",
+            "daily_total_budget": "10",
+        }
+    monkeypatch.setattr(main_module, "_require_ai_budget", allow_test_budget)
 
 
 def test_health() -> None:
@@ -68,14 +76,11 @@ def test_kiwify_webhook_requires_official_hmac_signature(monkeypatch):
     append_event.assert_awaited_once()
 
 
-def test_unicode_api_key_header_returns_401_not_internal_server_error():
+def test_health_does_not_require_manual_api_key():
     with TestClient(app) as client:
-        response = client.get(
-            "/api/v1/dashboard",
-            headers=[(b"X-Hermes-API-Key", b"chave-\xff-invalida")],
-        )
-    assert response.status_code == 401
-    assert response.json()["detail"] == "Acesso privado: chave inválida ou ausente."
+        response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
 
 def test_ai_provider_key_configured_recognizes_groq_fallback():
     from backend.app.api_commercial import _ai_provider_key_configured
