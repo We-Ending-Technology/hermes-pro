@@ -102,7 +102,7 @@ function App() {
 
   return <div className="shell">
     <aside className="sidebar">
-      <div className="brand"><div className="brand-mark">W</div><div><strong>WE ENDING</strong><span>TECHNOLOGY · PRIVATE COMMAND</span></div></div>
+      <div className="brand"><div className="brand-mark">WET</div><div className="brand-name"><strong>WE ENDING</strong><strong>TECHNOLOGY</strong><span>INTELLIGENCE SYSTEMS</span></div></div>
       <div className="live-pill"><i className={online ? "online" : "offline"}></i>{online ? "SISTEMA ONLINE" : "API OFFLINE"}</div>
       <nav>{NAV.map(([icon, label]) => <button key={label} className={view === label ? "selected" : ""} onClick={() => setView(label)}><b>{icon}</b>{label}</button>)}</nav>
       <div className="sidebar-foot"><span>LIVE OPS • REAL DATA</span><button onClick={refresh}>↻ Atualizar</button></div>
@@ -139,8 +139,8 @@ const Page = ({ title, sub, children }) => <section className="page"><div classN
 const Empty = ({ text }) => <div className="panel empty">{text}</div>;
 
 function Home({ dashboard, products, jobs, go, select, diagnostics, runDiagnostics }) {
-  return <Page title="Command Center" sub="Operação comercial ligada ao backend real.">
-    <section className="hero"><div><K>WE ENDING TECHNOLOGY · AUTONOMOUS INTELLIGENCE</K><h2>Complexidade<br/><em>sob controle.</em></h2><p>Uma central privada de inteligência, automação e execução. Dados reais, agentes especializados e operações sob controle.</p><Button primary onClick={() => go("Fábrica")}>＋ Criar produto</Button></div><div className="hero-orbit"><div className="orbit-center">W<span>ET</span></div><div className="orbit-dot dot-one">✦</div><div className="orbit-dot dot-two">↗</div><div className="orbit-dot dot-three">$</div></div></section>
+  return <Page title="WE ENDING TECHNOLOGY" sub="INTELLIGENCE • AUTOMATION • EXECUTION">
+    <section className="hero"><div><K>PRIVATE INTELLIGENCE COMMAND · EST. 2026</K><h2>ENGINEER<br/><em>THE FUTURE.</em></h2><p>Inteligência que transforma complexidade em execução. Um ecossistema privado de agentes, automação e operações — projetado para operar com precisão.</p><Button primary onClick={() => go("Fábrica")}>＋ Criar produto</Button></div><div className="hero-orbit"><div className="orbit-center">WET<span>INTELLIGENCE</span></div><div className="orbit-dot dot-one">✦</div><div className="orbit-dot dot-two">↗</div><div className="orbit-dot dot-three">$</div></div></section>
     <div className="metric-grid"><Metric label="Produtos" value={dashboard.products ?? 0}/><Metric label="Jobs ativos" value={dashboard.active_jobs ?? 0}/><Metric label="Concluídos" value={dashboard.completed_products ?? 0}/><Metric label="Vendas" value={dashboard.sales ?? 0}/></div>
     <div className="section-heading"><div><K>SISTEMA</K><h3>Conectividade</h3></div><Button onClick={runDiagnostics}>Diagnosticar agora</Button></div>
     <DiagnosticsPanel data={diagnostics} />
