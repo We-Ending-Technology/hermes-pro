@@ -102,13 +102,13 @@ function App() {
 
   return <div className="shell">
     <aside className="sidebar">
-      <div className="brand"><div className="brand-mark">H</div><div><strong>HERMES</strong><span>PRO / COMMAND CENTER</span></div></div>
+      <div className="brand"><div className="brand-mark">W</div><div><strong>WE ENDING</strong><span>TECHNOLOGY · PRIVATE COMMAND</span></div></div>
       <div className="live-pill"><i className={online ? "online" : "offline"}></i>{online ? "SISTEMA ONLINE" : "API OFFLINE"}</div>
       <nav>{NAV.map(([icon, label]) => <button key={label} className={view === label ? "selected" : ""} onClick={() => setView(label)}><b>{icon}</b>{label}</button>)}</nav>
       <div className="sidebar-foot"><span>LIVE OPS • REAL DATA</span><button onClick={refresh}>↻ Atualizar</button></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div><span className="kicker">HERMES PRO / MONEY OPERATIONS</span><h1>{view}</h1></div><div className="top-actions"><span className="api-label"><i className={online ? "online" : "offline"}></i>{online ? "Backend conectado" : "Backend indisponível"}</span><button className="icon-button" onClick={runDiagnostics}>⌁</button><button className="icon-button" onClick={refresh}>↻</button><button className="icon-button" onClick={logout}>Sair</button><button className="avatar">W</button></div></header>
+      <header className="topbar"><div><span className="kicker">WE ENDING TECHNOLOGY / INTELLIGENCE OPERATIONS</span><h1>{view}</h1></div><div className="top-actions"><span className="api-label"><i className={online ? "online" : "offline"}></i>{online ? "Backend conectado" : "Backend indisponível"}</span><button className="icon-button" onClick={runDiagnostics}>⌁</button><button className="icon-button" onClick={refresh}>↻</button><button className="icon-button" onClick={logout}>Sair</button><button className="avatar">W</button></div></header>
       {notice && <div className="notice">{notice}<button onClick={() => setNotice("")}>×</button></div>}
       {busy && <div className="loading-line"><i /> sincronizando dados reais…</div>}
       {view === "Início" && <Home dashboard={dashboard} products={products} jobs={jobs} go={setView} select={selectProduct} diagnostics={diagnostics} runDiagnostics={runDiagnostics} />}
@@ -140,7 +140,7 @@ const Empty = ({ text }) => <div className="panel empty">{text}</div>;
 
 function Home({ dashboard, products, jobs, go, select, diagnostics, runDiagnostics }) {
   return <Page title="Command Center" sub="Operação comercial ligada ao backend real.">
-    <section className="hero"><div><K>LIVE PRODUCT ENGINE</K><h2>Ideia → produto → venda.</h2><p>O Hermes não inventa métricas nem estados de publicação.</p><Button primary onClick={() => go("Fábrica")}>＋ Criar produto</Button></div><div className="hero-orbit"><div className="orbit-center">H<span>AI</span></div><div className="orbit-dot dot-one">✦</div><div className="orbit-dot dot-two">↗</div><div className="orbit-dot dot-three">$</div></div></section>
+    <section className="hero"><div><K>WE ENDING TECHNOLOGY · AUTONOMOUS INTELLIGENCE</K><h2>Complexidade<br/><em>sob controle.</em></h2><p>Uma central privada de inteligência, automação e execução. Dados reais, agentes especializados e operações sob controle.</p><Button primary onClick={() => go("Fábrica")}>＋ Criar produto</Button></div><div className="hero-orbit"><div className="orbit-center">W<span>ET</span></div><div className="orbit-dot dot-one">✦</div><div className="orbit-dot dot-two">↗</div><div className="orbit-dot dot-three">$</div></div></section>
     <div className="metric-grid"><Metric label="Produtos" value={dashboard.products ?? 0}/><Metric label="Jobs ativos" value={dashboard.active_jobs ?? 0}/><Metric label="Concluídos" value={dashboard.completed_products ?? 0}/><Metric label="Vendas" value={dashboard.sales ?? 0}/></div>
     <div className="section-heading"><div><K>SISTEMA</K><h3>Conectividade</h3></div><Button onClick={runDiagnostics}>Diagnosticar agora</Button></div>
     <DiagnosticsPanel data={diagnostics} />
