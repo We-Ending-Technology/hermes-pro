@@ -27,6 +27,7 @@ from backend.app.services.ebook_validation import (
     validate_ebook,
 )
 from backend.app.services.persistence import PersistentStore
+from backend.app.services.ai_budget import get_ai_budget_status
 from backend.app.services.storage import SupabaseStorage
 from backend.app.services.telegram import TelegramNotifier
 from worker.agent_jobs import process_agent
@@ -450,6 +451,26 @@ async def process_product(job_id: str, store: PersistentStore, queue: JobQueue) 
     topic = (job.get("payload") or {}).get("topic")
     if not product_id or not topic:
         await store.update_job(job_id, "failed", attempts=attempts, error_message="invalid product_generation payload")
+        return
+
+    budget = await get_ai_budget_status(store.db)
+    if not budget["allowed"]:
+        message = "Produção pausada sem consumir tentativas: " + str(budget["message"])
+        await store.update_job(
+            job_id,
+            "paused",
+            attempts=int(job.get("attempts", 0)),
+            error_message=message,
+        )
+        current = await store.get_product(product_id)
+        if current and current.get("status") in {"queued", "generating", "generating_artifacts"}:
+            metadata = dict(current.get("metadata") or {})
+            metadata["execution_blocked_by_budget"] = {
+                "reason": budget["reason"],
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await store.update_product(product_id, status="paused", metadata=metadata)
+        logger.info("product job paused by AI budget guard job=%s reason=%s", job_id, budget["reason"])
         return
 
     async def checkpoint() -> bool:
