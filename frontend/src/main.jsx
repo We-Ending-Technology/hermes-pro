@@ -15,9 +15,7 @@ const DEFAULT_RADAR = { demand: 80, competition: 45, differentiation: 75, produc
 
 function App() {
   const [view, setView] = useState("Início");
-  const [apiAccess, setApiAccess] = useState("checking");
-  const [apiKeyInput, setApiKeyInput] = useState("");
-  const [apiKeyError, setApiKeyError] = useState("");
+
   const [products, setProducts] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [integrations, setIntegrations] = useState([]);
@@ -53,11 +51,7 @@ function App() {
     catch (error) { if (path === "/health") setNotice(error.message); return null; }
   };
 
-  useEffect(() => {
-    const savedKey = localStorage.getItem("hermes_api_key");
-    if (!savedKey) { setApiAccess("login"); return; }
-    call("/api/v1/agents/status").then(() => setApiAccess("authenticated")).catch(() => { localStorage.removeItem("hermes_api_key"); setApiAccess("login"); });
-  }, []);
+
 
   useEffect(() => {
     if (apiAccess !== "authenticated") return;
@@ -66,14 +60,7 @@ function App() {
     return () => clearInterval(timer);
   }, [apiAccess]);
 
-  const login = async (event) => {
-    event.preventDefault(); setApiKeyError("");
-    localStorage.setItem("hermes_api_key", apiKeyInput);
-    try { await call("/api/v1/agents/status"); setApiKeyInput(""); setApiAccess("authenticated"); }
-    catch (error) { localStorage.removeItem("hermes_api_key"); setApiKeyError(error.message); }
-  };
-
-  const logout = () => { localStorage.removeItem("hermes_api_key"); setApiAccess("login"); setView("Início"); };
+  const logout = () => setView("Início");
 
   const action = async (fn, success = "") => {
     setBusy(true);
@@ -112,8 +99,7 @@ function App() {
   const loadSales = () => action(() => call("/api/v1/sales"), "Vendas atualizadas.").then(setSales);
   const loadAnalytics = () => action(() => call("/api/v1/analytics"), "Analytics atualizado.").then(setAnalytics);
 
-  if (apiAccess === "checking") return <div className="shell"><main className="main"><section className="page"><div className="panel">Verificando acesso privado…</div></section></main></div>;
-  if (apiAccess !== "authenticated") return <AccessGate value={apiKeyInput} setValue={setApiKeyInput} error={apiKeyError} onSubmit={login} />;
+
 
   return <div className="shell">
     <aside className="sidebar">
@@ -147,15 +133,6 @@ function App() {
   </div>;
 }
 
-
-function AccessGate({ value, setValue, error, onSubmit }) {
-  return <div className="shell"><main className="main"><section className="page">
-    <div className="page-intro"><K>HERMES PRO</K><h2>Área privada</h2><p>Informe sua chave de acesso para abrir o Command Center.</p></div>
-    <form className="factory-form" onSubmit={onSubmit}><label>Chave privada<input type="password" value={value} onChange={e => setValue(e.target.value)} autoComplete="current-password" required /></label>
-      <div className="form-footer"><span>Somente o proprietário tem acesso.</span><Button primary type="submit">Entrar ↗</Button></div>
-      {error && <p role="alert">{error}</p>}
-    </form></section></main></div>;
-}
 
 const K = ({ children }) => <span className="kicker violet">{children}</span>;
 const Button = ({ children, onClick, primary = false, type = "button", disabled = false }) => <button type={type} disabled={disabled} className={primary ? "primary" : "text-button"} onClick={onClick}>{children}</button>;
