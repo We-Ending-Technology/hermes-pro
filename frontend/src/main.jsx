@@ -54,11 +54,10 @@ function App() {
 
 
   useEffect(() => {
-    if (apiAccess !== "authenticated") return;
-    refresh();
-    const timer = setInterval(refresh, 10000);
+    void refresh();
+    const timer = setInterval(() => { void refresh(); }, 30000);
     return () => clearInterval(timer);
-  }, [apiAccess]);
+  }, []);
 
   const logout = () => setView("Início");
 
