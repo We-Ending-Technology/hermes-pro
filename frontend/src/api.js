@@ -10,7 +10,9 @@ async function request(base, path, options = {}) {
   let body = {};
   try { body = text ? JSON.parse(text) : {}; } catch { body = { detail: text }; }
   if (!response.ok) {
-    const error = new Error(body.detail || `HTTP ${response.status}`);
+    const detail = body.detail;
+    const message = typeof detail === "string" ? detail : (detail?.message || detail?.detail || body.message || `HTTP ${response.status}`);
+    const error = new Error(message);
     error.status = response.status;
     error.base = base || "proxy";
     throw error;
