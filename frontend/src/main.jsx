@@ -28,6 +28,7 @@ function App() {
   const [topic, setTopic] = useState("");
   const [chat, setChat] = useState([]);
   const [chatInput, setChatInput] = useState("");
+  const [chatSending, setChatSending] = useState(false);
   const [radar, setRadar] = useState(null);
   const [sales, setSales] = useState(null);
   const [analytics, setAnalytics] = useState(null);
@@ -84,13 +85,38 @@ function App() {
   const sendChat = async (event) => {
     event.preventDefault();
     const text = chatInput.trim();
-    if (!text) return;
-    setChat(items => [...items, { role: "user", text }]);
+    if (!text || chatSending) return;
+    const nextHistory = [...chat, { role: "user", text }].slice(-10);
+    setChat(nextHistory);
     setChatInput("");
-    const result = await action(() => call("/api/v1/chat", {
-      method: "POST", body: JSON.stringify({ message: text })
-    }));
-    if (result) setChat(items => [...items, { role: "assistant", text: result.response, meta: `${result.provider || "AI"} · ${result.model || "modelo"}` }]);
+    setChatSending(true);
+    const conversation = nextHistory
+      .map(item => `${item.role === "user" ? "Usuário" : "Hermes"}: ${item.text}`)
+      .join("\n")
+      .slice(-3800);
+    try {
+      const result = await call("/api/v1/chat", {
+        method: "POST",
+        body: JSON.stringify({ message: conversation })
+      });
+      setChat(items => [...items, {
+        role: "assistant",
+        text: result.response,
+        meta: `${result.provider || "IA"} · ${result.model || "modelo"}`
+      }]);
+    } catch (error) {
+      const detail = error?.message || "Falha de comunicação com o backend.";
+      const blocked = error?.status === 402;
+      setChat(items => [...items, {
+        role: "assistant",
+        text: blocked
+          ? `O chat chegou ao backend, mas a proteção de orçamento bloqueou a chamada externa de IA. Nenhum consumo foi autorizado. Detalhe: ${detail}`
+          : `Não consegui concluir sua mensagem. ${detail} Verifique a conexão e tente novamente.`,
+        meta: blocked ? "MODO SEM GASTOS · IA BLOQUEADA" : "FALHA DE CONEXÃO"
+      }]);
+    } finally {
+      setChatSending(false);
+    }
   };
 
   const runDiagnostics = async () => setDiagnostics(await diagnose());
@@ -112,7 +138,7 @@ function App() {
       {notice && <div className="notice">{notice}<button onClick={() => setNotice("")}>×</button></div>}
       {busy && <div className="loading-line"><i /> sincronizando dados reais…</div>}
       {view === "Início" && <Home dashboard={dashboard} products={products} jobs={jobs} go={setView} select={selectProduct} diagnostics={diagnostics} runDiagnostics={runDiagnostics} />}
-      {view === "Hermes" && <ChatView chat={chat} input={chatInput} setInput={setChatInput} send={sendChat} />}
+      {view === "Hermes" && <ChatView chat={chat} input={chatInput} setInput={setChatInput} send={sendChat} sending={chatSending} />}
       {view === "Radar" && <RadarView data={radar} run={() => action(() => call("/api/v1/radar", { method: "POST", body: JSON.stringify(DEFAULT_RADAR) }), "Radar analisado.").then(setRadar)} />}
       {view === "Fábrica" && <Factory topic={topic} setTopic={setTopic} submit={createProduct} products={products} action={action} /> }
       {view === "Produtos" && <Products items={products} select={selectProduct} />}
@@ -293,7 +319,7 @@ function SalesView({ data, load }) {
   </Page>;
 }
 function AnalyticsView({ data, load }) { return <Page title="Analytics" sub="Insights calculados a partir dos dados persistidos."><Button primary onClick={load}>Atualizar analytics</Button>{data ? <div className="two-col"><div className="panel"><pre>{JSON.stringify(data, null, 2)}</pre></div></div> : <Empty text="Nenhuma leitura carregada." />}</Page>; }
-function ChatView({ chat, input, setInput, send }) { return <Page title="Hermes" sub="Assistente operacional conectado ao AI Gateway."><div className="panel chat-panel"><div className="chat-history">{chat.length ? chat.map((m, i) => <div className={`bubble ${m.role}`} key={i}><span>{m.role === "user" ? "Você" : "Hermes"}</span><p>{m.text}</p>{m.meta && <small>{m.meta}</small>}</div>) : <p>Envie uma instrução. Se o Gemini estiver indisponível, o erro será mostrado claramente.</p>}</div><form className="chat-form" onSubmit={send}><input value={input} onChange={e => setInput(e.target.value)} placeholder="Fale com Hermes…"/><Button primary type="submit">Enviar ↗</Button></form></div></Page>; }
+function ChatView({ chat, input, setInput, send, sending }) { return <Page title="Hermes" sub="Assistente operacional conectado ao AI Gateway. O histórico recente é enviado para manter o contexto da conversa."><div className="panel chat-panel"><div className="chat-history" aria-live="polite">{chat.length ? chat.map((m, i) => <div className={`bubble ${m.role}`} key={i}><span>{m.role === "user" ? "Você" : "Hermes"}</span><p>{m.text}</p>{m.meta && <small>{m.meta}</small>}</div>) : <p>Converse com Hermes sobre o sistema, agentes, produtos e operações. O chat informa claramente quando a IA estiver bloqueada ou indisponível.</p>}{sending && <div className="bubble assistant"><span>Hermes</span><p>Processando sua mensagem…</p></div>}</div><form className="chat-form" onSubmit={send}><input value={input} onChange={e => setInput(e.target.value)} disabled={sending} placeholder="Fale com Hermes…" aria-label="Mensagem para Hermes"/><Button primary type="submit" disabled={sending || !input.trim()}>{sending ? "Enviando…" : "Enviar ↗"}</Button></form></div></Page>; }
 function DiagnosticsPanel({ data }) { if (!data) return <Empty text="Diagnóstico ainda não executado." />; return <div className="panel diagnostics-grid">{data.checks.map((x, i) => <div className="diag-row" key={`${x.name}-${i}`}><i className={x.status === "online" || x.status === "ready" ? "online" : "offline"}></i><strong>{x.name}</strong><span>{x.status}</span><small>{x.message || ""}</small></div>)}</div>; }
 function Integrations({ items, diagnostics, runDiagnostics }) {
   const [kiwify, setKiwify] = useState(null);
