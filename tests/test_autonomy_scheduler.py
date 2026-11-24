@@ -28,8 +28,19 @@ async def fake_positive_market_signal(store, topic):
     }
 
 
+class FakeBudgetDB:
+    async def select(self, table, params=None):
+        assert table == "hermes_settings"
+        return [{
+            "kill_switch": False,
+            "daily_ai_budget": "10",
+            "daily_total_budget": "10",
+        }]
+
+
 class FakeStore:
     def __init__(self, products=None, jobs=None):
+        self.db = FakeBudgetDB()
         self.products = products or []
         self.jobs = jobs or []
         self.created = []
