@@ -96,7 +96,7 @@ function App() {
     setChatSending(true);
     const conversation = nextHistory
       .map(item => `${item.role === "user" ? "Usuário" : "Hermes"}: ${item.text}`)
-      .join("\n")
+      .join("\\n")
       .slice(-3800);
     try {
       const result = await call("/api/v1/chat", {
@@ -110,14 +110,56 @@ function App() {
       }]);
     } catch (error) {
       const detail = error?.message || "Falha de comunicação com o backend.";
-      const blocked = error?.status === 402;
-      setChat(items => [...items, {
-        role: "assistant",
-        text: blocked
-          ? `O chat chegou ao backend, mas a proteção de orçamento bloqueou a chamada externa de IA. Nenhum consumo foi autorizado. Detalhe: ${detail}`
-          : `Não consegui concluir sua mensagem. ${detail} Verifique a conexão e tente novamente.`,
-        meta: blocked ? "MODO SEM GASTOS · IA BLOQUEADA" : "FALHA DE CONEXÃO"
-      }]);
+      const asksOperationalCheck = /(diagn[oó]st|status|sistema|agente|fila|jobs?|monitoramento|sa[uú]de|verific|auditoria|infraestrutura|backend|worker)/i.test(text);
+      if (error?.status === 402 && asksOperationalCheck) {
+        try {
+          const [health, ready, jobsData, productsData, agents] = await Promise.all([
+            call("/health"),
+            call("/ready"),
+            call("/api/v1/jobs"),
+            call("/api/v1/products"),
+            call("/api/v1/agents/status")
+          ]);
+          const jobs = Array.isArray(jobsData) ? jobsData : (jobsData?.jobs || []);
+          const products = Array.isArray(productsData) ? productsData : (productsData?.products || []);
+          const failed = jobs.filter(item => ["failed", "dead_letter"].includes(item.status)).length;
+          const paused = jobs.filter(item => item.status === "paused").length;
+          const active = jobs.filter(item => ["pending", "running", "processing", "retrying"].includes(item.status)).length;
+          const agentNames = (agents?.agents || [])
+            .map(item => `${item.name}: ${item.status}`)
+            .join(", ");
+          const report = [
+            "Diagnóstico operacional concluído em modo local, sem chamada externa de IA.",
+            `API: ${health?.status || "sem resposta"}.`,
+            `Banco: ${ready?.checks?.database || "sem confirmação"}.`,
+            `Hermes Chefe: ${agents?.chief || "sem estado"}; worker: ${agents?.worker_status || "sem estado"}.`,
+            `Orçamento de IA: ${agents?.ai_budget?.allowed ? "permitido" : "bloqueado"} — ${agents?.ai_budget?.message || "sem detalhe"}.`,
+            `Fila consultada: ${jobs.length} jobs; ${active} ativos; ${failed} falhos/dead-letter; ${paused} pausados.`,
+            `Produtos consultados: ${products.length}.`,
+            `Agentes reportados: ${agentNames || "nenhum"}.`,
+            "Resultado: leitura real da API, banco, fila e estado dos agentes; nenhuma escrita ou consumo de créditos foi feito."
+          ].join("\\n");
+          setChat(items => [...items, {
+            role: "assistant",
+            text: report,
+            meta: "HERMES LOCAL · DIAGNÓSTICO REAL · R$0"
+          }]);
+        } catch (localError) {
+          setChat(items => [...items, {
+            role: "assistant",
+            text: `A IA segue bloqueada pelo orçamento zerado, e o diagnóstico local não terminou: ${localError?.message || "falha de leitura"}.`,
+            meta: "MODO LOCAL · DIAGNÓSTICO INCOMPLETO"
+          }]);
+        }
+      } else {
+        setChat(items => [...items, {
+          role: "assistant",
+          text: error?.status === 402
+            ? "O modo de IA está bloqueado porque o orçamento diário e total está em R$0. Sem autorizar orçamento, consigo executar apenas diagnósticos operacionais de leitura; não vou consumir créditos."
+            : `Não consegui concluir sua mensagem. ${detail} Verifique a conexão e tente novamente.`,
+          meta: error?.status === 402 ? "MODO SEM GASTOS · IA BLOQUEADA" : "FALHA DE CONEXÃO"
+        }]);
+      }
     } finally {
       setChatSending(false);
     }
@@ -454,9 +496,10 @@ function Agents() {
       <div className="section-heading"><div><K>EQUIPE</K><h3>Agentes especialistas</h3></div></div>
       <div className="product-row">{(status?.agents || []).map(a => <article className="metric" key={a.name}><span>{a.role}</span><strong>{a.name}</strong><small>{a.status}</small></article>)}</div>
     </div>
+    {status?.dispatch_ready === false && <div className="notice" role="status">{status?.ai_budget?.message || "Execução de agentes temporariamente bloqueada pelas dependências do sistema."}</div>}
     <form className="factory-form" onSubmit={dispatch}>
       <label>Nova missão autônoma<textarea value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Ex.: investigar jobs falhos e me entregar a causa e a próxima ação." /></label>
-      <div className="form-footer"><span>Chefe → especialistas → Worker → Supabase</span><Button primary type="submit" disabled={sending}>{sending ? "Enviando…" : "Executar missão ↗"}</Button></div>
+      <div className="form-footer"><span>Chefe → especialistas → Worker → Supabase</span><Button primary type="submit" disabled={sending || status?.dispatch_ready !== true}>{sending ? "Enviando…" : "Executar missão ↗"}</Button></div>
     </form>
     <div className="panel"><div className="section-heading"><div><K>HISTÓRICO</K><h3>Execuções</h3></div></div>
       {runs.length ? runs.slice(0,10).map(r => <article className="panel" key={r.id}><div className="list-row"><strong>{r.job_status || r.status}</strong><span>{r.instruction}</span><small>{r.agent} · {r.attempts ?? 0}/{r.max_attempts ?? 3}</small></div>{r.output?.output && <details><summary>Ver síntese do Chefe</summary><p>{r.output.output}</p><details><summary>Análises dos especialistas</summary>{Object.entries(r.output.specialists || {}).map(([name, finding]) => <p key={name}><b>{name}:</b> {finding}</p>)}</details></details>}{r.job_error && <p role="alert">{r.job_error}</p>}</article>) : <Empty text="Nenhuma execução de agente ainda." />}
@@ -465,6 +508,6 @@ function Agents() {
 }
 function Automation({ jobs }) { const active = useMemo(() => jobs.filter(j => ["pending", "running", "retrying"].includes(j.status)).length, [jobs]); return <Page title="Automação" sub="Visão operacional da fila e do worker."><div className="metric-grid"><Metric label="Jobs ativos" value={active}/><Metric label="Jobs totais" value={jobs.length}/></div><Empty text="A execução automática ocorre no worker; este painel não finge agendamentos que ainda não existem no backend." /></Page>; }
 function Logs({ jobs }) { return <Page title="Logs" sub="Eventos de jobs retornados pelo backend."><div className="job-list">{jobs.map(j => <div className="panel" key={j.id}><strong>{j.status}</strong><p>{j.id}</p><small>{j.error_message || "sem erro"}</small></div>)}</div></Page>; }
-function Guides() { return <Page title="Guias" sub="Operação do Hermes Pro."><div className="two-col"><div className="panel"><h3>1. Conexão</h3><p>Vercel hospeda a interface. O backend fica no Render. O cliente usa o proxy Vercel e cai para o Render diretamente quando o proxy falhar.</p></div><div className="panel"><h3>2. Produção</h3><p>Fábrica cria produto e job. Redis entrega ao worker. Gemini produz e revisa conteúdo. Supabase persiste estado e artefatos.</p></div><div className="panel"><h3>3. Kiwify</h3><p>Teste OAuth e configure o webhook em Integrações. A criação do produto, o upload do PDF/capa e o checkout são concluídos no painel Kiwify; depois vincule o checkout na guia Publicação.</p></div><div className="panel"><h3>4. Se estiver offline</h3><p>Abra Integrações e execute o diagnóstico. Se Render estiver offline, o painel mostrará a conexão necessária em vez de um erro NOT_FOUND genérico.</p></div></div></Page>; }
+function Guides() { return <Page title="Guias" sub="Operação do Hermes Pro."><div className="two-col"><div className="panel"><h3>1. Conexão</h3><p>Vercel hospeda a interface. O backend fica no Render. O cliente usa exclusivamente o proxy privado same-origin da Vercel em produção; a chave fica no servidor e não é publicada no navegador.</p></div><div className="panel"><h3>2. Produção</h3><p>Fábrica cria produto e job. Redis entrega ao worker. O Gemini só recebe chamadas quando o orçamento de IA está autorizado. Com orçamento zerado, o chat oferece diagnóstico local de leitura, sem créditos. Supabase persiste estado e artefatos.</p></div><div className="panel"><h3>3. Kiwify</h3><p>Teste OAuth e configure o webhook em Integrações. A criação do produto, o upload do PDF/capa e o checkout são concluídos no painel Kiwify; depois vincule o checkout na guia Publicação.</p></div><div className="panel"><h3>4. Se estiver offline</h3><p>Abra Integrações e execute o diagnóstico. Se Render estiver offline, o painel mostrará a conexão necessária em vez de um erro NOT_FOUND genérico.</p></div></div></Page>; }
 
 createRoot(document.getElementById("root")).render(<App />);
