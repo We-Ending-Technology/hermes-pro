@@ -131,7 +131,8 @@ async def product_response(row: dict) -> ProductResponse:
             expires_at = None
 
     now = datetime.now(timezone.utc)
-    if artifact_paths and (expires_at is None or expires_at <= now + timedelta(days=1)):
+    refreshable_status = row.get("status") not in {"paused", "failed", "cancelled", "archived"}
+    if refreshable_status and artifact_paths and (expires_at is None or expires_at <= now + timedelta(days=1)):
         refreshed_artifacts = dict(metadata.get("artifacts") or {})
         refreshed_any = False
         for kind, locator in artifact_paths.items():
