@@ -643,7 +643,7 @@ textarea:focus,input:focus,select:focus{border-color:#69d9ff!important;box-shado
 
 
 /* WET FUTURE LUXURY — complete command-center refinement */
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
 :root{
  color-scheme:dark;
  --bg:#050711!important;--bg-soft:#0a1020!important;
