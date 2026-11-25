@@ -1,8 +1,11 @@
-const DIRECT_API = (import.meta.env.VITE_API_URL || "https://hermes-pro-api-commercial.onrender.com").replace(/\/+$/, "");
-const PROXY_API = (import.meta.env.VITE_API_PROXY || (import.meta.env.PROD ? "/api/hermes" : "")).replace(/\/+$/, "");
+const DIRECT_API = (import.meta.env.VITE_API_URL || "https://hermes-pro-api-commercial.onrender.com").replace(/\\/+$/, "");
+const PROXY_API = (import.meta.env.VITE_API_PROXY || (import.meta.env.PROD ? "/api/hermes?path=" : "")).replace(/\\/+$/, "");
 
 async function request(base, path, options = {}) {
-  const response = await fetch(`${base}${path}`, {
+  const target = base.includes("?path=")
+    ? `${base}${encodeURIComponent(path.replace(/^\\/+/, ""))}`
+    : `${base}${path}`;
+  const response = await fetch(target, {
     ...options,
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
   });
@@ -21,8 +24,8 @@ async function request(base, path, options = {}) {
 }
 
 function apiCandidates() {
-  // In production, all private traffic stays same-origin through the Vercel server-side proxy.
-  // Never fall back to the public Render origin when that proxy is configured.
+  // Production traffic stays same-origin through the Vercel server-side proxy.
+  // Never fall back to the public Render API when the private proxy is configured.
   if (PROXY_API) return [{ label: "Proxy privado", base: PROXY_API }];
   return [{ label: "Render API (local development)", base: DIRECT_API }];
 }

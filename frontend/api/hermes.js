@@ -1,7 +1,5 @@
 const ALLOWED_METHODS = new Set(["GET", "POST", "PATCH", "PUT", "DELETE"]);
 const PUBLIC_PATHS = new Set(["/", "/health", "/ready", "/time"]);
-const API_PREFIX = "/api/hermes";
-
 export const config = { maxDuration: 60 };
 
 export default async function handler(req, res) {
@@ -12,26 +10,33 @@ export default async function handler(req, res) {
     return res.status(405).json({ detail: "Method not allowed." });
   }
 
-  const apiOrigin = (process.env.HERMES_API_ORIGIN || "").replace(/\/+$/, "");
+  const apiOrigin = (process.env.HERMES_API_ORIGIN || "").replace(/\\/+$/, "");
   const apiKey = process.env.HERMES_API_KEY || "";
   if (!apiOrigin || !apiKey) {
     return res.status(503).json({ detail: "Private API proxy is not configured." });
   }
 
-  let incoming;
+  let origin;
   try {
-    incoming = new URL(req.url || "/", "http://localhost");
+    origin = new URL(apiOrigin);
   } catch {
-    return res.status(400).json({ detail: "Invalid request URL." });
+    return res.status(503).json({ detail: "Private API upstream is invalid." });
+  }
+  if (origin.protocol !== "https:" || origin.hostname !== "hermes-pro-api-commercial.onrender.com") {
+    return res.status(503).json({ detail: "Private API upstream is not allowed." });
   }
 
-  if (!incoming.pathname.startsWith(API_PREFIX + "/")) {
-    return res.status(404).json({ detail: "Not found." });
+  const rawPath = req.query?.path;
+  const requestedPath = Array.isArray(rawPath) ? rawPath.join("/") : String(rawPath || "");
+  const upstreamPath = "/" + requestedPath.replace(/^\\/+/, "");
+  let target;
+  try {
+    target = new URL(upstreamPath, origin);
+  } catch {
+    return res.status(400).json({ detail: "Invalid upstream path." });
   }
-
-  const upstreamPath = incoming.pathname.slice(API_PREFIX.length);
-  const allowedPath = PUBLIC_PATHS.has(upstreamPath) || upstreamPath.startsWith("/api/v1/");
-  if (!allowedPath) {
+  const allowedPath = PUBLIC_PATHS.has(target.pathname) || target.pathname.startsWith("/api/v1/");
+  if (!allowedPath || target.origin !== origin.origin) {
     return res.status(404).json({ detail: "Not found." });
   }
 
@@ -39,9 +44,7 @@ export default async function handler(req, res) {
     "X-Hermes-API-Key": apiKey,
     "Accept": req.headers.accept || "application/json",
   };
-  if (req.headers["content-type"]) {
-    headers["Content-Type"] = req.headers["content-type"];
-  }
+  if (req.headers["content-type"]) headers["Content-Type"] = req.headers["content-type"];
 
   let body;
   if (!["GET", "HEAD"].includes(req.method || "")) {
@@ -50,7 +53,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const upstream = await fetch(`${apiOrigin}${upstreamPath}${incoming.search}`, {
+    const upstream = await fetch(target.toString(), {
       method: req.method,
       headers,
       body,
