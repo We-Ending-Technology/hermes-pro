@@ -35,6 +35,7 @@ from .services.sales import SalesService
 from .services.storage import SupabaseStorage
 from .services.ebook_validation import validate_ebook
 from .api_covers import router as covers_router
+from .api_agent_factory import create_agent_factory_router
 
 logger = logging.getLogger("hermes.api")
 settings = get_settings()
@@ -115,6 +116,7 @@ app.add_middleware(
 app.include_router(commercial_router)
 app.include_router(kiwify_api_router)
 app.include_router(covers_router)
+app.include_router(create_agent_factory_router(db, ai_gateway, settings))
 
 
 async def product_response(row: dict) -> ProductResponse:

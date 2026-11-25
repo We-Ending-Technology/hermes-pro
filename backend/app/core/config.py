@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     groq_chat_model: str = Field(default="openai/gpt-oss-20b", validation_alias="GROQ_CHAT_MODEL")
     openai_agent_model: str = Field(default="gpt-6-astra", validation_alias="OPENAI_AGENT_MODEL")
     autonomy_enabled: bool = Field(default=False, validation_alias="AUTONOMY_ENABLED")
+    dynamic_agent_execution_enabled: bool = Field(default=False, validation_alias="DYNAMIC_AGENT_EXECUTION_ENABLED")
     embedded_worker_enabled: bool = Field(default=False, validation_alias="EMBEDDED_WORKER_ENABLED")
     sentinel_enabled: bool = Field(default=True, validation_alias="SENTINEL_ENABLED")
     sentinel_interval_seconds: int = Field(default=15, ge=10, le=300, validation_alias="SENTINEL_INTERVAL_SECONDS")
