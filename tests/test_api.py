@@ -220,3 +220,37 @@ def test_shopify_webhook_is_public_but_requires_configuration(monkeypatch):
         )
     assert response.status_code == 503
 
+
+
+def test_paused_product_does_not_refresh_missing_artifact_urls(monkeypatch):
+    import asyncio
+    from datetime import datetime, timezone
+    from backend.app import main as main_module
+
+    artifact_paths = {
+        "pdf": {
+            "bucket": "ebooks",
+            "path": "old-paused-product/ebook.pdf",
+        }
+    }
+    row = {
+        "id": "old-paused-product",
+        "topic": "produto pausado",
+        "title": "Produto pausado",
+        "status": "paused",
+        "current_stage": "create_outline",
+        "metadata": {
+            "artifact_paths": artifact_paths,
+            "artifact_urls_expires_at": "2026-01-01T00:00:00Z",
+        },
+        "created_at": datetime.now(timezone.utc),
+    }
+
+    def unexpected_storage_call(*args, **kwargs):
+        pytest.fail("paused products must not attempt to refresh missing storage objects")
+
+    monkeypatch.setattr(main_module, "SupabaseStorage", unexpected_storage_call)
+    response = asyncio.run(main_module.product_response(row))
+
+    assert response.status == "paused"
+    assert response.metadata["artifact_paths"] == artifact_paths
