@@ -1,24 +1,37 @@
 const ALLOWED_METHODS = new Set(["GET", "POST", "PATCH", "PUT", "DELETE"]);
 const PUBLIC_PATHS = new Set(["/", "/health", "/ready", "/time"]);
-export const config = { maxDuration: 60 };
+
+export const config = {
+  api: { bodyParser: false },
+  maxDuration: 60,
+};
+
+async function readRawBody(req) {
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
+  const method = req.method || "";
 
-  if (!ALLOWED_METHODS.has(req.method || "")) {
+  if (!ALLOWED_METHODS.has(method)) {
     res.setHeader("Allow", [...ALLOWED_METHODS].join(", "));
     return res.status(405).json({ detail: "Method not allowed." });
   }
 
-  const apiOrigin = (process.env.HERMES_API_ORIGIN || "").replace(/\\/+$/, "");
+  const originValue = process.env.HERMES_API_ORIGIN || "";
   const apiKey = process.env.HERMES_API_KEY || "";
-  if (!apiOrigin || !apiKey) {
+  if (!originValue || !apiKey) {
     return res.status(503).json({ detail: "Private API proxy is not configured." });
   }
 
   let origin;
   try {
-    origin = new URL(apiOrigin);
+    origin = new URL(originValue);
   } catch {
     return res.status(503).json({ detail: "Private API upstream is invalid." });
   }
@@ -26,15 +39,18 @@ export default async function handler(req, res) {
     return res.status(503).json({ detail: "Private API upstream is not allowed." });
   }
 
-  const rawPath = req.query?.path;
-  const requestedPath = Array.isArray(rawPath) ? rawPath.join("/") : String(rawPath || "");
-  const upstreamPath = "/" + requestedPath.replace(/^\\/+/, "");
+  const rawPath = req.query && req.query.path;
+  let requestedPath = Array.isArray(rawPath) ? rawPath.join("/") : String(rawPath || "");
+  requestedPath = requestedPath.trim();
+  while (requestedPath.startsWith("/")) requestedPath = requestedPath.slice(1);
+
   let target;
   try {
-    target = new URL(upstreamPath, origin);
+    target = new URL(requestedPath, origin);
   } catch {
     return res.status(400).json({ detail: "Invalid upstream path." });
   }
+
   const allowedPath = PUBLIC_PATHS.has(target.pathname) || target.pathname.startsWith("/api/v1/");
   if (!allowedPath || target.origin !== origin.origin) {
     return res.status(404).json({ detail: "Not found." });
@@ -47,14 +63,17 @@ export default async function handler(req, res) {
   if (req.headers["content-type"]) headers["Content-Type"] = req.headers["content-type"];
 
   let body;
-  if (!["GET", "HEAD"].includes(req.method || "")) {
-    if (typeof req.body === "string") body = req.body;
-    else if (req.body !== undefined && req.body !== null) body = JSON.stringify(req.body);
+  if (method !== "GET" && method !== "HEAD") {
+    try {
+      body = await readRawBody(req);
+    } catch {
+      return res.status(400).json({ detail: "Could not read request body." });
+    }
   }
 
   try {
     const upstream = await fetch(target.toString(), {
-      method: req.method,
+      method,
       headers,
       body,
       redirect: "manual",
