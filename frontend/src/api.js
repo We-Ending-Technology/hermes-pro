@@ -1,9 +1,11 @@
-const DIRECT_API = (import.meta.env.VITE_API_URL || "https://hermes-pro-api-commercial.onrender.com").replace(/\\/+$/, "");
-const PROXY_API = (import.meta.env.VITE_API_PROXY || (import.meta.env.PROD ? "/api/hermes?path=" : "")).replace(/\\/+$/, "");
+const DIRECT_API = import.meta.env.VITE_API_URL || "https://hermes-pro-api-commercial.onrender.com";
+const PROXY_API = import.meta.env.VITE_API_PROXY || (import.meta.env.PROD ? "/api/hermes?path=" : "");
 
 async function request(base, path, options = {}) {
+  let route = String(path || "");
+  while (route.startsWith("/")) route = route.slice(1);
   const target = base.includes("?path=")
-    ? `${base}${encodeURIComponent(path.replace(/^\\/+/, ""))}`
+    ? `${base}${encodeURIComponent(route)}`
     : `${base}${path}`;
   const response = await fetch(target, {
     ...options,
