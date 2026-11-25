@@ -19,6 +19,7 @@ function App() {
   const [products, setProducts] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [integrations, setIntegrations] = useState([]);
+  const [agentStatus, setAgentStatus] = useState(null);
   const [dashboard, setDashboard] = useState({});
   const [selected, setSelected] = useState(null);
   const [notice, setNotice] = useState("");
@@ -26,7 +27,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [diagnostics, setDiagnostics] = useState(null);
   const [topic, setTopic] = useState("");
-  const [chat, setChat] = useState([]);
+  const [chat, setChat] = useState(() => { try { return JSON.parse(localStorage.getItem("wet-hermes-chat") || "[]"); } catch { return []; } });
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
   const [radar, setRadar] = useState(null);
@@ -38,12 +39,13 @@ function App() {
     const health = await safeCall("/health");
     setOnline(Boolean(health?.status === "ok"));
     const results = await Promise.all([
-      safeCall("/api/v1/dashboard"), safeCall("/api/v1/products"), safeCall("/api/v1/jobs"), safeCall("/api/v1/integrations")
+      safeCall("/api/v1/dashboard"), safeCall("/api/v1/products"), safeCall("/api/v1/jobs"), safeCall("/api/v1/integrations"), safeCall("/api/v1/agents/status")
     ]);
     if (results[0]) setDashboard(results[0]);
     if (Array.isArray(results[1])) setProducts(results[1]);
     if (Array.isArray(results[2])) setJobs(results[2]);
     if (Array.isArray(results[3])) setIntegrations(results[3]);
+    if (results[4]) setAgentStatus(results[4]);
     setBusy(false);
   };
 
@@ -59,6 +61,8 @@ function App() {
     const timer = setInterval(() => { void refresh(); }, 30000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => { try { localStorage.setItem("wet-hermes-chat", JSON.stringify(chat.slice(-80))); } catch {} }, [chat]);
 
   const logout = () => setView("Início");
 
@@ -128,16 +132,16 @@ function App() {
 
   return <div className="shell">
     <aside className="sidebar">
-      <div className="brand"><div className="brand-mark">WET</div><div className="brand-name"><strong>WE ENDING</strong><strong>TECHNOLOGY</strong><span>INTELLIGENCE SYSTEMS</span></div></div>
+      <div className="brand"><div className="brand-mark">W</div><div className="brand-name"><strong>WET</strong><strong>FUTURE LUXURY</strong><span>DIGITAL INTELLIGENCE</span></div></div>
       <div className="live-pill"><i className={online ? "online" : "offline"}></i>{online ? "SISTEMA ONLINE" : "API OFFLINE"}</div>
       <nav>{NAV.map(([icon, label]) => <button key={label} className={view === label ? "selected" : ""} onClick={() => setView(label)}><b>{icon}</b>{label}</button>)}</nav>
       <div className="sidebar-foot"><span>LIVE OPS • REAL DATA</span><button onClick={refresh}>↻ Atualizar</button></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div><span className="kicker">WE ENDING TECHNOLOGY / INTELLIGENCE OPERATIONS</span><h1>{view}</h1></div><div className="top-actions"><span className="api-label"><i className={online ? "online" : "offline"}></i>{online ? "Backend conectado" : "Backend indisponível"}</span><button className="icon-button" onClick={runDiagnostics}>⌁</button><button className="icon-button" onClick={refresh}>↻</button><button className="icon-button" onClick={logout}>Sair</button><button className="avatar">W</button></div></header>
+      <header className="topbar"><div><span className="kicker">WET / FUTURE LUXURY / DIGITAL INTELLIGENCE</span><h1>{view}</h1></div><div className="top-actions"><span className="api-label"><i className={online ? "online" : "offline"}></i>{online ? "BACKEND CONECTADO" : "BACKEND INDISPONÍVEL"}</span><button className="icon-button" title="Diagnóstico" onClick={runDiagnostics}>⌁</button><button className="icon-button" title="Atualizar dados" onClick={refresh}>↻</button><button className="primary top-mission" onClick={() => setView("Agentes")}>＋ Nova missão</button><button className="avatar" title="WET">W</button></div></header>
       {notice && <div className="notice">{notice}<button onClick={() => setNotice("")}>×</button></div>}
       {busy && <div className="loading-line"><i /> sincronizando dados reais…</div>}
-      {view === "Início" && <Home dashboard={dashboard} products={products} jobs={jobs} go={setView} select={selectProduct} diagnostics={diagnostics} runDiagnostics={runDiagnostics} />}
+      {view === "Início" && <Home dashboard={dashboard} products={products} jobs={jobs} agentStatus={agentStatus} online={online} go={setView} select={selectProduct} diagnostics={diagnostics} runDiagnostics={runDiagnostics} />}
       {view === "Hermes" && <ChatView chat={chat} input={chatInput} setInput={setChatInput} send={sendChat} sending={chatSending} />}
       {view === "Radar" && <RadarView data={radar} run={() => action(() => call("/api/v1/radar", { method: "POST", body: JSON.stringify(DEFAULT_RADAR) }), "Radar analisado.").then(setRadar)} />}
       {view === "Fábrica" && <Factory topic={topic} setTopic={setTopic} submit={createProduct} products={products} action={action} /> }
@@ -164,19 +168,65 @@ const Button = ({ children, onClick, primary = false, type = "button", disabled 
 const Page = ({ title, sub, children }) => <section className="page"><div className="page-intro"><K>HERMES PRO</K><h2>{title}</h2><p>{sub}</p></div>{children}</section>;
 const Empty = ({ text }) => <div className="panel empty">{text}</div>;
 
-function Home({ dashboard, products, jobs, go, select, diagnostics, runDiagnostics }) {
-  return <Page title="WE ENDING TECHNOLOGY" sub="INTELLIGENCE • AUTOMATION • EXECUTION">
-    <section className="hero"><div><K>PRIVATE INTELLIGENCE COMMAND · EST. 2026</K><h2>ENGINEER<br/><em>THE FUTURE.</em></h2><p>Inteligência que transforma complexidade em execução. Um ecossistema privado de agentes, automação e operações — projetado para operar com precisão.</p><Button primary onClick={() => go("Fábrica")}>＋ Criar produto</Button></div><div className="hero-orbit"><div className="orbit-center">WET<span>INTELLIGENCE</span></div><div className="orbit-dot dot-one">✦</div><div className="orbit-dot dot-two">↗</div><div className="orbit-dot dot-three">$</div></div></section>
-    <div className="metric-grid"><Metric label="Produtos" value={dashboard.products ?? 0}/><Metric label="Jobs ativos" value={dashboard.active_jobs ?? 0}/><Metric label="Concluídos" value={dashboard.completed_products ?? 0}/><Metric label="Vendas" value={dashboard.sales ?? 0}/></div>
-    <div className="section-heading"><div><K>SISTEMA</K><h3>Conectividade</h3></div><Button onClick={runDiagnostics}>Diagnosticar agora</Button></div>
+function Home({ dashboard, products, jobs, agentStatus, online, go, select, diagnostics, runDiagnostics }) {
+  const activeJobs = jobs.filter(j => ["pending", "running", "retrying"].includes(j.status));
+  const completedJobs = jobs.filter(j => j.status === "completed");
+  const agents = agentStatus?.agents || [];
+  const recentJobs = [...jobs].sort((a,b) => new Date(b.created_at || 0)-new Date(a.created_at || 0)).slice(0,4);
+  const metricValue = value => value === null || value === undefined ? "—" : value;
+  return <Page title="Command Center" sub="THE FUTURE IS ENGINEERED. · INTELIGÊNCIA PRIVADA EM OPERAÇÃO">
+    <section className="hero wet-hero">
+      <div className="hero-copy">
+        <K>PRIVATE INTELLIGENCE SYSTEM · WET</K>
+        <h2>O futuro não se espera.<br/><em>É construído.</em></h2>
+        <p>Um centro de comando privado para coordenar inteligência, agentes e operações digitais com precisão. Tudo conectado a dados reais, com autonomia controlada.</p>
+        <div className="hero-actions"><Button primary onClick={() => go("Hermes")}>Conversar com Hermes <span>↗</span></Button><Button onClick={() => go("Agentes")}>Ver equipe de agentes</Button></div>
+      </div>
+      <div className="wet-orbit-scene" aria-hidden="true"><div className="orbit-ring ring-a"/><div className="orbit-ring ring-b"/><div className="orbit-ring ring-c"/><div className="orbit-core"><b>WET</b><small>INTELLIGENCE</small></div><i className="orbit-satellite sat-a"/><i className="orbit-satellite sat-b"/><i className="orbit-satellite sat-c"/></div>
+      <div className="hero-foot"><span>PRIVATE ENVIRONMENT</span><span>LIVE OPERATIONS · {online ? "CONNECTED" : "CONNECTION PENDING"}</span></div>
+    </section>
+    <div className="command-overview">
+      <div className="overview-heading"><div><K>OPERAÇÃO</K><h3>Visão executiva</h3></div><span>ATUALIZAÇÃO AUTOMÁTICA · 30S</span></div>
+      <div className="metric-grid premium-metrics">
+        <Metric label="Produtos no catálogo" value={metricValue(dashboard.products)} />
+        <Metric label="Operações em curso" value={activeJobs.length} />
+        <Metric label="Produções concluídas" value={metricValue(dashboard.completed_products ?? completedJobs.length)} />
+        <Metric label="Vendas confirmadas" value={metricValue(dashboard.sales)} />
+      </div>
+    </div>
+    <div className="home-grid">
+      <section className="panel orchestration-panel">
+        <div className="section-heading"><div><K>ORQUESTRAÇÃO</K><h3>Equipe de inteligência</h3></div><Button onClick={() => go("Agentes")}>Abrir equipe ↗</Button></div>
+        <div className="chief-node"><span className="chief-emblem">✦</span><div><strong>HERMES CHEFE</strong><small>ORQUESTRADOR CENTRAL</small></div><span className={agentStatus?.chief === "ready" ? "state-chip state-ready" : "state-chip"}>{agentStatus?.chief || "Aguardando diagnóstico"}</span></div>
+        <div className="agent-constellation">{(agents.length ? agents.slice(0,6) : [{name:"Radar",role:"Pesquisa"},{name:"Analista",role:"Dados"},{name:"Executor",role:"Operações"},{name:"Fábrica",role:"Criação"},{name:"Auditor",role:"Qualidade"},{name:"Sentinela",role:"Monitoramento"}]).map((a,i)=><div className="constellation-agent" key={a.name}><i className={a.status === "ready" ? "agent-dot ready" : "agent-dot"}/><span>{a.name.replace(/^Hermes\s+/,"")}</span><small>{a.role || "Especialista"}</small></div>)}</div>
+        <p className="panel-note">{agentStatus?.dispatch_ready ? "O Chefe está liberado para receber missões." : "A equipe está visível; despacho depende das verificações de provedor, orçamento, fila e worker."}</p>
+      </section>
+      <section className="panel system-panel">
+        <div className="section-heading"><div><K>INFRAESTRUTURA</K><h3>Saúde do sistema</h3></div><Button onClick={runDiagnostics}>Diagnosticar</Button></div>
+        <div className="system-state"><i className={online ? "online" : "offline"}/><div><strong>{online ? "API respondendo" : "API indisponível"}</strong><small>{online ? "Endpoint de saúde respondeu" : "Aguardando conexão com o backend"}</small></div></div>
+        <div className="system-state"><i className={agentStatus?.ai_provider_status === "ready" ? "online" : "offline"}/><div><strong>Provedor de IA</strong><small>{agentStatus?.ai_provider_status || "Não verificado"} · {agentStatus?.ai_provider || "provedor não identificado"}</small></div></div>
+        <div className="system-state"><i className={agentStatus?.queue_status === "ready" ? "online" : "offline"}/><div><strong>Fila de execução</strong><small>{agentStatus?.queue_status || "Não verificada"}</small></div></div>
+        <div className="system-state"><i className={agentStatus?.worker_status === "ready" ? "online" : "offline"}/><div><strong>Worker</strong><small>{agentStatus?.worker_status || "Não verificado"}</small></div></div>
+      </section>
+    </div>
+    <div className="home-grid home-grid-lower">
+      <section className="panel activity-panel">
+        <div className="section-heading"><div><K>ATIVIDADE RECENTE</K><h3>Operações</h3></div><Button onClick={() => go("Jobs")}>Todos os jobs ↗</Button></div>
+        {recentJobs.length ? <div className="activity-list">{recentJobs.map(job=><div className="activity-row" key={job.id}><i className={job.status === "completed" ? "activity-dot done" : "activity-dot"}/><div><strong>{job.job_type || "Operação"}</strong><small>{job.error_message || job.id}</small></div><span>{job.status}</span></div>)}</div> : <div className="quiet-empty">Nenhuma operação registrada ainda.</div>}
+      </section>
+      <section className="panel catalog-panel">
+        <div className="section-heading"><div><K>PRODUTOS</K><h3>Esteira digital</h3></div><Button onClick={() => go("Produtos")}>Catálogo ↗</Button></div>
+        <div className="catalog-summary"><strong>{products.length.toString().padStart(2,"0")}</strong><span>produtos registrados</span></div>
+        <div className="catalog-stages"><span>IDEIA</span><span>PRODUÇÃO</span><span>REVISÃO</span><span>PUBLICAÇÃO</span></div>
+        {products.slice(0,2).map(p=><button className="mini-product" key={p.id} onClick={() => select(p)}><span>{p.title || p.topic}</span><small>{p.status} · {p.current_stage}</small><b>↗</b></button>)}
+        {!products.length && <div className="quiet-empty">Nenhum produto cadastrado.</div>}
+      </section>
+    </div>
+    <div className="section-heading home-section-heading"><div><K>DIAGNÓSTICO DETALHADO</K><h3>Conectividade e dependências</h3></div><Button onClick={runDiagnostics}>Atualizar diagnóstico</Button></div>
     <DiagnosticsPanel data={diagnostics} />
-    <div className="section-heading"><div><K>PIPELINE</K><h3>Esteira</h3></div><Button onClick={() => go("Jobs")}>Abrir Jobs →</Button></div>
-    <div className="panel process-panel"><div className="loop">{["Radar", "Estratégia", "Conteúdo", "Quality", "Studio", "Oferta", "Hotmart"].map((x, i) => <div className="step" key={x}><b>{i + 1}</b><span>{x}</span></div>)}</div><p className="panel-note">{jobs.length} jobs persistidos.</p></div>
-    <div className="section-heading"><div><K>CATÁLOGO</K><h3>Produtos recentes</h3></div><Button onClick={() => go("Produtos")}>Abrir →</Button></div>
-    <div className="product-row">{products.slice(0, 3).map(p => <ProductCard key={p.id} p={p} onClick={() => select(p)} />)}</div>
   </Page>;
 }
-function Metric({ label, value }) { return <article className="metric"><span>{label}</span><strong>{value}</strong><small>estado persistido</small></article>; }
+function Metric({ label, value }) { return <article className="metric"><span>{label}</span><strong>{value}</strong><small>valor recebido do sistema</small></article>; }
 function Factory({ topic, setTopic, submit, products = [], action }) {
   const [coverProductId, setCoverProductId] = useState("");
   const coverProduct = products.find(item => item.id === coverProductId) || products.find(item => item.metadata?.content_data && !item.metadata?.artifact_paths?.cover);
