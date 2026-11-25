@@ -41,7 +41,7 @@ export async function diagnose() {
       checks.push({ name: candidate.label, status: "online", latency_ms: Date.now() - t, message: health.service || "API online" });
       if (candidate.label === "Render API") {
         try {
-          const ready = await request(candidate.base, "/api/v1/readiness");
+          const ready = await request(candidate.base, "/ready");
           const blocking = new Set(ready.blocking_integrations || []);
           for (const item of ready.integrations || []) {
             const status = item.status || "not_configured";

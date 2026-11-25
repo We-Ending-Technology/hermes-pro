@@ -1,25 +1,18 @@
 import { useMemo, useState } from "react";
 
 const DOMAIN_PATTERNS = ["Nexora","Velora","Novara","Lumora","Veyra","Solvra","Nuvora","Elvora","Zenvora","Axora","Virelo","Nexivo","Velivo","Novilo","Omnira"];
-const TEST_PRODUCTS = [
-  { name:"Budget Starter Kit", niche:"Personal Finance", price:9.9, revenue:127, costs:21, conversion:2.8, status:"ESCALAR" },
-  { name:"7-Day Focus Planner", niche:"Productivity", price:7.9, revenue:43, costs:38, conversion:0.7, status:"TESTAR" },
-  { name:"AI Prompt Toolkit", niche:"AI", price:12.9, revenue:12, costs:31, conversion:0.2, status:"MATAR" }
-];
 function scoreOpportunity({ demand, competition, differentiation, difficulty, pricing, clarity }) {
   return Math.round(demand*.25+(100-competition)*.15+differentiation*.2+(100-difficulty)*.15+pricing*.15+clarity*.1);
 }
 export default function LowTicketFactory() {
   const [brand,setBrand]=useState(""); const [niche,setNiche]=useState(""); const [problem,setProblem]=useState(""); const [price,setPrice]=useState("9.90");
   const [signals,setSignals]=useState({demand:75,competition:40,differentiation:75,difficulty:30,pricing:70,clarity:85}); const [tested,setTested]=useState(false);
-  const score=useMemo(()=>scoreOpportunity(signals),[signals]); const estimatedProfit=(Number(price)||0)*.9-2;
+  const score=useMemo(()=>scoreOpportunity(signals),[signals]);
   return <section className="page">
     <div className="page-intro"><span className="kicker violet">LOW-TICKET FACTORY / ENGLISH MARKET</span><h2>Testar produtos. Medir lucro. Escalar vencedores.</h2><p>Uma operação guarda-chuva para lançar ofertas de vários nichos em inglês sem criar um domínio novo para cada produto.</p></div>
     <div className="metric-grid">
-      <article className="metric"><span>Oportunidade</span><strong>{score}/100</strong><small>score heurístico</small></article>
+      <article className="metric"><span>Oportunidade</span><strong>{score}/100</strong><small>simulação manual; sem evidência de mercado</small></article>
       <article className="metric"><span>Preço alvo</span><strong>\${price}</strong><small>low ticket</small></article>
-      <article className="metric"><span>Lucro estimado</span><strong>\${estimatedProfit.toFixed(2)}</strong><small>antes de ads/refunds</small></article>
-      <article className="metric"><span>Produtos em teste</span><strong>3</strong><small>exemplo operacional</small></article>
     </div>
     <div className="two-col lowticket-grid">
       <div className="panel">
@@ -39,9 +32,7 @@ export default function LowTicketFactory() {
       </div>
     </div>
     <div className="section-heading"><div><span className="kicker violet">03 / PORTFOLIO</span><h3>Profit-first scoreboard</h3></div></div>
-    <div className="panel table-panel"><div className="lowticket-table"><div className="table-head"><span>Produto</span><span>Nicho</span><span>Receita</span><span>Custos</span><span>Lucro</span><span>Conv.</span><span>Status</span></div>
-      {TEST_PRODUCTS.map(p=><div className="table-row" key={p.name}><span><b>{p.name}</b><small>\${p.price}</small></span><span>{p.niche}</span><span>\${p.revenue}</span><span>\${p.costs}</span><span>\${p.revenue-p.costs}</span><span>{p.conversion}%</span><strong className={p.status.toLowerCase()}>{p.status}</strong></div>)}
-    </div></div>
+    <div className="panel table-panel"><p><b>Sem resultados reais registrados.</b></p><p>O placar de receita, custos, lucro e conversão só será exibido quando estiver conectado a pedidos, despesas e eventos de conversão verificados. Nenhum produto de exemplo ou número fictício é mostrado.</p></div>
     <div className="two-col">
       <div className="panel"><span className="kicker violet">04 / DECISION ENGINE</span><h3>ESCALAR / TESTAR / MATAR</h3><p>O Hermes deve decidir pelo lucro e pelos sinais de conversão, não por faturamento isolado.</p><div className="decision-list"><span><b>ESCALAR</b> margem + conversão comprovadas</span><span><b>TESTAR</b> sinal promissor, mas gargalo identificado</span><span><b>MATAR</b> prejuízo persistente sem hipótese melhor</span></div></div>
       <div className="panel"><span className="kicker violet">05 / GRAVEYARD</span><h3>Memória dos produtos mortos</h3><p>Produtos que falharam ficam registrados com nicho, oferta, preço, tráfego, conversão e motivo da falha para evitar repetir o erro.</p><span className="truth">SEM MÉTRICAS INVENTADAS · DADOS REAIS QUANDO CONECTADOS</span></div>
