@@ -15,6 +15,7 @@ def configure_test_ai_budget(monkeypatch):
             "daily_total_budget": "10",
         }
     monkeypatch.setattr(main_module, "_require_ai_budget", allow_test_budget)
+    monkeypatch.setattr(main_module.settings, "hermes_api_key", "test-hermes-key")
 
 
 def test_health() -> None:
@@ -22,6 +23,25 @@ def test_health() -> None:
         response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_private_api_requires_server_side_key():
+    with TestClient(app) as client:
+        missing = client.get("/api/v1/agents")
+        invalid = client.get("/api/v1/agents", headers={"X-Hermes-API-Key": "wrong-key"})
+        authorized = client.get("/api/v1/agents", headers={"X-Hermes-API-Key": "test-hermes-key"})
+
+    assert missing.status_code == 401
+    assert invalid.status_code == 401
+    assert authorized.status_code == 200
+
+
+def test_private_api_fails_closed_without_server_secret(monkeypatch):
+    monkeypatch.setattr(main_module.settings, "hermes_api_key", None)
+    with TestClient(app) as client:
+        response = client.get("/api/v1/agents")
+
+    assert response.status_code == 503
 
 
 def test_diagnostic_agent() -> None:

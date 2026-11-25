@@ -112,6 +112,37 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Public inbound webhooks are protected by their provider-specific HMAC signatures.
+_SIGNED_WEBHOOK_PATHS = frozenset({
+    "/api/v1/webhooks/hotmart",
+    "/api/v1/webhooks/kiwify",
+    "/api/v1/webhooks/shopify",
+})
+
+
+@app.middleware("http")
+async def require_private_api_key(request: Request, call_next):
+    """Require the server-side WET key for every private API route."""
+    path = request.url.path
+    signed_webhook = request.method == "POST" and path in _SIGNED_WEBHOOK_PATHS
+    if path.startswith("/api/v1/") and not signed_webhook:
+        expected = (settings.hermes_api_key or "").strip()
+        if not expected:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Private API authentication is not configured."},
+            )
+        supplied = request.headers.get("X-Hermes-API-Key", "")
+        if not supplied or not hmac.compare_digest(supplied, expected):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Authentication required."},
+            )
+    return await call_next(request)
+
+
 app.include_router(commercial_router)
 app.include_router(kiwify_api_router)
 app.include_router(covers_router)
